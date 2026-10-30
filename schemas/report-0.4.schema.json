@@ -1,0 +1,888 @@
+{
+  "$defs": {
+    "AttributionStatus": {
+      "enum": [
+        "UNDETERMINED",
+        "AGENT_DEFECT",
+        "REFERENCE_DEFECT",
+        "AMBIGUOUS_TASK",
+        "POLICY_AMBIGUOUS",
+        "TOOL_CONTRACT_AMBIGUOUS",
+        "SIMULATOR_DEFECT"
+      ],
+      "title": "AttributionStatus",
+      "type": "string"
+    },
+    "CaseReport": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "attribution_status": {
+          "$ref": "#/$defs/AttributionStatus",
+          "default": "UNDETERMINED"
+        },
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "checked_rules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Checked Rules",
+          "type": "array"
+        },
+        "comparison_policy": {
+          "additionalProperties": true,
+          "title": "Comparison Policy",
+          "type": "object"
+        },
+        "controls": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ControlsRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "divergence_status": {
+          "$ref": "#/$defs/DivergenceStatus"
+        },
+        "elapsed_seconds": {
+          "minimum": 0,
+          "title": "Elapsed Seconds",
+          "type": "number"
+        },
+        "errors": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Errors",
+          "type": "array"
+        },
+        "execution_fidelity": {
+          "$ref": "#/$defs/FidelityRecord"
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "title": "Extensions",
+          "type": "object"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "headline": {
+          "title": "Headline",
+          "type": "string"
+        },
+        "inputs": {
+          "additionalProperties": true,
+          "title": "Inputs",
+          "type": "object"
+        },
+        "oracles": {
+          "items": {
+            "$ref": "#/$defs/OracleRecord"
+          },
+          "title": "Oracles",
+          "type": "array"
+        },
+        "original_state": {
+          "additionalProperties": true,
+          "title": "Original State",
+          "type": "object"
+        },
+        "pack": {
+          "title": "Pack",
+          "type": "string"
+        },
+        "search": {
+          "$ref": "#/$defs/SearchRecord"
+        },
+        "stability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subject_kind": {
+          "enum": [
+            "ARTIFACT",
+            "FROZEN_ARTIFACT",
+            "AGENT"
+          ],
+          "title": "Subject Kind",
+          "type": "string"
+        },
+        "task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task"
+        },
+        "unused_rules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unused Rules",
+          "type": "array"
+        },
+        "validity": {
+          "$ref": "#/$defs/ValidityRecord"
+        },
+        "worlds": {
+          "items": {
+            "$ref": "#/$defs/WorldRecord"
+          },
+          "title": "Worlds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "case_id",
+        "pack",
+        "subject_kind",
+        "divergence_status",
+        "validity",
+        "execution_fidelity",
+        "oracles",
+        "search",
+        "headline",
+        "elapsed_seconds"
+      ],
+      "title": "CaseReport",
+      "type": "object"
+    },
+    "ControlsRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "DISCRIMINATING",
+            "NOT_DISCRIMINATING",
+            "NOT_APPLICABLE"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "detail"
+      ],
+      "title": "ControlsRecord",
+      "type": "object"
+    },
+    "Counts": {
+      "additionalProperties": false,
+      "description": "What happened in n runs of one world. Counts only.",
+      "properties": {
+        "cannot_judge": {
+          "minimum": 0,
+          "title": "Cannot Judge",
+          "type": "integer"
+        },
+        "errors": {
+          "minimum": 0,
+          "title": "Errors",
+          "type": "integer"
+        },
+        "met": {
+          "minimum": 0,
+          "title": "Met",
+          "type": "integer"
+        },
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "not_met": {
+          "minimum": 0,
+          "title": "Not Met",
+          "type": "integer"
+        },
+        "violated": {
+          "minimum": 0,
+          "title": "Violated",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n",
+        "met",
+        "not_met",
+        "cannot_judge",
+        "violated",
+        "errors"
+      ],
+      "title": "Counts",
+      "type": "object"
+    },
+    "DivergenceStatus": {
+      "enum": [
+        "COUNTEREXAMPLE_FOUND",
+        "NOT_FOUND_WITHIN_BUDGET",
+        "INCONCLUSIVE",
+        "UNSUPPORTED"
+      ],
+      "title": "DivergenceStatus",
+      "type": "string"
+    },
+    "FidelityRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engine"
+        },
+        "found_on": {
+          "title": "Found On",
+          "type": "string"
+        },
+        "verified_on": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verified On"
+        }
+      },
+      "required": [
+        "found_on"
+      ],
+      "title": "FidelityRecord",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One disagreement in one world; attribution is separate and undetermined by default.",
+      "properties": {
+        "divergence": {
+          "additionalProperties": true,
+          "title": "Divergence",
+          "type": "object"
+        },
+        "export": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Export"
+        },
+        "fidelity": {
+          "$ref": "#/$defs/FidelityRecord"
+        },
+        "finding_id": {
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "headline": {
+          "title": "Headline",
+          "type": "string"
+        },
+        "minimization": {
+          "additionalProperties": true,
+          "title": "Minimization",
+          "type": "object"
+        },
+        "mutation_path": {
+          "items": {
+            "$ref": "#/$defs/MutationRecord"
+          },
+          "title": "Mutation Path",
+          "type": "array"
+        },
+        "oracles": {
+          "items": {
+            "$ref": "#/$defs/OracleRecord"
+          },
+          "title": "Oracles",
+          "type": "array"
+        },
+        "replay": {
+          "$ref": "#/$defs/ReplayRecord"
+        },
+        "stability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "validity": {
+          "$ref": "#/$defs/ValidityRecord"
+        },
+        "world_diff": {
+          "additionalProperties": true,
+          "title": "World Diff",
+          "type": "object"
+        },
+        "world_id": {
+          "title": "World Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "finding_id",
+        "world_id",
+        "validity",
+        "oracles",
+        "fidelity",
+        "headline"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "MutationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "atoms": {
+          "items": {
+            "items": {},
+            "type": "array"
+          },
+          "title": "Atoms",
+          "type": "array"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "family": {
+          "title": "Family",
+          "type": "string"
+        },
+        "hints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hints",
+          "type": "array"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "family",
+        "target",
+        "description"
+      ],
+      "title": "MutationRecord",
+      "type": "object"
+    },
+    "OracleRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "limits": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limits",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "MET",
+                "NOT_MET",
+                "CANNOT_JUDGE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "OracleRecord",
+      "type": "object"
+    },
+    "RateClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha": {
+          "title": "Alpha",
+          "type": "number"
+        },
+        "discordant_baseline_only": {
+          "title": "Discordant Baseline Only",
+          "type": "integer"
+        },
+        "discordant_world_only": {
+          "title": "Discordant World Only",
+          "type": "integer"
+        },
+        "p_value": {
+          "title": "P Value",
+          "type": "number"
+        },
+        "paired_runs": {
+          "title": "Paired Runs",
+          "type": "integer"
+        },
+        "test": {
+          "title": "Test",
+          "type": "string"
+        }
+      },
+      "required": [
+        "test",
+        "paired_runs",
+        "discordant_baseline_only",
+        "discordant_world_only",
+        "p_value",
+        "alpha"
+      ],
+      "title": "RateClaim",
+      "type": "object"
+    },
+    "ReplayRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact"
+        },
+        "artifact_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Sha256"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        }
+      },
+      "title": "ReplayRecord",
+      "type": "object"
+    },
+    "SearchRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "budget": {
+          "additionalProperties": true,
+          "title": "Budget",
+          "type": "object"
+        },
+        "budget_by_group": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "title": "Budget By Group",
+          "type": "object"
+        },
+        "depth_reached": {
+          "default": 0,
+          "title": "Depth Reached",
+          "type": "integer"
+        },
+        "executed": {
+          "title": "Executed",
+          "type": "integer"
+        },
+        "families_run": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Families Run",
+          "type": "array"
+        },
+        "families_skipped": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Families Skipped",
+          "type": "object"
+        },
+        "hints_used": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hints Used",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "rejected": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Rejected",
+          "type": "object"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "valid_candidates": {
+          "title": "Valid Candidates",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seed",
+        "attempts",
+        "valid_candidates",
+        "executed"
+      ],
+      "title": "SearchRecord",
+      "type": "object"
+    },
+    "Stability": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Counts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "k": {
+          "title": "K",
+          "type": "integer"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "rate_claim": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RateClaim"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "world": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Counts"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "k"
+      ],
+      "title": "Stability",
+      "type": "object"
+    },
+    "Totals": {
+      "additionalProperties": false,
+      "properties": {
+        "by_divergence_status": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Divergence Status",
+          "type": "object"
+        },
+        "by_family": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Family",
+          "type": "object"
+        },
+        "by_validity": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Validity",
+          "type": "object"
+        },
+        "cases": {
+          "minimum": 0,
+          "title": "Cases",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cases"
+      ],
+      "title": "Totals",
+      "type": "object"
+    },
+    "ValidityRecord": {
+      "additionalProperties": false,
+      "description": "Tiers reached, plus INVALID, INDETERMINATE or NOT_ASSESSED. Never merged with the rest.",
+      "properties": {
+        "problems": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Problems",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "VALID",
+            "INVALID",
+            "INDETERMINATE",
+            "NOT_ASSESSED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "tiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tiers",
+          "type": "array"
+        },
+        "unobservable": {
+          "default": false,
+          "title": "Unobservable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "ValidityRecord",
+      "type": "object"
+    },
+    "WorldRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Counts",
+          "type": "object"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "mutation_path": {
+          "items": {
+            "$ref": "#/$defs/MutationRecord"
+          },
+          "title": "Mutation Path",
+          "type": "array"
+        },
+        "oracle_outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "MET",
+                "NOT_MET",
+                "CANNOT_JUDGE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oracle Outcome"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "role_basis": {
+          "default": "",
+          "title": "Role Basis",
+          "type": "string"
+        },
+        "validity": {
+          "$ref": "#/$defs/ValidityRecord"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "description",
+        "validity"
+      ],
+      "title": "WorldRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The report of one audit: a single check, a suite, or an agent scenario.",
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/CaseReport"
+      },
+      "title": "Cases",
+      "type": "array"
+    },
+    "elapsed_seconds": {
+      "minimum": 0,
+      "title": "Elapsed Seconds",
+      "type": "number"
+    },
+    "kind": {
+      "enum": [
+        "case",
+        "suite",
+        "scenario"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "pack": {
+      "title": "Pack",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.4",
+      "default": "0.4",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "totals": {
+      "$ref": "#/$defs/Totals"
+    }
+  },
+  "required": [
+    "pack",
+    "kind",
+    "cases",
+    "totals",
+    "elapsed_seconds"
+  ],
+  "title": "AuditReport",
+  "type": "object"
+}

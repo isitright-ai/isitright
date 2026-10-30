@@ -1,0 +1,40 @@
+version: 1
+purpose: test-oracle-only
+fixtures:
+  null_count_divergence:
+    intended_equivalence_status: COUNTEREXAMPLE_FOUND
+    intended_state_validity: DOMAIN_VALIDATED
+    intended_attribution_status: UNDETERMINED
+    maximum_minimized_rows: 1
+  foreign_key_orphan:
+    intended_state_validity: INVALID
+    reason: shipments.hub_id must reference hubs.hub_id
+  domain_minimum:
+    intended_state_validity: INVALID
+    reason: package_count below one violates the JSON Schema constraint
+  allowed_value:
+    intended_state_validity: INVALID
+    reason: an unknown shipment status violates the JSON Schema enum
+  duplicate_multiplicity:
+    intended_comparison: unequal
+    reason: unordered comparison is a multiset, not a set
+  ordered_rows:
+    intended_comparison: sequence
+    reason: top-level ORDER BY on the reference query makes AUTO ordering significant
+  float_tolerance:
+    intended_comparison: equal
+    mode: isclose
+    relative_tolerance: 1.0e-9
+    absolute_tolerance: 1.0e-12
+  column_by_name:
+    intended_comparison: equal
+    reason: by_name ignores column order but matches aliases
+  native_window_execution:
+    intended_equivalence_status: AGREEMENT_ON_TESTED_STATES
+    intended_attribution_status: UNDETERMINED
+    reason: window expressions execute natively, but v0.1 has no window-specific search family
+  isolated_case_error:
+    intended_equivalence_status: INCONCLUSIVE
+    intended_attribution_status: UNDETERMINED
+    reason: a missing table in one suite case must not abort later cases
+

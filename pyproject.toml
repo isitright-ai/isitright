@@ -1,0 +1,123 @@
+[build-system]
+requires = ["hatchling>=1.27,<1.32"]
+build-backend = "hatchling.build"
+
+[project]
+name = "isitright"
+dynamic = ["version"]
+description = "Audit agent evals: find valid changes to the world under which a pass no longer holds"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "isitright contributors" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "hypothesis>=6.115,<7",
+  "jsonschema>=4.23,<5",
+  "pydantic>=2.10,<3",
+  "pyyaml>=6.0.2,<7",
+  "sqlglot>=27,<29",
+  "typer>=0.15,<1",
+]
+
+[project.optional-dependencies]
+postgres = [
+  "embedded-postgres>=18.6.3,<19",
+  "psycopg[binary]>=3.2,<4",
+]
+duckdb = ["duckdb>=1.5,<2"]
+mcp = ["mcp>=2.3,<3"]
+all = [
+  "embedded-postgres>=18.6.3,<19",
+  "psycopg[binary]>=3.2,<4",
+  "duckdb>=1.5,<2",
+  "mcp>=2.3,<3",
+]
+dev = [
+  "build>=1.2.2,<2",
+  "duckdb>=1.5,<2",
+  "embedded-postgres>=18.6.3,<19",
+  "mcp>=2.3,<3",
+  "mypy>=1.14,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<8",
+  "psycopg[binary]>=3.2,<4",
+  "ruff>=0.9,<1",
+  "twine>=6.1,<7",
+]
+
+[project.scripts]
+isitright = "isitright.cli:app"
+
+[project.urls]
+Repository = "https://github.com/isitright-ai/isitright"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/isitright"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.github/workflows",
+  "/docs",
+  "/examples",
+  "/schemas",
+  "/src",
+  "/tests",
+  "/tools/export_schemas.py",
+  "/CHANGELOG.md",
+  "/CONTRIBUTING.md",
+  "/LICENSE",
+  "/README.md",
+  "/SECURITY.md",
+  "/pyproject.toml",
+  "/uv.lock",
+]
+exclude = [
+  "/.test-tmp",
+  "/.tools",
+  "/.venv",
+  "/build",
+  "/dist",
+]
+
+[tool.hatch.version]
+path = "src/isitright/__about__.py"
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=isitright --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["isitright"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+extend-exclude = ["dev"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Third-party code kept unchanged (see its provenance header) and the verbatim task text.
+"examples/agents/shop/oracle.py" = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+"examples/agents/shop/shop_agent.py" = ["E", "SIM", "RUF", "B", "UP", "I"]
+"examples/agents/shop/shop_service.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["isitright"]
+

@@ -1,0 +1,3 @@
+{"case_id":"boundary","question":"Which items exceed 100?","reference_sql":"SELECT id FROM item WHERE amount > 100","candidate_sql":"SELECT id FROM item WHERE amount >= 100"}
+{"case_id":"null-count","question":"How many items are there?","reference_sql":"SELECT COUNT(*) FROM item","candidate_sql":"SELECT COUNT(amount) FROM item"}
+{"case_id":"same-count","question":"How many items have an amount?","reference_sql":"SELECT COUNT(amount) FROM item","candidate_sql":"SELECT COUNT(*) FROM item WHERE amount IS NOT NULL"}

@@ -1,0 +1,76 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://isitright.ai/schemas/examples/synthetic-logistics-constraints-v1
+title: Synthetic logistics candidate-state constraints
+description: >-
+  Test-only domain rules for a normalized database snapshot. Table names are
+  object keys, table contents are arrays, and rows are objects keyed by column.
+type: object
+required: [hubs, shipments, couriers]
+properties:
+  hubs:
+    type: array
+    items:
+      type: object
+      required: [hub_id, code, zone]
+      properties:
+        hub_id:
+          type: integer
+          minimum: 1
+        code:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        zone:
+          type: string
+          enum: [coastal, inland, mountain, metro]
+      additionalProperties: true
+  shipments:
+    type: array
+    items:
+      type: object
+      required: [shipment_id, hub_id, tracking_code, package_count, declared_weight, status]
+      properties:
+        shipment_id:
+          type: integer
+          minimum: 1
+        hub_id:
+          type: integer
+          minimum: 1
+        tracking_code:
+          type: [string, "null"]
+        package_count:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        declared_weight:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1000000
+        status:
+          type: string
+          enum: [queued, in_transit, delivered, cancelled]
+        shipped_at:
+          type: [string, "null"]
+        delivered_at:
+          type: [string, "null"]
+      additionalProperties: true
+  couriers:
+    type: array
+    items:
+      type: object
+      required: [courier_id, hub_id, name, active]
+      properties:
+        courier_id:
+          type: integer
+          minimum: 1
+        hub_id:
+          type: [integer, "null"]
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+        active:
+          type: integer
+          enum: [0, 1]
+      additionalProperties: true
+additionalProperties: true
+

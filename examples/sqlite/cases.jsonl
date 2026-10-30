@@ -1,0 +1,3 @@
+{"case_id":"null-shortfall","question":"What is the total outstanding amount?","reference_sql":"SELECT SUM(amount_owed - amount_collected) FROM tribute","candidate_sql":"SELECT SUM(amount_owed) - SUM(amount_collected) FROM tribute"}
+{"case_id":"province-count","question":"How many tributes does each province have?","reference_sql":"SELECT province, COUNT(*) FROM tribute GROUP BY province","candidate_sql":"SELECT province, COUNT(amount_owed) FROM tribute GROUP BY province"}
+{"case_id":"equivalent","question":"Which tributes are fully paid?","reference_sql":"SELECT tribute_id FROM tribute WHERE amount_owed = amount_collected","candidate_sql":"SELECT tribute_id FROM tribute WHERE amount_collected = amount_owed"}

@@ -1,0 +1,14 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+type: object
+required: [tribute]
+properties:
+  tribute:
+    type: array
+    items:
+      type: object
+      required: [tribute_id, province]
+      properties:
+        tribute_id: {type: integer, minimum: 1}
+        province: {type: string, enum: [north, south, east, west]}
+        amount_owed: {type: [number, "null"], minimum: 0}
+        amount_collected: {type: [number, "null"], minimum: 0}
