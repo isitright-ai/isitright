@@ -554,7 +554,8 @@ def test_a_run_that_does_not_complete_is_skipped_not_paired_and_the_test_goes_on
     agent.write_text(
         "import os, sys\n"
         "from pathlib import Path\n"
-        "if os.environ['ISITRIGHT_WORLD'] != 'baseline' and Path(os.environ['ISITRIGHT_RUN_DIR']).name == '1':\n"
+        "world, run = os.environ['ISITRIGHT_WORLD'], Path(os.environ['ISITRIGHT_RUN_DIR']).name\n"
+        "if world != 'baseline' and run == '1':\n"
         "    sys.exit(3)\n",
         encoding="utf-8",
     )
