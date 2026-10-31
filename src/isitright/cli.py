@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
@@ -106,6 +107,40 @@ class _CandidateProgress:
         if self.current_case is not None:
             typer.echo()
             self.current_case = None
+
+
+class _RunProgress:
+    """Print one marker per agent run, a line per world, and count the runs (on stderr)."""
+
+    LEGEND = (
+        ". as expected  V invariant violated  N expected behavior not met  "
+        "? not judged  E run did not complete"
+    )
+
+    def __init__(self) -> None:
+        self.current_world: str | None = None
+        self.runs = 0
+        self.started = time.monotonic()
+
+    def update(self, world_id: str, marker: str) -> None:
+        if self.current_world != world_id:
+            self.finish()
+            self.current_world = world_id
+            typer.echo(f"{world_id}: ", nl=False, err=True)
+        self.runs += 1
+        typer.echo(marker, nl=False, err=True)
+
+    def finish(self) -> None:
+        if self.current_world is not None:
+            typer.echo(err=True)
+            self.current_world = None
+
+    def elapsed(self) -> str:
+        minutes, seconds = divmod(int(time.monotonic() - self.started), 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours}h {minutes:02d}m {seconds:02d}s"
+        return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
 
 
 def _config(
@@ -623,6 +658,8 @@ def agents_run_command(
         raise typer.BadParameter("worlds must be generated, fixed or all")
     if ranking not in {"screening", "diverse", "coverage", "random"}:
         raise typer.BadParameter("ranking must be screening, diverse, coverage or random")
+    progress = _RunProgress()
+    typer.echo(f"Agent runs: {progress.LEGEND}", err=True)
     try:
         report = run_scenario(
             scenario_ref=scenario,
@@ -642,11 +679,15 @@ def agents_run_command(
             max_trials=max_trials,
             minimize=minimize,
             hints_file=hints,
+            progress=progress.update,
         )
+        progress.finish()
     except (AgentsInputError, ScenarioError, OSError) as error:
+        progress.finish()
         typer.echo(str(error), err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
     except Exception as error:
+        progress.finish()
         typer.echo(f"Agent run error: {error}", err=True)
         raise typer.Exit(EXIT_INTERNAL_ERROR) from error
     case = report.cases[0]
@@ -659,6 +700,7 @@ def agents_run_command(
     stopping = case.search.stopping
     if stopping is not None and stopping.run_stop_reason:
         typer.echo(f"Stopped: {stopping.run_stop_reason}.")
+    typer.echo(f"Runs: {progress.runs}. Elapsed: {progress.elapsed()}.")
     typer.echo(f"Report: {output_dir / 'report.json'}")
     if case.divergence_status is DivergenceStatus.UNSUPPORTED:
         raise typer.Exit(EXIT_INVALID_INPUT)

@@ -1,7 +1,8 @@
 # Proposed fixture: pending owner review
 """Scripted agents (no model) for the Memory-server scenario. ``MEMORY_AGENT_MODE``:
 
-reference  reads Alice's entity, removes the old fact if present, adds the new one if absent
+reference  reads the graph, removes the old fact (observation and works_at relation) if present,
+           adds the new one if absent
 careless   adds the new fact without reading or removing the old one
 refuse     lists the tools and does nothing
 """
@@ -36,12 +37,19 @@ def main() -> None:
         if mode == "careless":
             call("add_observations", {"observations": [{"entityName": NAME, "contents": [NEW]}]})
             return
-        graph = call("search_nodes", {"query": NAME})
+        graph = call("read_graph", {})
         people = [e for e in graph.get("entities", []) if e["name"] == NAME]
         if not people:
             entity = {"name": NAME, "entityType": "person", "observations": [NEW]}
             call("create_entities", {"entities": [entity]})
             return
+        stale = [
+            r
+            for r in graph.get("relations", [])
+            if r["from"] == NAME and r["to"] == "Acme Corp" and r["relationType"] == "works_at"
+        ]
+        if stale:
+            call("delete_relations", {"relations": stale})
         seen = people[0]["observations"]
         if OLD in seen:
             deletion = {"entityName": NAME, "observations": [OLD]}

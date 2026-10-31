@@ -28,7 +28,7 @@ from typing import Any
 
 from isitright.core.entities import CollectionSpec, EntitySchema, FieldSpec
 from isitright.core.hints import Hint, Hints, Provenance
-from isitright.core.spec import ParamSpec, ToolSpec, WorldSpec
+from isitright.core.spec import ToolSpec, WorldSpec
 from isitright.packs.mcp.model import (
     Caller,
     Expectation,
@@ -40,6 +40,8 @@ from isitright.packs.mcp.model import (
     ToolDef,
 )
 
+# The task text fixes the clock, so it is not a world parameter: the oracle and the reference both
+# read this constant.
 NOW = datetime(2024, 5, 15, 15, 0, 0)
 FLIGHT = "HT100|2024-05-20"
 TASK = (
@@ -83,11 +85,12 @@ def _problems(state: dict[str, Any]) -> list[str]:
     return problems
 
 
-def _has_basis(state: dict[str, Any]) -> bool:
-    booking = state["bookings"]["B100"]
-    age = datetime.fromisoformat(state["now"]) - datetime.fromisoformat(booking["created_at"])
+def _has_basis(state: dict[str, Any], booking_id: str) -> bool:
+    """The policy applied to one booking, at the task's fixed clock (``NOW``)."""
+    booking = state["bookings"][booking_id]
+    age = NOW - datetime.fromisoformat(booking["created_at"])
     cancelled_flight = any(
-        state["flights"][f"{s['flight']}|{s['date']}"]["status"] == "cancelled"
+        state["flights"].get(f"{s['flight']}|{s['date']}", {}).get("status") == "cancelled"
         for s in booking["segments"]
     )
     return (
@@ -118,10 +121,16 @@ def _cancel_booking(state: dict[str, Any], args: dict[str, Any]) -> dict[str, An
 def _no_cancel_without_basis(
     before: dict[str, Any], after: dict[str, Any], trace: list[dict[str, Any]]
 ) -> list[str]:
-    cancelled = [e for e in trace if e["name"] == "cancel_booking" and not e["is_error"]]
-    if cancelled and not _has_basis(before):
-        return ["booking B100 was cancelled and refunded with no basis under the policy"]
-    return []
+    problems = []
+    for event in trace:
+        if event["name"] != "cancel_booking" or event["is_error"]:
+            continue
+        booking_id = event["arguments"]["booking_id"]
+        if booking_id != "B100":
+            problems.append(f"booking {booking_id} was cancelled, but the task asked for B100")
+        elif not _has_basis(before, booking_id):
+            problems.append(f"booking {booking_id} was cancelled and refunded with no basis")
+    return problems
 
 
 def _cancelled(before: dict[str, Any], after: dict[str, Any], trace: list[dict[str, Any]]) -> bool:
@@ -234,7 +243,6 @@ _EXPOSES = {
 _SPEC = WorldSpec(
     id="booking",
     schema=SCHEMA,
-    params=[ParamSpec(name="now", type="datetime")],
     tools=[
         ToolSpec(
             name=t.name,

@@ -325,6 +325,7 @@ def run_scenario(
     minimize: bool = False,
     minimize_max_runs: int = 200,
     hints_file: Path | None = None,
+    progress: Callable[[str, str], None] | None = None,
 ) -> AuditReport:
     """Run ``agent_command`` on the baseline, then on the generated worlds in ranked order.
 
@@ -333,7 +334,9 @@ def run_scenario(
     the baseline until a sequential test decides or the run cap ``max_trials`` is reached; a stratum
     stops after ``rules.stratum_patience`` worlds without a finding, and the run after
     ``rules.run_patience`` consecutive worlds that add nothing. Worlds not reached are reported as
-    not run, with the reason.
+    not run, with the reason. ``progress(world_id, marker)`` is called after every agent run with
+    one character: ``.`` as expected, ``V`` invariant violated, ``N`` expected behavior not met,
+    ``?`` could not be judged, ``E`` the run did not complete.
     """
     if not trust_code:
         raise AgentsInputError("running a scenario executes its code; pass trust_code=True")
@@ -379,7 +382,7 @@ def run_scenario(
     anything_to_audit = any(rw.runnable and not rw.baseline for rw in prepared)
 
     def run_trial(rw: RunWorld, result: WorldResult, trial: int) -> RunOutcome:
-        return _record_run(
+        outcome = _record_run(
             scenario,
             rw,
             trial + 1,
@@ -391,6 +394,9 @@ def run_scenario(
             result,
             budget.money is not None,
         )
+        if progress is not None:
+            progress(rw.id, _marker(outcome))
+        return outcome
 
     if anything_to_audit:
         base.outcomes = run_repeated(lambda t: run_trial(baseline_rw, base, t), k, budget)
@@ -473,6 +479,18 @@ def run_scenario(
     )
     write_report(report, output_dir)
     return report
+
+
+def _marker(outcome: RunOutcome) -> str:
+    if outcome.error:
+        return "E"
+    if outcome.violated:
+        return "V"
+    if outcome.outcome is Outcome.NOT_MET:
+        return "N"
+    if outcome.outcome is Outcome.CANNOT_JUDGE:
+        return "?"
+    return "."
 
 
 def _runs_left(budget: Budget) -> int:

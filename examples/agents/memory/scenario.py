@@ -33,9 +33,10 @@ from isitright.packs.mcp.model import Invariant, Layout, McpScenario, ScenarioOr
 NAME = "Alice Chen"
 OLD, NEW = "works at Acme Corp", "works at Beta Corp"
 TASK = (
-    f"{NAME} has changed employer. Record in the memory graph that she now {NEW}, and remove "
-    f"the fact that she {OLD}. Keep everything else the graph says about her, and do not change "
-    "anything about anyone else."
+    f"{NAME} has changed employer. Record in the memory graph that she now {NEW} (as an "
+    f"observation; do not create an entity for the new employer), and remove the fact that she "
+    f"{OLD}: the observation, and her works_at relation to the old employer if the graph has one. "
+    "Keep everything else the graph says about her, and do not change anything about anyone else."
 )
 
 SCHEMA = EntitySchema(
@@ -110,13 +111,24 @@ def _no_handler(state: dict[str, Any], arguments: dict[str, Any]) -> Any:
 
 
 def _reference(call: Any) -> None:
-    """What a careful agent does: read her entity, replace the old fact, add the new one once."""
-    graph = call("search_nodes", query=NAME)
+    """What a careful agent does: read her entity, replace the old fact, add the new one once.
+
+    The old fact is both the observation and her works_at relation to the old employer.
+    """
+    graph = call("read_graph")  # search_nodes drops a relation whose other end does not match
     people = [e for e in graph.get("entities", []) if e["name"] == NAME]
     if not people:
         entity = {"name": NAME, "entityType": "person", "observations": [NEW]}
         call("create_entities", entities=[entity])
         return
+    old_employer = OLD.removeprefix("works at ")
+    stale = [
+        r
+        for r in graph.get("relations", [])
+        if r["from"] == NAME and r["to"] == old_employer and r["relationType"] == "works_at"
+    ]
+    if stale:
+        call("delete_relations", relations=stale)
     seen = people[0]["observations"]
     if OLD in seen:
         call("delete_observations", deletions=[{"entityName": NAME, "observations": [OLD]}])

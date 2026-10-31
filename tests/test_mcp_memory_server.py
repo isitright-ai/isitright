@@ -36,6 +36,7 @@ def test_the_reference_procedure_runs_on_the_real_server_and_roles_follow_the_gr
     scenario = load_scenario(REF)
     base = reference_outcome(scenario, World(scenario.base))
     assert base.role is Role.CONTROL and base.after is not None
+    assert [r["from"] for r in base.after["relations"]] == ["Bob Stone"]  # Alice's old one is gone
     assert base.after["entities"]["Alice Chen"]["observations"] == [
         "prefers email",
         "works at Beta Corp",
@@ -50,7 +51,10 @@ def test_the_reference_procedure_runs_on_the_real_server_and_roles_follow_the_gr
                     else e["observations"],
                 }
                 for e in scenario.base.entities("entities")
-            ]
+            ],
+            "relations": [
+                r for r in scenario.base.entities("relations") if r["from"] != "Alice Chen"
+            ],
         }
     )
     assert reference_outcome(scenario, World(moved)).role is Role.TRAP  # already moved: do nothing
