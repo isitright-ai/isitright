@@ -49,6 +49,18 @@ class UserSimulator(Protocol):
         ...
 
 
+class OneShotUser:
+    """A user who says one thing (the task text) and then ends the conversation. It needs no model,
+    so the SDK adapter can be tried on its own, without tau2."""
+
+    def __init__(self, message: str) -> None:
+        self._message: str | None = message
+
+    def next_message(self, agent_text: str) -> str | None:
+        message, self._message = self._message, None
+        return message
+
+
 @dataclass
 class Conversation:
     turns: list[AgentTurn] = field(default_factory=list)

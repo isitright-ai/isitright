@@ -256,7 +256,7 @@ world diff, mutation path with the hints behind it), `controls`, `stability` (ba
 ```
 isitright agents run --scenario REF --agent-command CMD --trust-code
         [--worlds generated|fixed|all] [--trials N] [--world ID ...] [--max-worlds N, default 50]
-        [--ranking diverse|screening|coverage|random] [--stratum-patience N] [--run-patience N]
+        [--attempts N] [--ranking diverse|screening|coverage|random] [--stratum-patience N] [--run-patience N]
         [--max-trials N] [--sequential/--no-sequential] [--minimize]
         [--max-money X] [--max-runs N] [--max-seconds S] [--timeout SECONDS] [--output-dir DIR]
         [--fail-on none|invariant-violation|any-finding]

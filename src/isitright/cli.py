@@ -553,6 +553,14 @@ def agents_run_command(
     only: Annotated[
         list[str] | None, typer.Option("--world", help="Run only this world id (repeatable).")
     ] = None,
+    attempts: Annotated[
+        int,
+        typer.Option(
+            min=1,
+            help="Candidate worlds the generation may visit (a scenario whose reference procedure "
+            "runs a real server needs a small number).",
+        ),
+    ] = 20_000,
     ranking: Annotated[
         str,
         typer.Option(help="Order of live runs: diverse (default), screening, coverage or random."),
@@ -625,6 +633,7 @@ def agents_run_command(
             timeout_seconds=timeout,
             trust_code=trust_code,
             max_worlds=max_worlds,
+            attempts=attempts,
             only=only,
             budget=Budget(money=max_money, runs=max_runs, seconds=max_seconds),
             ranking=ranking,  # type: ignore[arg-type]

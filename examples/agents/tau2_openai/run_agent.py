@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 from openai_agents_adapter import OpenAIAgentsAdapter
-from sdk import converse, write_transcript
+from sdk import OneShotUser, UserSimulator, converse, write_transcript
 
 
 def prices() -> dict[str, tuple[float, float]]:
@@ -34,19 +34,28 @@ def prices() -> dict[str, tuple[float, float]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task-id", required=True)
+    parser.add_argument(
+        "--task-id", help="a tau2 task id; without it the task text is the only message"
+    )
     parser.add_argument("--domain", default="airline")
-    parser.add_argument("--policy-file", type=Path, required=True)
+    parser.add_argument("--policy-file", type=Path)
     args = parser.parse_args()
-    from tau2.registry import registry  # tau2 is the owner's to install
-    from tau2_bridge import Tau2UserBridge
-
-    task = next(t for t in registry.get_tasks_loader(args.domain)() if str(t.id) == args.task_id)
     agent_model = os.environ["ISITRIGHT_AGENT_MODEL"]
     run_dir = Path(os.environ["ISITRIGHT_RUN_DIR"])
-    policy = args.policy_file.read_text(encoding="utf-8")
+    user: UserSimulator
+    if args.task_id:
+        from tau2.registry import registry  # tau2 is the owner's to install
+        from tau2_bridge import Tau2UserBridge
+
+        task = next(
+            t for t in registry.get_tasks_loader(args.domain)() if str(t.id) == args.task_id
+        )
+        user = Tau2UserBridge(task, os.environ["ISITRIGHT_USER_MODEL"])
+        policy = args.policy_file.read_text(encoding="utf-8") if args.policy_file else ""
+    else:
+        task_text = Path(os.environ["ISITRIGHT_TASK_FILE"]).read_text(encoding="utf-8")
+        user, policy = OneShotUser(task_text), ""
     agent = OpenAIAgentsAdapter(Path(os.environ["ISITRIGHT_MCP_CONFIG"]), policy, agent_model)
-    user = Tau2UserBridge(task, os.environ["ISITRIGHT_USER_MODEL"])
     try:
         conversation = converse(agent, user)
     finally:

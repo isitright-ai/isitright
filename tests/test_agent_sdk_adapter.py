@@ -108,3 +108,12 @@ def test_the_runner_reads_this_transcript_and_refuses_a_money_budget_without_cos
         prices_per_million={},
     )
     assert "money" not in read_transcript(tmp_path, (None, None))
+
+
+def test_a_one_shot_user_gives_the_task_once_and_then_ends_the_conversation() -> None:
+    from sdk import OneShotUser
+
+    agent = FakeAgent()
+    conversation = converse(agent, OneShotUser("delete the drafts"))
+    assert agent.heard == ["delete the drafts"] and conversation.stop_reason == "final"
+    assert len(conversation.turns) == 1
