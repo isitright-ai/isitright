@@ -195,3 +195,34 @@ def hints(task_id: str) -> Hints:
 
 def spec() -> WorldSpec:
     return WorldSpec(id="airline", schema=SCHEMA, policy=(DOMAIN / "policy.md").read_text("utf-8"))
+
+
+def apply_state(db: dict[str, Any], state: State) -> dict[str, Any]:
+    """A copy of the tau2 airline database with a generated world's changes written back.
+
+    Only what the entity model holds is written: flight-date statuses, and each reservation's
+    cabin, creation time, insurance, status and flights. A cancelled flight date keeps no other
+    field, as in tau2's own data. The result is what a harness loads into tau2's environment (for
+    example ``FlightDB.model_validate(apply_state(...))``) to run an agent in the world.
+    """
+    import copy
+
+    patched = copy.deepcopy(db)
+    for entity in state.entities("flight_dates"):
+        dates = patched["flights"][entity["flight_number"]]["dates"]
+        if entity["status"] == "cancelled":
+            dates[entity["date"]] = {"status": "cancelled"}
+        elif dates[entity["date"]]["status"] != entity["status"]:
+            raise ValueError(
+                f"flight date {entity['id']}: changing a status to {entity['status']!r} needs the "
+                "fields of that status, which the entity model does not hold"
+            )
+    for entity in state.entities("reservations"):
+        target = patched["reservations"][entity["reservation_id"]]
+        for name in ("cabin", "created_at", "insurance", "flights"):
+            target[name] = copy.deepcopy(entity[name])
+        if entity.get("status"):
+            target["status"] = entity["status"]
+        else:
+            target.pop("status", None)
+    return patched

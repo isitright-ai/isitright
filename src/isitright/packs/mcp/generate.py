@@ -13,7 +13,7 @@ from typing import Any
 
 from isitright.core.constraints import Validity, ValidityStatus, ValidityTier
 from isitright.core.families import default_mutators
-from isitright.core.hints import lookup_matches
+from isitright.core.hints import Provenance, lookup_matches
 from isitright.core.mutations import Candidate, Mutation, World
 from isitright.core.oracles import Role
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
@@ -65,7 +65,8 @@ def observable(scenario: McpScenario, path: tuple[Mutation, ...]) -> bool:
 
 def task_consistent(scenario: McpScenario, world: World) -> bool:
     """The task's story still holds: each lookup hint finds someone."""
-    lookups = scenario.hints.of("lookup")
+    # A proposed lookup is a guess until confirmed: it may steer the search, never a tier.
+    lookups = [h for h in scenario.hints.of("lookup") if h.provenance is not Provenance.PROPOSED]
     return all(lookup_matches(world.state, hint) for hint in lookups)
 
 
@@ -123,7 +124,9 @@ def generate_worlds(
         scenario.spec,
         World(scenario.base),
         scenario.hints,
-        default_mutators(),
+        [m for m in default_mutators() if m.target == "state"]
+        if scenario.external is not None
+        else default_mutators(),
         collect,
         budget=Budget(attempts=attempts),
         seed=seed,

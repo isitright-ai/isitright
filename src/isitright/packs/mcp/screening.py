@@ -69,6 +69,11 @@ def screen_world(
     """Classify one generated world against the baseline trace."""
     if baseline is None:
         return Screened(ScreeningClass.UNSCREENABLE, "no usable baseline trace")
+    if scenario.external is not None:
+        return Screened(
+            ScreeningClass.UNSCREENABLE,
+            "an external server has no in-process service to replay the trace on",
+        )
     if generated.role is Role.UNJUDGEABLE:
         return Screened(
             ScreeningClass.UNSCREENABLE,

@@ -465,3 +465,48 @@ def test_noise_tolerant_minimization_drops_a_mutation_the_failure_does_not_need(
     else:
         assert len(finding.mutation_path) == 2  # the unminimized path is returned
     assert record["steps"] and "note" in record
+
+
+def test_the_report_shows_which_hints_are_proposed_and_the_worlds_they_led_to(
+    tmp_path: Path,
+) -> None:
+    import yaml
+
+    hints = tmp_path / "hints.yaml"
+    hints.write_text(
+        yaml.safe_dump(
+            {
+                "format": "isitright-hints",
+                "hints": [
+                    {
+                        "name": "guessed_gate",
+                        "kind": "gate",
+                        "status": "proposed",
+                        "args": {
+                            "collection": "orders",
+                            "field": "status",
+                            "allows": ["pending"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+        output_dir=tmp_path / "out",
+        worlds="generated",
+        k=1,
+        attempts=400,
+        max_worlds=2,
+        trust_code=True,
+        timeout_seconds=60,
+        hints_file=hints,
+    )
+    uses = {u.name: u for u in report.cases[0].search.hint_use}
+    guessed = uses["guessed_gate"]
+    assert guessed.provenance == "proposed" and guessed.world_count > 0 and guessed.worlds
+    assert uses["gate"].provenance == "declared"
+    assert uses["trace"].provenance == "harvested:trace"

@@ -94,12 +94,19 @@ and nested CTEs must contain only the allowlisted read-only syntax. Recursive
 CTEs, data-modifying statements, user-defined functions, ambiguous references,
 and constructs outside the allowlist are rejected.
 
-Composite or cyclic foreign keys, composite primary keys, foreign-key actions,
-`CHECK`, nonliteral defaults, unsupported type parameters, and
-`GENERATED ALWAYS AS IDENTITY` are unsupported. DuckDB may reject or behave
-differently on some otherwise supported PostgreSQL features, such as identity
-columns; its findings remain explicitly emulated. This subset is not a claim of
-complete PostgreSQL compatibility.
+`CHECK` constraints (column or table level) are accepted on PostgreSQL and DuckDB: the engine
+enforces them, and the simple forms (`col IN (...)`, `col >= number`) also guide generation, as on
+SQLite. A generated state a CHECK rejects is counted under `search.rejected`.
+
+Still unsupported, with what the 0.5 measurement found (the PostgreSQL tests, the examples and the
+cross-engine tests were run with every `SqlInputError` counted): composite primary keys (one test
+asserts they are rejected; no example or test needs them), composite or cyclic foreign keys,
+foreign-key actions, nonliteral defaults, unsupported type parameters and
+`GENERATED ALWAYS AS IDENTITY`. Nothing in the existing tests or examples depends on composite
+keys, so they were not added; a suite that needs them is the evidence to add them. DuckDB may
+reject or behave differently on some otherwise supported PostgreSQL features, such as identity
+columns; its findings remain explicitly emulated. This subset is not a claim of complete
+PostgreSQL compatibility.
 
 For parameterized `VARCHAR(n)`, the supported length is 1–10,000. For
 `NUMERIC(p,s)`, precision is 1–1,000 and scale is 0–precision; PostgreSQL's
@@ -112,6 +119,31 @@ are bounded heuristics, not exhaustive combinations. Supplied JSON Schema domain
 validate normalized states, and row minimization rechecks them. No real PostgreSQL
 database or seed data is required. Native mode runs the original queries on a
 temporary local PostgreSQL server; `--engine duckdb` translates and executes them on
-DuckDB and reports `EMULATED` and `NATIVE_UNVERIFIED`. DuckDB schema validation is
+DuckDB and reports `EMULATED`. DuckDB schema validation is
 not a native PostgreSQL validity check. Run `isitright sql replay` to reproduce
 recorded outputs on the report's engine.
+
+## Emulation and native verification
+
+DuckDB is a candidate generator, not evidence. When the PostgreSQL extra is installed, every
+state on which DuckDB reports a divergence is re-executed on a disposable PostgreSQL instance
+(`--verify-native`, on by default; `--no-verify-native` turns it off):
+
+- the results differ there too: the finding is `COUNTEREXAMPLE_FOUND`, `found_on: EMULATED`,
+  `verified_on: NATIVE_ISOLATED`, with the native outputs under `divergence.native_results`. A
+  verified finding may fail CI under `--fail-on`;
+- the results agree there: an **emulation artifact**. It does not count as a counterexample, is
+  counted under `search.rejected.emulation_artifact` and listed in
+  `extensions.sql.emulation_artifacts`, and the case reports `native_verification:
+  ARTIFACTS_EXCLUDED`;
+- PostgreSQL is not available or the re-execution fails: the finding stays emulated and
+  `NOT_VERIFIED` with the reason, and never fails CI.
+
+Minimization keeps the native disagreement, so a minimized world is verified too.
+
+**Integer division.** PostgreSQL divides two integers with truncation (`5 / 2` is 2); DuckDB's `/`
+gives 2.5. The translation rewrites every `/` whose operands are both integers (by declared column
+types and literals) to DuckDB's truncating `//`, guarded so a zero divisor is an error as in
+PostgreSQL. A division whose types cannot be read is left as written and counted under
+`extensions.sql.integer_division.uncertain`. Not translated: `numeric / integer` (exact in
+PostgreSQL), and floating-point division by zero (an infinity in DuckDB, reported inconclusive).

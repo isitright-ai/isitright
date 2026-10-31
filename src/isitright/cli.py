@@ -53,6 +53,8 @@ sql_app = typer.Typer(help="Audit text-to-SQL programs (SQLite, PostgreSQL, Duck
 app.add_typer(sql_app, name="sql")
 agents_app = typer.Typer(help="Audit tool-using agents against perturbed worlds over MCP.")
 app.add_typer(agents_app, name="agents")
+hints_app = typer.Typer(help="Propose hints with a model, then confirm them (labeled proposed).")
+agents_app.add_typer(hints_app, name="hints")
 
 
 class Engine(StrEnum):
@@ -176,6 +178,12 @@ def check_command(
     output_dir: Annotated[Path, typer.Option()] = Path("artifacts/check"),
     report_format: Annotated[ReportFormat, typer.Option("--format")] = ReportFormat.BOTH,
     fail_on: Annotated[FailOn, typer.Option()] = FailOn.NONE,
+    verify_native: Annotated[
+        bool,
+        typer.Option(
+            help="Re-execute findings from the duckdb engine on PostgreSQL when it is installed."
+        ),
+    ] = True,
 ) -> None:
     """Compare one query pair on perturbed worlds of a database or schema."""
     progress = _CandidateProgress()
@@ -189,6 +197,7 @@ def check_command(
             candidate_sql=candidate_sql.read_text(encoding="utf-8"),
             engine=engine.value,
             constraints_file=constraints,
+            verify_native=None if verify_native else False,
             config=_config(
                 seed,
                 max_attempts,
@@ -264,6 +273,12 @@ def suite_command(
     quiet: Annotated[
         bool, typer.Option("--quiet", "-q", help="Show only totals and the report directory.")
     ] = False,
+    verify_native: Annotated[
+        bool,
+        typer.Option(
+            help="Re-execute findings from the duckdb engine on PostgreSQL when it is installed."
+        ),
+    ] = True,
 ) -> None:
     """Analyze a JSONL evaluation suite with per-case isolation and ranking."""
     if verbose and quiet:
@@ -279,6 +294,7 @@ def suite_command(
             cases=cases,
             engine=engine.value,
             constraints_file=constraints,
+            verify_native=None if verify_native else False,
             config=_config(
                 seed,
                 max_attempts,
@@ -558,6 +574,15 @@ def agents_run_command(
     max_trials: Annotated[
         int, typer.Option(min=1, help="Most paired runs the sequential test may use per world.")
     ] = 16,
+    hints: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="A hints file from `agents hints propose`: confirmed hints count as declared, "
+            "the others as proposed (they prioritize, and grant no validity tier).",
+        ),
+    ] = None,
     sequential: Annotated[
         bool, typer.Option(help="Stop each world when a sequential test decides.")
     ] = True,
@@ -607,6 +632,7 @@ def agents_run_command(
             sequential=sequential,
             max_trials=max_trials,
             minimize=minimize,
+            hints_file=hints,
         )
     except (AgentsInputError, ScenarioError, OSError) as error:
         typer.echo(str(error), err=True)
@@ -635,6 +661,82 @@ def agents_run_command(
         o.kind == "INVARIANT" for f in case.findings for o in f.oracles
     ):
         raise typer.Exit(EXIT_POLICY_TRIGGERED)
+
+
+@hints_app.command("propose")
+def hints_propose_command(
+    scenario: Annotated[str, typer.Option(help="module:attr or file.py:attr (executed).")],
+    proposer: Annotated[
+        str, typer.Option(help="module:attr of a HintProposer (executed; it may call a model).")
+    ],
+    output: Annotated[Path, typer.Option(help="YAML file to write.")] = Path("hints.yaml"),
+    trust_code: Annotated[
+        bool, typer.Option("--trust-code", help="Required: the scenario and proposer are code.")
+    ] = False,
+) -> None:
+    """Ask a proposer for hints from the task, policy and tool schemas, and write them to a file."""
+    from isitright.core.proposals import ProposalRequest, propose_hints, write_proposals
+    from isitright.packs.mcp.model import ScenarioError, load_proposer, load_scenario
+
+    if not trust_code:
+        typer.echo(
+            "Proposing hints executes the scenario and proposer code; pass --trust-code.", err=True
+        )
+        raise typer.Exit(EXIT_INVALID_INPUT)
+    if output.exists():
+        typer.echo("output file already exists; choose a new file", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT)
+    try:
+        loaded = load_scenario(scenario)
+        request = ProposalRequest(
+            task=loaded.task,
+            policy=loaded.spec.policy,
+            tools=loaded.spec.tools,
+            schema=loaded.spec.schema,
+            existing=list(loaded.hints),
+        )
+        result = propose_hints(load_proposer(proposer), request)
+        write_proposals(output, result, scenario=loaded.id)
+    except ScenarioError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
+    typer.echo(
+        f"{len(result.hints)} hint(s) proposed, {len(result.rejected)} rejected by the entity "
+        f"model. Edit {output}, then run: isitright agents hints confirm {output}"
+    )
+
+
+@hints_app.command("confirm")
+def hints_confirm_command(
+    file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    accept: Annotated[
+        list[str] | None, typer.Option("--accept", help="Confirm only this hint (repeatable).")
+    ] = None,
+    scenario: Annotated[
+        str | None,
+        typer.Option(help="Re-check each hint against this scenario first (executes it)."),
+    ] = None,
+    trust_code: Annotated[
+        bool, typer.Option("--trust-code", help="Required with --scenario.")
+    ] = False,
+) -> None:
+    """Mark proposed hints confirmed: they are then used as declared hints."""
+    from isitright.core.proposals import ProposalError, confirm_proposals
+    from isitright.packs.mcp.model import ScenarioError, load_scenario
+
+    try:
+        schema = existing = None
+        if scenario is not None:
+            if not trust_code:
+                typer.echo("--scenario executes the scenario; pass --trust-code.", err=True)
+                raise typer.Exit(EXIT_INVALID_INPUT)
+            loaded = load_scenario(scenario)
+            schema, existing = loaded.spec.schema, list(loaded.hints)
+        done = confirm_proposals(file, accept, schema=schema, existing=existing or ())
+    except (ProposalError, ScenarioError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
+    typer.echo(f"Confirmed {len(done)} hint(s): {', '.join(done) or 'none'}")
 
 
 @agents_app.command("replay")

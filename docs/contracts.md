@@ -1,4 +1,4 @@
-# Contract reference (version 0.4)
+# Contract reference (version 0.5)
 
 Behavior that scripts, CI and other tools may rely on. Anything not listed here may change
 between pre-1.0 releases. The extension API (`isitright.core.*`) is public and **experimental**
@@ -23,32 +23,33 @@ Pydantic. The only runtime dependencies besides the standard stack are `hypothes
 strategies inside families), `jsonschema`, `pydantic`, `pyyaml`, `sqlglot` and `typer`; `mcp`,
 `duckdb` and PostgreSQL support are extras.
 
-## Report schema 0.4
+## Report schema 0.5
 
-One schema, [`schemas/report-0.4.schema.json`](../schemas/report-0.4.schema.json), exported by
+One schema, [`schemas/report-0.5.schema.json`](../schemas/report-0.5.schema.json), exported by
 `tools/export_schemas.py` from `isitright.core.evidence.AuditReport`. Older report schemas are
-removed. An `AuditReport` has `schema_version` (`"0.4"`), `pack`, `kind` (`case`, `suite` or
+removed, but 0.4 reports still load (`replay` and `export` read them): every field added in 0.5 is
+optional. An `AuditReport` has `schema_version` (`"0.5"`; `"0.4"` when read), `pack`, `kind` (`case`, `suite` or
 `scenario`), `cases`, `totals` and `elapsed_seconds`. Each `CaseReport` keeps these apart:
 
 | Field | Values |
 |---|---|
 | `divergence_status` | `COUNTEREXAMPLE_FOUND`, `NOT_FOUND_WITHIN_BUDGET`, `INCONCLUSIVE`, `UNSUPPORTED` |
 | `validity` | `status` (`VALID`, `INVALID`, `INDETERMINATE`, `NOT_ASSESSED`) and `tiers` (`STRUCTURAL`, `DOMAIN_VALIDATED`, `REACHABLE`, `TASK_CONSISTENT`, `OBSERVABLE`, `SIMULATOR_CONSISTENT`) |
-| `execution_fidelity` | `found_on` (`NATIVE_ISOLATED`, `NATIVE_INLINE`, `EMULATED`, `SIMULATED`, `GENERATED`, `REPLAY_ONLY`), `verified_on`, `engine` |
+| `execution_fidelity` | `found_on` (`NATIVE_ISOLATED`, `NATIVE_INLINE`, `EMULATED`, `SIMULATED`, `GENERATED`, `REPLAY_ONLY`), `verified_on` (`NATIVE_ISOLATED` once an emulated finding is re-executed on PostgreSQL), `engine`, and `verification` (`VERIFIED`, `EMULATION_ARTIFACT` or `NOT_VERIFIED`, with the note) |
 | `oracles` | name, kind (`REFERENCE_PROGRAM`, `INVARIANT`, `RELATIONAL`, `CONSTRUCTIVE`, `JUDGE`), outcome (`MET`, `NOT_MET`, `CANNOT_JUDGE`), limits |
 | `subject_kind` | `ARTIFACT`, `FROZEN_ARTIFACT`, `AGENT` |
-| `stability` | `k`, baseline and world `counts`, and a `rate_claim` (test, pair counts, p-value) only with adequate evidence |
+| `stability` | `k`, baseline and world `counts`, a `rate_claim` (test, pair counts, p-value) only with adequate evidence, and `sequential` (test, alpha, beta, boundaries, every look, decision `RATE_INCREASE`, `NO_INCREASE_AT_EFFECT`, `UNDECIDED` or `NO_DISCORDANCE`) |
 | `attribution_status` | `UNDETERMINED` by default; reserved: `AGENT_DEFECT`, `REFERENCE_DEFECT`, `AMBIGUOUS_TASK`, `POLICY_AMBIGUOUS`, `TOOL_CONTRACT_AMBIGUOUS`, `SIMULATOR_DEFECT` |
-| `search` | seed, attempts, valid candidates, executed, rejections by reason, families run and skipped, budget per hint group (`hinted`, `unhinted`), hints used, depth reached, budget |
+| `search` | seed, attempts, valid candidates, executed, rejections by reason, families run and skipped, budget per hint group (`hinted`, `unhinted`), hints used, depth reached, budget, `screening` (ranking and counts per class), `stopping` (each stratum as "no finding in n of m worlds" with the reason, and the run's stop reason) and `hint_use` (each hint with its provenance, `declared`, `harvested:*` or `proposed`, and the worlds it led to) |
 | `findings` | per finding: world, validity, oracle results, stability, world diff, mutation path (family, target, description, hints, atoms), pack-specific `divergence`, fidelity, replay, minimization |
-| `worlds`, `controls` | every world with role and counts; `DISCRIMINATING`, `NOT_DISCRIMINATING` or `NOT_APPLICABLE` |
+| `worlds`, `controls` | every world run, and the best-ranked worlds not run, with role, counts, `screening` (`WRONG_IF_UNCHANGED`, `STALE`, `RIGHT_IF_UNCHANGED`, `UNSCREENABLE`, with rank), `run_status` (`RUN` or `NOT_RUN`, with the reason) and the validity `notes`; `DISCRIMINATING`, `NOT_DISCRIMINATING` or `NOT_APPLICABLE` |
 | `headline` | one line derived from the above; it never says pass, fail, correct or wrong (the model rejects it) |
 | `extensions` | pack-specific fields (`sql`, `mcp`); not part of the common contract |
 
 The status and the findings must agree, an unsupported case has no executed worlds, and a DuckDB
 result must be labeled `EMULATED` (a PostgreSQL or SQLite one must not). `NOT_FOUND_WITHIN_BUDGET`
 means no disagreement was found in the states tested within the budget; it is never a claim of
-equivalence or correctness. An observed failure is never presented as a rate change.
+equivalence or correctness. A world that screening or a stopping rule did not run is `NOT_RUN`, never a pass. An observed failure is never presented as a rate change, and an emulated finding is never presented as native: `verified_on` says whether PostgreSQL confirmed it.
 
 ## Mutations, hints and constraints (core)
 

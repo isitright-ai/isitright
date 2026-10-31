@@ -330,6 +330,14 @@ def _parse_table(tree: exp.Expression, *, references: bool) -> TableSchema:
                 raise SqlInputError("unsupported foreign key")
             add_reference(_name(definition.expressions[0].name), ref)
             continue
+        if references and (
+            isinstance(definition, exp.CheckColumnConstraint)
+            or (
+                isinstance(definition, exp.Constraint)
+                and any(isinstance(e, exp.CheckColumnConstraint) for e in definition.expressions)
+            )
+        ):
+            continue  # a CHECK is enforced by the engine; the SQL text keeps it, hints read it
         if isinstance(definition, exp.UniqueColumnConstraint) and references:
             unique = definition.this
             if (
@@ -385,6 +393,7 @@ def _parse_table(tree: exp.Expression, *, references: bool) -> TableSchema:
             allowed.update(
                 {
                     "Reference",
+                    "CheckColumnConstraint",
                     "UniqueColumnConstraint",
                     "DefaultColumnConstraint",
                     "GeneratedAsIdentityColumnConstraint",

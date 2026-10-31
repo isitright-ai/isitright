@@ -61,6 +61,7 @@ from isitright.packs.mcp.model import (
     ScenarioError,
     absolute_reference,
     load_scenario,
+    with_hints_file,
 )
 from isitright.packs.mcp.oracle import EvaluationError, Reference, judge_run, reference_outcome
 from isitright.packs.mcp.runner import (
@@ -323,6 +324,7 @@ def run_scenario(
     max_trials: int = DEFAULT_MAX_TRIALS,
     minimize: bool = False,
     minimize_max_runs: int = 200,
+    hints_file: Path | None = None,
 ) -> AuditReport:
     """Run ``agent_command`` on the baseline, then on the generated worlds in ranked order.
 
@@ -347,6 +349,11 @@ def run_scenario(
         scenario = load_scenario(reference_text)
     except ScenarioError as error:
         raise AgentsInputError(str(error)) from error
+    if hints_file is not None:
+        try:
+            scenario = with_hints_file(scenario, hints_file)
+        except ScenarioError as error:
+            raise AgentsInputError(str(error)) from error
     argv = split_command(agent_command)
     budget = budget or Budget()
     rules = rules or StoppingRules()

@@ -3,6 +3,55 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
+## 0.5.0.dev0 (unreleased) - Evidence at scale
+
+0.5 makes live-agent audits affordable and their evidence defensible: it chooses which worlds to
+run, stops on rules instead of counts, tests sequentially, minimizes through noise, verifies
+emulated SQL findings natively, and closes the 0.4 gaps.
+
+### Added
+
+- **Choosing which worlds to run.** Screening without the agent replays the baseline trace on each
+  candidate world and runs the oracle (`WRONG_IF_UNCHANGED`, `STALE`, `RIGHT_IF_UNCHANGED`,
+  `UNSCREENABLE`); ranking (`--ranking diverse|screening|coverage|random`, default `diverse`);
+  stopping rules for a stratum and for the run (`--stratum-patience`, `--run-patience`). Worlds not
+  run are listed as `NOT_RUN` with the reason. A stopped stratum is reported as "no finding in n of
+  m worlds".
+- **Sequential testing** of paired baseline and perturbed runs (a sequential probability ratio test
+  on discordant pairs, false claims at most alpha over all looks; `--max-trials`,
+  `--sequential/--no-sequential`) and **noise-tolerant minimization** of a finding's mutation path
+  (`--minimize`), with the test, looks, boundaries and error bounds in the report.
+- **A family that edits inside JSON values** where a scope is declared (`FieldSpec.shape` or a
+  `json_path` hint such as `orders.items[*].price`); the `JsonSum` constraint reads a path inside
+  JSON; an unconstrained JSON edit is `STRUCTURAL` only and says so.
+- **Pattern strings**: JSON Schema `pattern` drives generation (`Pattern` constraint,
+  `core.values.pattern_value`); unsupported constructs are reported in `search.notes`.
+- **Native verification of emulated SQL findings**: a DuckDB divergence is re-executed on
+  PostgreSQL (`--verify-native`, on by default when the extra is installed); `verified_on` is
+  populated, a divergence that fails verification is an emulation artifact and is not a
+  counterexample; integer division is translated; `CHECK` constraints are accepted.
+- **LLM-proposed hints** (plumbing only): `HintProposer`, `agents hints propose|confirm`,
+  `agents run --hints`; hints labeled `proposed` prioritize and never grant a validity tier.
+- **External servers**: a third-party MCP server whose state lives in a JSON-lines file or a
+  SQLite database can be the service (`ExternalServer`, `JsonLinesFile`, `SqliteFile`, a proxy
+  host with final-state export); an example scenario over the Memory reference server.
+- Examples: the OpenAI Agents SDK adapter behind a narrow interface (`examples/agents/tau2_openai`),
+  the tau2 airline entity model and hints (`examples/agents/airline`), a hint proposer adapter.
+- Report schema `0.5` (`schemas/report-0.5.schema.json`); 0.4 reports still load.
+
+### Changed (breaking)
+
+- Report schema 0.5 replaces 0.4 (`schemas/report-0.4.schema.json` is removed); new fields are
+  optional, so 0.4 reports can still be replayed and exported.
+- `agents run` ranks worlds by screening (default `diverse`) instead of coverage, and records
+  worlds it did not run as `NOT_RUN` (they used to appear with zero counts or not at all). The
+  case-level `stability` of an agent report is counts only; a rate claim is per world.
+- A DuckDB finding that PostgreSQL confirms may now fail CI (`verified_on` is set); one it does
+  not confirm is excluded as an emulation artifact. Use `--no-verify-native` for the 0.4 behavior.
+- `SELECT 5 / 2` on the emulating engine is now integer division, as in PostgreSQL.
+- A generated world whose JSON field was edited without a rule over its content has the
+  `STRUCTURAL` tier only.
+
 ## 0.4.0.dev0 (unreleased) - A core for auditing agent evals
 
 0.4 replaces the internals of 0.1 and 0.2 with a core that both packs sit on, and adds the MCP

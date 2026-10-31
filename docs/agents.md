@@ -133,6 +133,29 @@ there (a leaf moved, a list element removed or duplicated, a key removed or set 
 one whole-field edit). Without a rule that reads the content (`JsonSum`), such a world is
 `STRUCTURAL` only, and its validity record says so.
 
+## Proposed hints
+
+Hints focus the generic families (`lookup`, `ordering`, `gate`, `scope`, `threshold`, `json_path`,
+`trace`). You declare them in the scenario; a model can propose more from the task text, the
+policy text and the tool schemas. isitright has the plumbing, not a model client:
+
+```console
+isitright agents hints propose --trust-code --scenario REF --proposer module:PROPOSER --output hints.yaml
+# edit hints.yaml; then
+isitright agents hints confirm hints.yaml --accept name1 --accept name2
+isitright agents run ... --hints hints.yaml
+```
+
+A `HintProposer` is any object with `propose(request) -> list[Hint]` (`isitright.core.proposals`);
+`examples/proposers/model_proposer.py` shows where a real client plugs in (its key is read from the
+environment when called, never stored; the tests use a recorded response). Every proposed hint is
+labeled `proposed`, and one the entity model cannot resolve is rejected with the reason. In the
+file each hint has a `status`: `confirmed` is loaded as `declared`, `proposed` stays `proposed`
+and `rejected` is dropped. **A proposed hint prioritizes the search and grants no validity tier**:
+tiers come from constraints, reachability, the declared lookups and observability, and a proposed
+lookup is not a declared one. The report's `search.hint_use` lists every hint with its provenance
+and the worlds it led to.
+
 ## Declaring a scenario
 
 ```python
@@ -170,6 +193,22 @@ SCENARIO = McpScenario(
   worlds. A change is traced as a `__world_change__` pseudo-event, excluded from call counts and
   re-applied by replay.
 - Scenarios are **trusted local code**. The CLI refuses to import one without `--trust-code`.
+
+## A third-party server as the service
+
+The shop's handlers are simulated, so isitright owns its state. A server isitright did not write
+owns its own, in a file or a SQLite database. Give the scenario an `ExternalServer`
+(`isitright.packs.mcp.external`): how to start the server, and a state adapter that seeds its
+storage from a world (`seed`) and reads it back (`read`): `JsonLinesFile` for a JSON-lines file,
+`SqliteFile` for a database. For each run the proxy host (`serve_external`) starts the real server
+on a copy of the storage in the run directory, forwards the agent's calls, traces each one and
+writes `state_after.json` from the storage after every call (hidden from the agent). The reference
+procedure runs against the same kind of server, so roles come from the real thing, and fidelity is
+`NATIVE_ISOLATED`. Limits: world generation uses state mutations only (response edits and timers
+need middleware the server does not have), screening is `UNSCREENABLE` (there is no in-process
+service to replay the trace on), and replay re-judges the recorded state and trace instead of
+re-executing the calls. `examples/agents/memory/` declares the Memory reference server this way
+(setup in its docstring); `tests/fixtures/servers/` has a small SQLite-backed one.
 
 ## Running your own agent
 

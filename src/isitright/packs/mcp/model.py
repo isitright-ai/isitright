@@ -21,7 +21,7 @@ import json
 import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -189,6 +189,9 @@ class McpScenario:
     hints: Hints = field(default_factory=Hints)
     fixed_worlds: Sequence[FixedWorld] = ()
     fidelity: Fidelity = Fidelity.SIMULATED
+    external: Any = None
+    """An `ExternalServer`: a third-party server that owns its state (the tools are then served
+    by it through the proxy; the handlers in ``tools`` are not used)."""
 
     def __post_init__(self) -> None:
         if not _ID.match(self.id):
@@ -256,15 +259,15 @@ def absolute_reference(ref: str) -> str:
     return ref
 
 
-def load_scenario(ref: str) -> McpScenario:
-    """Import and return a scenario. Executes the referenced code: trusted local use only."""
+def import_reference(ref: str, label: str) -> Any:
+    """Import ``module:attr`` or ``file.py:attr``. Executes the referenced code: trusted only."""
     module_name, attribute = split_reference(ref)
     try:
         if _is_file_reference(module_name):
             path = Path(module_name).resolve()
-            spec = importlib.util.spec_from_file_location(f"_isitright_scenario_{path.stem}", path)
+            spec = importlib.util.spec_from_file_location(f"_isitright_{label}_{path.stem}", path)
             if spec is None or spec.loader is None:
-                raise ScenarioError(f"cannot import scenario file {path}")
+                raise ScenarioError(f"cannot import {label} file {path}")
             module = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = module
             sys.path.insert(0, str(path.parent))
@@ -274,13 +277,43 @@ def load_scenario(ref: str) -> McpScenario:
                 sys.path.remove(str(path.parent))
         else:
             module = importlib.import_module(module_name)
-        value = getattr(module, attribute)
+        return getattr(module, attribute)
     except ScenarioError:
         raise
     except (ImportError, AttributeError, OSError, SyntaxError) as error:
-        raise ScenarioError(f"cannot load scenario {ref!r}: {error}") from error
+        raise ScenarioError(f"cannot load {label} {ref!r}: {error}") from error
+
+
+def load_scenario(ref: str) -> McpScenario:
+    """Import and return a scenario. Executes the referenced code: trusted local use only."""
+    value = import_reference(ref, "scenario")
     if callable(value) and not isinstance(value, McpScenario):
         value = value()
     if not isinstance(value, McpScenario):
         raise ScenarioError(f"{ref!r} is not a McpScenario")
     return value
+
+
+def load_proposer(ref: str) -> Any:
+    """Import a hint proposer (an object with ``propose(request)``, or a factory for one)."""
+    value = import_reference(ref, "proposer")
+    if not hasattr(value, "propose") and callable(value):
+        value = value()
+    if not hasattr(value, "propose"):
+        raise ScenarioError(f"{ref!r} is not a hint proposer")
+    return value
+
+
+def with_hints_file(scenario: McpScenario, path: Path) -> McpScenario:
+    """The scenario with the hints of a hints file added: confirmed ones as declared, the others
+    as proposed. A name the scenario already declares keeps the scenario's hint."""
+    from isitright.core.hints import Hints
+    from isitright.core.proposals import ProposalError, load_hints
+
+    try:
+        loaded = load_hints(path, scenario.spec.schema, list(scenario.hints))
+    except ProposalError as error:
+        raise ScenarioError(str(error)) from error
+    known = {h.name for h in scenario.hints}
+    added = [h for h in loaded if h.name not in known]
+    return replace(scenario, hints=Hints([*scenario.hints, *added]))

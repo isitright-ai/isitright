@@ -85,6 +85,49 @@ def build_world_server(
     return build_server(scenario.id, specs, handler, trace, after_call)
 
 
+def serve_external(scenario: McpScenario, world: World, run_dir: Path) -> None:
+    """Serve a third-party server on a seeded copy of the world and record what happens.
+
+    The server runs as a child process on a copy of its storage in ``run_dir``; the agent's calls
+    are forwarded and traced, and the storage is read back after every call into
+    ``state_after.json`` (hidden from the agent). Response edits and timers need the host to sit
+    between the agent and its own handlers, so a world that has them is refused.
+    """
+    from isitright.packs.mcp.session import McpSession
+
+    external = scenario.external
+    if world.response_edits or world.timers:
+        raise ScenarioError("an external server cannot apply response edits or timers")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    storage = run_dir / "server_state"
+    parameters = external.parameters(scenario.layout.to_service(world.state), storage)
+    state_after = run_dir / "state_after.json"
+    write_state(run_dir / "state_before.json", external.adapter.read(storage))
+    write_state(state_after, external.adapter.read(storage))
+    child = McpSession(parameters)
+    try:
+        specs = child.list_tools()
+        trace_path = run_dir / "trace.jsonl"
+
+        def persist(event: TraceEvent) -> None:
+            with trace_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event.__dict__, sort_keys=True, default=str) + "\n")
+
+        def handler(name: str, arguments: dict[str, Any]) -> str:
+            try:
+                result = child.call_tool(name, arguments)
+            finally:
+                write_state(state_after, external.adapter.read(storage))
+            if result.is_error:
+                raise RuntimeError(result.text)
+            return result.text
+
+        serve_stdio(build_server(scenario.id, specs, handler, TraceRecorder(on_record=persist)))
+    finally:
+        child.close()
+        write_state(state_after, external.adapter.read(storage))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m isitright.packs.mcp.serve")
     parser.add_argument("--scenario", required=True)
@@ -108,6 +151,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             data = json.loads(args.world_file.read_text(encoding="utf-8"))
             world, interferences = World.from_json(data), ()
+        if scenario.external is not None and not args.fixed:
+            serve_external(scenario, world, args.run_dir)
+            return 0
         server = build_world_server(scenario, world, args.run_dir, interferences)
     except ScenarioError as error:
         print(str(error), file=sys.stderr)
