@@ -159,6 +159,7 @@ def prepare_worlds(
                         status="VALID",
                         tiers=tiers,
                         unobservable=not g.observable,
+                        notes=g.notes,
                     ),
                     generated=g,
                 )

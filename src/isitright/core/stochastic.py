@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from isitright.core.oracles import Outcome
+from isitright.core.sequential import SequentialRecord
 from isitright.core.subjects import Cost
 
 DEFAULT_K = 4
@@ -54,6 +55,8 @@ class Stability(BaseModel):
     baseline: Counts | None = None
     world: Counts | None = None
     rate_claim: RateClaim | None = None
+    sequential: SequentialRecord | None = None
+    """The sequential test behind a world's run count: looks, boundaries, decision (0.5)."""
     note: str = ""
 
 

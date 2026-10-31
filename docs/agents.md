@@ -92,13 +92,16 @@ from isitright.core.spec import ToolSpec, WorldSpec
 schema = EntitySchema(collections=[CollectionSpec(name="orders", key="id", fields=[...])])
 tools = [ToolDef("cancel", "Cancel an order.", {"type": "object"}, cancel, writes=True)]
 SCENARIO = McpScenario(
-    id="refunds", task="...", tools=tools,
+    id="refunds",
+    task="...",
+    tools=tools,
     spec=WorldSpec(id="refunds", schema=schema, tools=[ToolSpec(name="cancel", writes=True)]),
     base=layout.from_service(initial_service_state, schema.keys()),
     layout=Layout(keyed=("orders",)),
     oracle=ScenarioOracle("ref", [Invariant("no_double_cancel", "...", check)], reference),
-    hints=Hints([Hint(kind="gate", args={"collection": "orders", "field": "status",
-                                         "allows": ["pending"]})]),
+    hints=Hints(
+        [Hint(kind="gate", args={"collection": "orders", "field": "status", "allows": ["pending"]})]
+    ),
 )
 ```
 

@@ -20,7 +20,7 @@ from isitright.packs.mcp.runner import AgentsInputError
 EXAMPLES = Path(__file__).parents[1] / "examples" / "agents"
 SCENARIO_REF = f"{EXAMPLES / 'booking_scenario.py'}:SCENARIO"
 DEMO = f'"{sys.executable}" "{EXAMPLES / "demo_agent.py"}"'
-SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.4.schema.json"
+SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.5.schema.json"
 TRAP = ["booked_24h_01m"]
 CONTROL = ["flight_cancelled"]
 BOTH = [*TRAP, *CONTROL]

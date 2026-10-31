@@ -50,7 +50,7 @@ from isitright.packs.mcp.runner import harness_identity, read_trace, read_transc
 from isitright.packs.mcp.serve import world_of, write_state
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "agents" / "booking_scenario.py"
-SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.4.schema.json"
+SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.5.schema.json"
 
 
 @pytest.fixture(scope="module")

@@ -961,6 +961,7 @@ def _validity_record(validity: Validity) -> ValidityRecord:
         status=validity.status.value,
         tiers=[t.value for t in validity.tiers],
         problems=list(validity.problems),
+        notes=list(validity.notes),
     )
 
 

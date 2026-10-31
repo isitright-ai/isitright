@@ -1,0 +1,233 @@
+{
+  "cases": [
+    {
+      "assumptions": [],
+      "attribution_status": "UNDETERMINED",
+      "case_id": "a",
+      "checked_rules": [],
+      "comparison_policy": {},
+      "controls": null,
+      "divergence_status": "COUNTEREXAMPLE_FOUND",
+      "elapsed_seconds": 0.0,
+      "errors": [],
+      "execution_fidelity": {
+        "engine": "sqlite 3",
+        "found_on": "NATIVE_ISOLATED",
+        "verified_on": null
+      },
+      "extensions": {},
+      "findings": [
+        {
+          "divergence": {},
+          "export": null,
+          "fidelity": {
+            "engine": "sqlite 3",
+            "found_on": "NATIVE_ISOLATED",
+            "verified_on": null
+          },
+          "finding_id": "a:1",
+          "headline": "Evidence recorded for review",
+          "minimization": {},
+          "mutation_path": [],
+          "oracles": [
+            {
+              "description": "",
+              "kind": "REFERENCE_PROGRAM",
+              "limits": [],
+              "name": "reference_sql",
+              "outcome": null
+            }
+          ],
+          "replay": {
+            "artifact": null,
+            "artifact_sha256": null,
+            "command": null
+          },
+          "stability": null,
+          "validity": {
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          },
+          "world_diff": {},
+          "world_id": "w"
+        }
+      ],
+      "headline": "Evidence recorded for review",
+      "inputs": {},
+      "oracles": [
+        {
+          "description": "",
+          "kind": "REFERENCE_PROGRAM",
+          "limits": [],
+          "name": "reference_sql",
+          "outcome": null
+        }
+      ],
+      "original_state": {},
+      "pack": "sql",
+      "search": {
+        "attempts": 0,
+        "budget": {},
+        "budget_by_group": {},
+        "depth_reached": 0,
+        "executed": 0,
+        "families_run": [],
+        "families_skipped": {},
+        "hints_used": [],
+        "notes": [],
+        "rejected": {},
+        "seed": 0,
+        "valid_candidates": 0
+      },
+      "stability": null,
+      "subject_kind": "ARTIFACT",
+      "task": null,
+      "unused_rules": [],
+      "validity": {
+        "problems": [],
+        "status": "VALID",
+        "tiers": [
+          "STRUCTURAL",
+          "DOMAIN_VALIDATED"
+        ],
+        "unobservable": false
+      },
+      "worlds": []
+    },
+    {
+      "assumptions": [],
+      "attribution_status": "UNDETERMINED",
+      "case_id": "b",
+      "checked_rules": [],
+      "comparison_policy": {},
+      "controls": null,
+      "divergence_status": "NOT_FOUND_WITHIN_BUDGET",
+      "elapsed_seconds": 0.0,
+      "errors": [],
+      "execution_fidelity": {
+        "engine": "sqlite 3",
+        "found_on": "NATIVE_ISOLATED",
+        "verified_on": null
+      },
+      "extensions": {},
+      "findings": [],
+      "headline": "Evidence recorded for review",
+      "inputs": {},
+      "oracles": [
+        {
+          "description": "",
+          "kind": "REFERENCE_PROGRAM",
+          "limits": [],
+          "name": "reference_sql",
+          "outcome": null
+        }
+      ],
+      "original_state": {},
+      "pack": "sql",
+      "search": {
+        "attempts": 0,
+        "budget": {},
+        "budget_by_group": {},
+        "depth_reached": 0,
+        "executed": 0,
+        "families_run": [],
+        "families_skipped": {},
+        "hints_used": [],
+        "notes": [],
+        "rejected": {},
+        "seed": 0,
+        "valid_candidates": 0
+      },
+      "stability": null,
+      "subject_kind": "ARTIFACT",
+      "task": null,
+      "unused_rules": [],
+      "validity": {
+        "problems": [],
+        "status": "NOT_ASSESSED",
+        "tiers": [],
+        "unobservable": false
+      },
+      "worlds": []
+    },
+    {
+      "assumptions": [],
+      "attribution_status": "UNDETERMINED",
+      "case_id": "c",
+      "checked_rules": [],
+      "comparison_policy": {},
+      "controls": null,
+      "divergence_status": "UNSUPPORTED",
+      "elapsed_seconds": 0.0,
+      "errors": [],
+      "execution_fidelity": {
+        "engine": "sqlite 3",
+        "found_on": "NATIVE_ISOLATED",
+        "verified_on": null
+      },
+      "extensions": {},
+      "findings": [],
+      "headline": "Evidence recorded for review",
+      "inputs": {},
+      "oracles": [
+        {
+          "description": "",
+          "kind": "REFERENCE_PROGRAM",
+          "limits": [],
+          "name": "reference_sql",
+          "outcome": null
+        }
+      ],
+      "original_state": {},
+      "pack": "sql",
+      "search": {
+        "attempts": 0,
+        "budget": {},
+        "budget_by_group": {},
+        "depth_reached": 0,
+        "executed": 0,
+        "families_run": [],
+        "families_skipped": {},
+        "hints_used": [],
+        "notes": [],
+        "rejected": {},
+        "seed": 0,
+        "valid_candidates": 0
+      },
+      "stability": null,
+      "subject_kind": "ARTIFACT",
+      "task": null,
+      "unused_rules": [],
+      "validity": {
+        "problems": [],
+        "status": "NOT_ASSESSED",
+        "tiers": [],
+        "unobservable": false
+      },
+      "worlds": []
+    }
+  ],
+  "elapsed_seconds": 0.0,
+  "kind": "suite",
+  "metadata": {},
+  "pack": "sql",
+  "schema_version": "0.4",
+  "totals": {
+    "by_divergence_status": {
+      "COUNTEREXAMPLE_FOUND": 1,
+      "NOT_FOUND_WITHIN_BUDGET": 1,
+      "UNSUPPORTED": 1
+    },
+    "by_family": {},
+    "by_validity": {
+      "DOMAIN_VALIDATED": 1,
+      "NOT_ASSESSED": 2
+    },
+    "cases": 3
+  }
+}

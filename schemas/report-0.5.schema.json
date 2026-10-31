@@ -250,6 +250,17 @@
       "title": "Counts",
       "type": "object"
     },
+    "Decision": {
+      "enum": [
+        "RATE_INCREASE",
+        "NO_INCREASE_AT_EFFECT",
+        "UNDECIDED",
+        "NO_DISCORDANCE",
+        "CONTINUE"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
     "DivergenceStatus": {
       "enum": [
         "COUNTEREXAMPLE_FOUND",
@@ -278,6 +289,17 @@
         "found_on": {
           "title": "Found On",
           "type": "string"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "verified_on": {
           "anyOf": [
@@ -385,6 +407,56 @@
         "headline"
       ],
       "title": "Finding",
+      "type": "object"
+    },
+    "HintUse": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "provenance": {
+          "title": "Provenance",
+          "type": "string"
+        },
+        "worlds": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Worlds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "provenance"
+      ],
+      "title": "HintUse",
+      "type": "object"
+    },
+    "Look": {
+      "additionalProperties": false,
+      "properties": {
+        "log_likelihood_ratio": {
+          "title": "Log Likelihood Ratio",
+          "type": "number"
+        },
+        "pair": {
+          "title": "Pair",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pair",
+        "log_likelihood_ratio"
+      ],
+      "title": "Look",
       "type": "object"
     },
     "MutationRecord": {
@@ -556,6 +628,82 @@
       "title": "ReplayRecord",
       "type": "object"
     },
+    "ScreeningRecord": {
+      "additionalProperties": false,
+      "description": "Screening without the agent: a ranking input, never a verdict.",
+      "properties": {
+        "basis": {
+          "default": "",
+          "title": "Basis",
+          "type": "string"
+        },
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rank"
+        },
+        "screening_class": {
+          "enum": [
+            "WRONG_IF_UNCHANGED",
+            "STALE",
+            "RIGHT_IF_UNCHANGED",
+            "UNSCREENABLE"
+          ],
+          "title": "Screening Class",
+          "type": "string"
+        }
+      },
+      "required": [
+        "screening_class"
+      ],
+      "title": "ScreeningRecord",
+      "type": "object"
+    },
+    "ScreeningSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_trace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Trace"
+        },
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Counts",
+          "type": "object"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "ranking": {
+          "title": "Ranking",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ranking"
+      ],
+      "title": "ScreeningSummary",
+      "type": "object"
+    },
     "SearchRecord": {
       "additionalProperties": false,
       "properties": {
@@ -601,6 +749,13 @@
           "title": "Families Skipped",
           "type": "object"
         },
+        "hint_use": {
+          "items": {
+            "$ref": "#/$defs/HintUse"
+          },
+          "title": "Hint Use",
+          "type": "array"
+        },
         "hints_used": {
           "items": {
             "type": "string"
@@ -622,9 +777,31 @@
           "title": "Rejected",
           "type": "object"
         },
+        "screening": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScreeningSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "seed": {
           "title": "Seed",
           "type": "integer"
+        },
+        "stopping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoppingRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "valid_candidates": {
           "title": "Valid Candidates",
@@ -638,6 +815,102 @@
         "executed"
       ],
       "title": "SearchRecord",
+      "type": "object"
+    },
+    "SequentialRecord": {
+      "additionalProperties": false,
+      "description": "What the report keeps of a sequential test: test, looks, boundaries, decision.",
+      "properties": {
+        "alpha": {
+          "title": "Alpha",
+          "type": "number"
+        },
+        "alternative_share": {
+          "title": "Alternative Share",
+          "type": "number"
+        },
+        "beta": {
+          "title": "Beta",
+          "type": "number"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "discordant_baseline_only": {
+          "title": "Discordant Baseline Only",
+          "type": "integer"
+        },
+        "discordant_world_only": {
+          "title": "Discordant World Only",
+          "type": "integer"
+        },
+        "log_likelihood_ratio": {
+          "title": "Log Likelihood Ratio",
+          "type": "number"
+        },
+        "looks": {
+          "items": {
+            "$ref": "#/$defs/Look"
+          },
+          "title": "Looks",
+          "type": "array"
+        },
+        "lower_boundary": {
+          "title": "Lower Boundary",
+          "type": "number"
+        },
+        "max_pairs": {
+          "title": "Max Pairs",
+          "type": "integer"
+        },
+        "min_pairs": {
+          "title": "Min Pairs",
+          "type": "integer"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "null_share": {
+          "default": 0.5,
+          "title": "Null Share",
+          "type": "number"
+        },
+        "p_value": {
+          "title": "P Value",
+          "type": "number"
+        },
+        "pairs": {
+          "title": "Pairs",
+          "type": "integer"
+        },
+        "test": {
+          "default": "sequential probability ratio test on discordant pairs",
+          "title": "Test",
+          "type": "string"
+        },
+        "upper_boundary": {
+          "title": "Upper Boundary",
+          "type": "number"
+        }
+      },
+      "required": [
+        "alpha",
+        "beta",
+        "alternative_share",
+        "upper_boundary",
+        "lower_boundary",
+        "min_pairs",
+        "max_pairs",
+        "pairs",
+        "discordant_world_only",
+        "discordant_baseline_only",
+        "log_likelihood_ratio",
+        "p_value",
+        "decision"
+      ],
+      "title": "SequentialRecord",
       "type": "object"
     },
     "Stability": {
@@ -674,6 +947,17 @@
           ],
           "default": null
         },
+        "sequential": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SequentialRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "world": {
           "anyOf": [
             {
@@ -690,6 +974,122 @@
         "k"
       ],
       "title": "Stability",
+      "type": "object"
+    },
+    "StoppingRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "run_patience": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Patience"
+        },
+        "run_stop_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Stop Reason"
+        },
+        "strata": {
+          "items": {
+            "$ref": "#/$defs/StratumRecord"
+          },
+          "title": "Strata",
+          "type": "array"
+        },
+        "stratum_patience": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stratum Patience"
+        }
+      },
+      "title": "StoppingRecord",
+      "type": "object"
+    },
+    "StratumRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "title": "Family",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "stop_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Reason"
+        },
+        "stopped": {
+          "title": "Stopped",
+          "type": "boolean"
+        },
+        "summary": {
+          "default": "",
+          "title": "Summary",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "with_findings": {
+          "title": "With Findings",
+          "type": "integer"
+        },
+        "worlds_not_run": {
+          "title": "Worlds Not Run",
+          "type": "integer"
+        },
+        "worlds_run": {
+          "title": "Worlds Run",
+          "type": "integer"
+        },
+        "worlds_total": {
+          "title": "Worlds Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "family",
+        "target",
+        "role",
+        "worlds_total",
+        "worlds_run",
+        "worlds_not_run",
+        "with_findings",
+        "stopped"
+      ],
+      "title": "StratumRecord",
       "type": "object"
     },
     "Totals": {
@@ -732,6 +1132,13 @@
       "additionalProperties": false,
       "description": "Tiers reached, plus INVALID, INDETERMINATE or NOT_ASSESSED. Never merged with the rest.",
       "properties": {
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
         "problems": {
           "items": {
             "type": "string"
@@ -768,6 +1175,43 @@
       "title": "ValidityRecord",
       "type": "object"
     },
+    "VerificationRecord": {
+      "additionalProperties": false,
+      "description": "What happened when an emulated finding was re-executed on the native engine.",
+      "properties": {
+        "engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engine"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "EMULATION_ARTIFACT",
+            "NOT_VERIFIED"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "VerificationRecord",
+      "type": "object"
+    },
     "WorldRecord": {
       "additionalProperties": false,
       "properties": {
@@ -792,6 +1236,18 @@
           },
           "title": "Mutation Path",
           "type": "array"
+        },
+        "not_run_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Not Run Reason"
         },
         "oracle_outcome": {
           "anyOf": [
@@ -818,6 +1274,26 @@
           "default": "",
           "title": "Role Basis",
           "type": "string"
+        },
+        "run_status": {
+          "default": "RUN",
+          "enum": [
+            "RUN",
+            "NOT_RUN"
+          ],
+          "title": "Run Status",
+          "type": "string"
+        },
+        "screening": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScreeningRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "validity": {
           "$ref": "#/$defs/ValidityRecord"
@@ -867,8 +1343,11 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "0.4",
-      "default": "0.4",
+      "default": "0.5",
+      "enum": [
+        "0.4",
+        "0.5"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

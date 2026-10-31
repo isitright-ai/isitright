@@ -9,7 +9,7 @@ from pathlib import Path
 from isitright.core.evidence import AuditReport
 
 ROOT = Path(__file__).resolve().parents[1]
-SCHEMAS = {ROOT / "schemas" / "report-0.4.schema.json": AuditReport.model_json_schema()}
+SCHEMAS = {ROOT / "schemas" / "report-0.5.schema.json": AuditReport.model_json_schema()}
 
 
 def serialized(value: object) -> str:

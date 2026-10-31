@@ -21,7 +21,7 @@ class ReplayArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     format: Literal["isitright-replay"] = "isitright-replay"
-    version: Literal["0.4"] = "0.4"
+    version: Literal["0.4", "0.5"] = "0.5"
     pack: str
     case_id: str
     world: dict[str, Any]

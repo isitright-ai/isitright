@@ -52,6 +52,18 @@ NAME, ZIP = "Maria Lopez", "10027"
 
 # --- the entity schema, from the service's state shape --------------------------------------------
 
+ITEMS_SHAPE = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "sku": {"type": "string"},
+            "qty": {"type": "integer", "minimum": 1},
+            "price": {"type": "number", "minimum": 0},
+        },
+    },
+}
+
 SCHEMA = EntitySchema(
     collections=[
         CollectionSpec(
@@ -84,7 +96,8 @@ SCHEMA = EntitySchema(
                 FieldSpec(name="status", enum=list(service.STATUSES)),
                 FieldSpec(name="created_at", type="datetime"),
                 FieldSpec(name="total", type="float"),
-                FieldSpec(name="items", type="json"),
+                # The shape is what get_order shows for `items` in the baseline trace.
+                FieldSpec(name="items", type="json", shape=ITEMS_SHAPE),
             ],
             references=[RefSpec(field="customer_id", to="customers")],
         ),
@@ -366,6 +379,21 @@ TASK_HINTS = [
         kind="scope",  # policy 4: "Act only on the customer you identified"
         provenance=Provenance.DECLARED,
         args={"collection": "orders", "where": "customer_id in $lookup.id"},
+    ),
+    Hint(
+        # get_order shows each order's `items` with a quantity and a price per item. The policy says
+        # to refund "in full" what was paid, so the item amounts are what a careless agent could
+        # refund instead. The leaf paths and the shape are read off the baseline get_order result.
+        kind="json_path",
+        name="item_price",
+        provenance=Provenance.HARVESTED_TRACE,
+        args={"path": "orders.items[*].price", "same_as": ["total"]},
+    ),
+    Hint(
+        kind="json_path",
+        name="item_qty",
+        provenance=Provenance.HARVESTED_TRACE,
+        args={"path": "orders.items[*].qty"},
     ),
     Hint(
         kind="threshold",  # list_orders: `page_size` defaults to 10 in the tool schema

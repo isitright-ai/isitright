@@ -138,8 +138,9 @@ def search(
     rng = random.Random(seed)
     result = SearchResult(seed=seed, budget=budget)
     result.hints_used = [h.name for h in hints]
+    result.notes.extend(f"unsupported for generation: {t}" for t in spec.unsupported_patterns())
     seen = set() if include_base else {base.fingerprint()}
-    check = validate or (lambda w: spec.validate(w.state))
+    check = validate or (lambda w: spec.validate_world(w.state, w.path))
     order = {m.family: i for i, m in enumerate(mutators)}
     produced: set[str] = set()
     parents: list[Candidate] = []

@@ -132,7 +132,8 @@ isitright sql export artifacts/postgres-example/case_report.json --output evals/
 from isitright import check
 
 report = check(
-    engine="sqlite", database="example.sqlite",
+    engine="sqlite",
+    database="example.sqlite",
     reference_sql="SELECT SUM(owed - collected) FROM debts",
     candidate_sql="SELECT SUM(owed) - SUM(collected) FROM debts",
 )
@@ -159,18 +160,25 @@ reporting for free:
 ```python
 from isitright.core.mutations import Mutation, SetField
 
+
 class RoundTotals:
     family = "round_totals"
     target = "state"
-    consumes = frozenset({"column"})          # the hint kinds this family reads
+    consumes = frozenset({"column"})  # the hint kinds this family reads
 
     def propose(self, spec, world, hints):
         for entity in world.state.entities("orders"):
             yield Mutation(
                 family=self.family,
                 description=f"orders[{entity['id']!r}].total rounded",
-                edits=[SetField(collection="orders", key=entity["id"], path=["total"],
-                                value=round(entity["total"]))],
+                edits=[
+                    SetField(
+                        collection="orders",
+                        key=entity["id"],
+                        path=["total"],
+                        value=round(entity["total"]),
+                    )
+                ],
                 touches=["orders.total"],
             )
 ```

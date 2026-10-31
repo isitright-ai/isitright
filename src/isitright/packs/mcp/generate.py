@@ -34,6 +34,7 @@ class GeneratedWorld:
     depth: int
     reference: Reference
     problems: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     @property
     def families(self) -> list[str]:
@@ -91,6 +92,7 @@ def annotate(
         group,
         depth,
         reference,
+        notes=list(validity.notes),
     )
 
 

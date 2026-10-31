@@ -23,7 +23,9 @@ from typing import Any
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
-DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant. Use the provided tools to complete the user's request."
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Use the provided tools to complete the user's request."
+)
 
 
 def read_utf8(path: str) -> str:
@@ -52,7 +54,8 @@ async def list_all_tools(client: Client) -> list[Any]:
 def tool_result_text(result: Any) -> str:
     """Preserve text blocks and serialize all other returned content."""
     parts = [
-        block.text if block.type == "text"
+        block.text
+        if block.type == "text"
         else json.dumps(block.model_dump(exclude_none=True), ensure_ascii=False)
         for block in result.content
     ]
@@ -62,17 +65,18 @@ def tool_result_text(result: Any) -> str:
     return "\n".join(parts)
 
 
-async def run_tool_calls(
-    client: Client, calls: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+async def run_tool_calls(client: Client, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Call each requested MCP tool in order; preserve errors and responses."""
     results = []
     for call in calls:
         outcome = await client.call_tool(call["name"], call["arguments"])
-        results.append({
-            "id": call["id"], "text": tool_result_text(outcome),
-            "is_error": bool(outcome.is_error),
-        })
+        results.append(
+            {
+                "id": call["id"],
+                "text": tool_result_text(outcome),
+                "is_error": bool(outcome.is_error),
+            }
+        )
     return results
 
 
@@ -81,9 +85,7 @@ async def run_anthropic(client: Client, tools: list[Any], record: dict[str, Any]
     import anthropic
 
     sdk = anthropic.Anthropic()
-    messages: list[dict[str, Any]] = [
-        {"role": "user", "content": record["messages"][0]["text"]}
-    ]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": record["messages"][0]["text"]}]
     definitions = [
         {"name": t.name, "description": t.description, "input_schema": t.input_schema}
         for t in tools
@@ -91,41 +93,54 @@ async def run_anthropic(client: Client, tools: list[Any], record: dict[str, Any]
     settings = record["settings"]
     for _ in range(settings["max_turns"]):
         params: dict[str, Any] = {
-            "model": record["model"], "system": record["system_prompt"],
-            "messages": messages, "max_tokens": settings["max_output_tokens"],
+            "model": record["model"],
+            "system": record["system_prompt"],
+            "messages": messages,
+            "max_tokens": settings["max_output_tokens"],
         }
         if definitions:
             params["tools"] = definitions
         if settings["temperature"] is not None:
             params["temperature"] = settings["temperature"]
         response = sdk.messages.create(**params)
-        record["usage"].append({
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-        })
+        record["usage"].append(
+            {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+            }
+        )
         calls = [
             {"id": b.id, "name": b.name, "arguments": b.input}
-            for b in response.content if b.type == "tool_use"
+            for b in response.content
+            if b.type == "tool_use"
         ]
         answer = "".join(b.text for b in response.content if b.type == "text")
         record["messages"].append({"role": "assistant", "text": answer, "tool_calls": calls})
         if not calls:
             record["stop_reason"], record["final_text"] = "final", answer
             return
-        messages.append({
-            "role": "assistant",
-            "content": [b.model_dump(exclude_none=True) for b in response.content],
-        })
+        messages.append(
+            {
+                "role": "assistant",
+                "content": [b.model_dump(exclude_none=True) for b in response.content],
+            }
+        )
         results = await run_tool_calls(client, calls)
         record["messages"].append({"role": "tool", "results": results})
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "tool_result", "tool_use_id": r["id"],
-                 "content": r["text"], "is_error": r["is_error"]}
-                for r in results
-            ],
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": r["id"],
+                        "content": r["text"],
+                        "is_error": r["is_error"],
+                    }
+                    for r in results
+                ],
+            }
+        )
     record["stop_reason"] = "max_turns"
 
 
@@ -139,15 +154,21 @@ async def run_openai(client: Client, tools: list[Any], record: dict[str, Any]) -
         {"role": "user", "content": record["messages"][0]["text"]},
     ]
     definitions = [
-        {"type": "function", "function": {
-            "name": t.name, "description": t.description, "parameters": t.input_schema,
-        }}
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.input_schema,
+            },
+        }
         for t in tools
     ]
     settings = record["settings"]
     for _ in range(settings["max_turns"]):
         params: dict[str, Any] = {
-            "model": record["model"], "messages": messages,
+            "model": record["model"],
+            "messages": messages,
             "max_completion_tokens": settings["max_output_tokens"],
         }
         if definitions:
@@ -156,15 +177,16 @@ async def run_openai(client: Client, tools: list[Any], record: dict[str, Any]) -
             params["temperature"] = settings["temperature"]
         response = sdk.chat.completions.create(**params)
         usage = response.usage
-        record["usage"].append({
-            "input_tokens": usage.prompt_tokens if usage else 0,
-            "output_tokens": usage.completion_tokens if usage else 0,
-        })
+        record["usage"].append(
+            {
+                "input_tokens": usage.prompt_tokens if usage else 0,
+                "output_tokens": usage.completion_tokens if usage else 0,
+            }
+        )
         message = response.choices[0].message
         raw_calls = message.tool_calls or []
         calls = [
-            {"id": c.id, "name": c.function.name,
-             "arguments": json.loads(c.function.arguments)}
+            {"id": c.id, "name": c.function.name, "arguments": json.loads(c.function.arguments)}
             for c in raw_calls
         ]
         answer = message.content or ""
@@ -172,21 +194,33 @@ async def run_openai(client: Client, tools: list[Any], record: dict[str, Any]) -
         if not calls:
             record["stop_reason"], record["final_text"] = "final", answer
             return
-        messages.append({
-            "role": "assistant", "content": message.content,
-            "tool_calls": [
-                {"id": c.id, "type": c.type, "function": {
-                    "name": c.function.name, "arguments": c.function.arguments,
-                }}
-                for c in raw_calls
-            ],
-        })
+        messages.append(
+            {
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [
+                    {
+                        "id": c.id,
+                        "type": c.type,
+                        "function": {
+                            "name": c.function.name,
+                            "arguments": c.function.arguments,
+                        },
+                    }
+                    for c in raw_calls
+                ],
+            }
+        )
         results = await run_tool_calls(client, calls)
         record["messages"].append({"role": "tool", "results": results})
         for result in results:
-            messages.append({
-                "role": "tool", "tool_call_id": result["id"], "content": result["text"],
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": result["id"],
+                    "content": result["text"],
+                }
+            )
     record["stop_reason"] = "max_turns"
 
 
@@ -201,19 +235,24 @@ async def check_mcp() -> None:
 async def run_agent() -> int:
     """Run the model and always attempt to write a transcript."""
     record: dict[str, Any] = {
-        "provider": "", "model": "", "sdk_versions": {}, "system_prompt": "",
+        "provider": "",
+        "model": "",
+        "sdk_versions": {},
+        "system_prompt": "",
         "settings": {"max_turns": 20, "max_output_tokens": 2048, "temperature": None},
-        "messages": [], "tools": [], "usage": [], "stop_reason": "error",
-        "final_text": "", "error": None,
+        "messages": [],
+        "tools": [],
+        "usage": [],
+        "stop_reason": "error",
+        "final_text": "",
+        "error": None,
     }
     run_dir: Path | None = None
     try:
         run_dir = Path(os.environ["ISITRIGHT_RUN_DIR"])
         record["provider"] = os.environ["AGENT_PROVIDER"]
         record["model"] = os.environ["AGENT_MODEL"]
-        record["sdk_versions"] = {
-            name: version(name) for name in ("mcp", "anthropic", "openai")
-        }
+        record["sdk_versions"] = {name: version(name) for name in ("mcp", "anthropic", "openai")}
         settings = record["settings"]
         settings["max_turns"] = int(os.environ.get("AGENT_MAX_TURNS", "20"))
         settings["max_output_tokens"] = int(os.environ.get("AGENT_MAX_OUTPUT_TOKENS", "2048"))
@@ -223,9 +262,12 @@ async def run_agent() -> int:
         record["system_prompt"] = (
             read_utf8(prompt_file) if prompt_file is not None else DEFAULT_SYSTEM_PROMPT
         )
-        record["messages"].append({
-            "role": "user", "text": read_utf8(os.environ["ISITRIGHT_TASK_FILE"]),
-        })
+        record["messages"].append(
+            {
+                "role": "user",
+                "text": read_utf8(os.environ["ISITRIGHT_TASK_FILE"]),
+            }
+        )
         async with Client(server_params(), mode="legacy") as client:
             tools = await list_all_tools(client)
             record["tools"] = [

@@ -45,6 +45,8 @@ def test_the_hints_come_with_provenance_and_resolve_in_the_entity_model(shop: Mc
         "ordering": "declared",
         "gate": "declared",
         "scope": "declared",
+        "item_price": "harvested:trace",
+        "item_qty": "harvested:trace",
         "page_size": "harvested:schema",
         "trace": "harvested:trace",
     }
@@ -79,7 +81,13 @@ def test_generated_worlds_are_valid_and_carry_the_hints_that_led_to_them(
     assert len(level_one) > 80
     for world in level_one:
         assert shop.spec.validate(world.world.state).status is ValidityStatus.VALID
-        assert "STRUCTURAL" in world.tiers and "DOMAIN_VALIDATED" in world.tiers
+        assert "STRUCTURAL" in world.tiers
+        # A JSON edit has no rule over the content in the shop, so it is STRUCTURAL only and says
+        # so; every other generated world keeps the tier (was: every world had both tiers).
+        if "json_edit" in world.families:
+            assert "DOMAIN_VALIDATED" not in world.tiers and world.notes
+        else:
+            assert "DOMAIN_VALIDATED" in world.tiers
     hinted = [w for w in level_one if w.group == "hinted"]
     assert hinted and all(m.hints for w in hinted for m in w.world.path[:1])
     # Collection sizes at the schema's page size, a status next to the gate, ties on the ordering.
@@ -346,3 +354,26 @@ def test_a_money_budget_is_refused_when_the_agent_reports_no_cost(tmp_path: Path
             trust_code=True,
             timeout_seconds=60,
         )
+
+
+def test_the_json_family_generates_a_world_whose_item_subtotal_differs_from_the_amount_paid(
+    shop: McpScenario, level_one: list[GeneratedWorld]
+) -> None:
+    """The scope (items[*].price and qty) comes from the scenario's declaration; the family names
+    nothing of the shop. Without a rule over the items, such a world is STRUCTURAL only."""
+    edits = [w for w in level_one if w.families == ["json_edit"]]
+    assert edits and all(w.role is Role.CONTROL for w in edits)
+    differing = []
+    for w in edits:
+        order = w.world.state.get(("orders", "o3"))
+        assert order is not None
+        items = order["items"]
+        if (
+            all(isinstance(i.get("price"), int | float) and "qty" in i for i in items)
+            and sum(i["price"] * i["qty"] for i in items) != order["total"]
+        ):
+            differing.append(w)
+    assert differing
+    for w in differing:
+        assert "DOMAIN_VALIDATED" not in w.tiers and "STRUCTURAL" in w.tiers
+        assert any("no declared rule over its content" in note for note in w.notes)
