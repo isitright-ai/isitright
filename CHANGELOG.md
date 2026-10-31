@@ -3,7 +3,7 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
-## 0.5.0.dev0 (unreleased) - Evidence at scale
+## 0.5.0 - Evidence at scale
 
 0.5 makes live-agent audits affordable and their evidence defensible: it chooses which worlds to
 run, stops on rules instead of counts, tests sequentially, minimizes through noise, verifies
@@ -37,6 +37,9 @@ emulated SQL findings natively, and closes the 0.4 gaps.
   host with final-state export); an example scenario over the Memory reference server.
 - Examples: an airline scenario that serves tau2's own tools on generated worlds with a policy-based oracle (`examples/agents/airline`); the OpenAI Agents SDK adapter behind a narrow interface (`examples/agents/tau2_openai`),
   the tau2 airline entity model and hints (`examples/agents/airline`), a hint proposer adapter.
+- `agents run` prints progress on stderr: one marker per agent run (`.` as expected, `V` invariant
+  violated, `N` expected behavior not met, `?` not judged, `E` run did not complete), a line per
+  world, and a summary with the run count and elapsed time.
 - Report schema `0.5` (`schemas/report-0.5.schema.json`); 0.4 reports still load.
 
 ### Changed (breaking)
@@ -52,7 +55,7 @@ emulated SQL findings natively, and closes the 0.4 gaps.
 - A generated world whose JSON field was edited without a rule over its content has the
   `STRUCTURAL` tier only.
 
-## 0.4.0.dev0 (unreleased) - A core for auditing agent evals
+## 0.4.0 - A core for auditing agent evals
 
 0.4 replaces the internals of 0.1 and 0.2 with a core that both packs sit on, and adds the MCP
 agent pack. Earlier releases (0.1.x, 0.2.0) are on PyPI; the breaking changes below are relative to
