@@ -17,7 +17,7 @@ def test_package_metadata_and_runtime_contract() -> None:
     assert "/src" in sdist_includes
     assert "/tests" in sdist_includes
     assert all(not item.startswith("/.release-") for item in sdist_includes)
-    assert isitright.__version__ == "0.4.0.dev0"
+    assert isitright.__version__ == "0.4.0"
     assert any(item.startswith("hypothesis") for item in project["dependencies"])
     extras = project["optional-dependencies"]
     assert not any(

@@ -3,7 +3,7 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
-## 0.4.0.dev0 (unreleased) - A core for auditing agent evals
+## 0.4.0 - A core for auditing agent evals
 
 0.4 replaces the internals of 0.1 and 0.2 with a core that both packs sit on, and adds the MCP
 agent pack. Earlier releases (0.1.x, 0.2.0) are on PyPI; the breaking changes below are relative to
