@@ -22,13 +22,12 @@ import os
 import shutil
 from typing import Any
 
-from isitright.packs.mcp.external import ExternalServer, JsonLinesFile
-
 from isitright.core.entities import CollectionSpec, EntitySchema, FieldSpec, RefSpec
 from isitright.core.hints import Hint, Hints
 from isitright.core.hosts import Fidelity
 from isitright.core.spec import ToolSpec, WorldSpec
 from isitright.core.world import State
+from isitright.packs.mcp.external import ExternalServer, JsonLinesFile
 from isitright.packs.mcp.model import Invariant, Layout, McpScenario, ScenarioOracle, ToolDef
 
 NAME = "Alice Chen"

@@ -11,13 +11,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from isitright.packs.mcp.external import ExternalServer, SqliteFile
-
 from isitright.core.entities import CollectionSpec, EntitySchema, FieldSpec
 from isitright.core.hints import Hint, Hints
 from isitright.core.hosts import Fidelity
 from isitright.core.spec import ToolSpec, WorldSpec
 from isitright.core.world import State
+from isitright.packs.mcp.external import ExternalServer, SqliteFile
 from isitright.packs.mcp.model import Invariant, Layout, McpScenario, ScenarioOracle, ToolDef
 
 HERE = Path(__file__).parent

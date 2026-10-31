@@ -208,14 +208,14 @@ class StopState:
         """Why this world is not run, or None to run it."""
         if self.run_stopped:
             return self.run_stopped
-        s = self.strata[stratum_of(world)]
+        s = self.strata.setdefault(stratum_of(world), _Stratum())
         if s.stopped:
             return self._stratum_reason(stratum_of(world), s)
         return None
 
     def record(self, world: GeneratedWorld, found: bool) -> None:
         key = stratum_of(world)
-        s = self.strata[key]
+        s = self.strata.setdefault(key, _Stratum())  # a named world outside the universe
         s.run += 1
         if found:
             s.findings += 1
@@ -252,7 +252,7 @@ class StopState:
         for (family, target, role), s in sorted(self.strata.items()):
             if s.run == 0 and not s.stopped and s.total == 0:
                 continue
-            not_run = s.total - s.run
+            not_run = max(0, s.total - s.run)
             reason: str | None = None
             if s.stopped:
                 reason = f"stratum rule: {self.rules.stratum_patience} worlds without a finding"

@@ -363,6 +363,13 @@ def run_scenario(
     harness = harness_identity(argv)
     started = time.monotonic()
     prepared, accounting = prepare_worlds(scenario, worlds, attempts=attempts, seed=seed, only=only)
+    if only is not None:
+        unknown = sorted(set(only) - {rw.id for rw in prepared})
+        if unknown:
+            raise AgentsInputError(
+                f"no such world: {', '.join(unknown)} (ids come from the generation, so they "
+                "depend on --seed and the attempt budget)"
+            )
     results: list[WorldResult] = []
     not_run: list[NotRun] = []
     extra: list[WorldResult] = []
@@ -399,14 +406,15 @@ def run_scenario(
     ranks = {rw.id: i + 1 for i, rw in enumerate(ranked)}
     stop = StopState(rules, [rw.generated for rw in ranked if rw.generated is not None])
     if only is not None:
+        # A world named by id is always run, even one screening or the oracle would leave out.
         keep = set(only)
         fixed = [rw for rw in fixed if rw.id in keep]
-        to_run = [rw for rw in to_run if rw.id in keep]
+        to_run = [rw for rw in generated if rw.id in keep]
 
     def skip(rw: RunWorld, reason: str) -> None:
         not_run.append(NotRun(rw, reason, screens.get(rw.id), ranks.get(rw.id)))
 
-    considered = {rw.id for rw in ranked} | {rw.id for rw in fixed}
+    considered = {rw.id for rw in ranked} | {rw.id for rw in fixed} | {rw.id for rw in to_run}
     for rw in prepared:
         if rw.baseline or rw.id in considered or (only is not None and rw.id not in only):
             continue

@@ -510,3 +510,36 @@ def test_the_report_shows_which_hints_are_proposed_and_the_worlds_they_led_to(
     assert guessed.provenance == "proposed" and guessed.world_count > 0 and guessed.worlds
     assert uses["gate"].provenance == "declared"
     assert uses["trace"].provenance == "harvested:trace"
+
+
+def test_a_world_id_that_the_generation_did_not_produce_is_an_input_error(tmp_path: Path) -> None:
+    from isitright.packs.mcp.runner import AgentsInputError
+
+    with pytest.raises(AgentsInputError, match="no such world: g9999_nothing"):
+        run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+            output_dir=tmp_path / "out",
+            attempts=50,
+            only=["g9999_nothing"],
+            trust_code=True,
+        )
+
+
+def test_a_named_world_is_run_even_when_it_is_unobservable_or_unjudgeable(tmp_path: Path) -> None:
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=3000)  # the generation the run repeats
+    hidden = next(w for w in found if not w.observable)
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+        output_dir=tmp_path / "out",
+        attempts=3000,
+        k=1,
+        sequential=False,
+        only=[hidden.id],
+        trust_code=True,
+        timeout_seconds=60,
+    )
+    record = next(w for w in report.cases[0].worlds if w.id == hidden.id)
+    assert record.run_status == "RUN" and record.validity.unobservable and record.counts["n"] == 1
