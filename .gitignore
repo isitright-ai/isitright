@@ -8,7 +8,6 @@ __pycache__/
 .venv/
 .tools/
 .test-tmp/
-.github/
 build/
 dist/
 htmlcov/
