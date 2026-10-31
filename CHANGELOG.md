@@ -35,7 +35,7 @@ emulated SQL findings natively, and closes the 0.4 gaps.
 - **External servers**: a third-party MCP server whose state lives in a JSON-lines file or a
   SQLite database can be the service (`ExternalServer`, `JsonLinesFile`, `SqliteFile`, a proxy
   host with final-state export); an example scenario over the Memory reference server.
-- Examples: the OpenAI Agents SDK adapter behind a narrow interface (`examples/agents/tau2_openai`),
+- Examples: an airline scenario that serves tau2's own tools on generated worlds with a policy-based oracle (`examples/agents/airline`); the OpenAI Agents SDK adapter behind a narrow interface (`examples/agents/tau2_openai`),
   the tau2 airline entity model and hints (`examples/agents/airline`), a hint proposer adapter.
 - Report schema `0.5` (`schemas/report-0.5.schema.json`); 0.4 reports still load.
 

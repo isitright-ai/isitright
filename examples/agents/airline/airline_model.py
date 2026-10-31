@@ -15,6 +15,7 @@ No agent runs here: this only builds a world spec and hints, so the core can gen
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -48,6 +49,13 @@ SCHEMA = EntitySchema(
                 FieldSpec(name="created_at", type="datetime"),
                 FieldSpec(name="insurance", enum=["yes", "no"]),
                 FieldSpec(name="status", optional=True, nullable=True),
+                FieldSpec(name="origin"),
+                FieldSpec(name="destination"),
+                FieldSpec(name="flight_type"),
+                FieldSpec(name="passengers", type="json"),
+                FieldSpec(name="payment_history", type="json"),
+                FieldSpec(name="total_baggages", type="int"),
+                FieldSpec(name="nonfree_baggages", type="int"),
                 FieldSpec(
                     name="flights",
                     type="json",
@@ -115,18 +123,7 @@ def base_state(task_id: str) -> State:
     return State(
         {
             "users": ({"user_id": user_id},),
-            "reservations": tuple(
-                {
-                    "reservation_id": r["reservation_id"],
-                    "user_id": r["user_id"],
-                    "cabin": r["cabin"],
-                    "created_at": r["created_at"],
-                    "insurance": r["insurance"],
-                    "flights": r["flights"],
-                    **({"status": r["status"]} if r.get("status") else {}),
-                }
-                for r in reservations
-            ),
+            "reservations": tuple(copy.deepcopy(r) for r in reservations),
             "flight_dates": tuple(dates.values()),
         },
         KEYS,
@@ -197,32 +194,73 @@ def spec() -> WorldSpec:
     return WorldSpec(id="airline", schema=SCHEMA, policy=(DOMAIN / "policy.md").read_text("utf-8"))
 
 
+def slice_db(db: dict[str, Any], user_id: str) -> dict[str, Any]:
+    """The database a scenario serves: every flight, the user and the user's reservations.
+
+    Other users and reservations are left out (the tools never need them for this user's tasks,
+    and a whole database would make every run record seven megabytes of state).
+    """
+    user = db["users"][user_id]
+    return {
+        "flights": db["flights"],
+        "users": {user_id: user},
+        "reservations": {rid: db["reservations"][rid] for rid in user["reservations"]},
+    }
+
+
+def applicable(db: dict[str, Any], state: State) -> list[str]:
+    """Why a state cannot be written into the database, empty when it can.
+
+    A flight date must exist, and its status may change only to ``cancelled`` (the other statuses
+    carry times and seat counts the entity model does not hold).
+    """
+    problems = []
+    users = state.entities("users")
+    if len(users) != 1 or users[0]["user_id"] not in db["users"]:
+        problems.append("the world must have exactly the customer the database serves")
+    for entity in state.entities("flight_dates"):
+        known = db["flights"].get(entity["flight_number"], {}).get("dates", {}).get(entity["date"])
+        if known is None:
+            problems.append(f"flight date {entity['id']} does not exist in the database")
+        elif known["status"] != entity["status"] and entity["status"] != "cancelled":
+            problems.append(f"flight date {entity['id']}: status {entity['status']!r} not writable")
+    return problems
+
+
 def apply_state(db: dict[str, Any], state: State) -> dict[str, Any]:
     """A copy of the tau2 airline database with a generated world's changes written back.
 
-    Only what the entity model holds is written: flight-date statuses, and each reservation's
-    cabin, creation time, insurance, status and flights. A cancelled flight date keeps no other
-    field, as in tau2's own data. The result is what a harness loads into tau2's environment (for
-    example ``FlightDB.model_validate(apply_state(...))``) to run an agent in the world.
+    Written: flight-date statuses (``cancelled`` only, as `applicable` says), and every field of
+    each reservation, including added and removed ones (the user's reservation list follows). The
+    copy shares the untouched parts of ``db`` with it, so it is cheap, and nothing here mutates
+    ``db``. The result is what a harness loads into tau2's environment, for example
+    ``FlightDB.model_validate(apply_state(...))``.
     """
-    import copy
-
-    patched = copy.deepcopy(db)
+    patched = {name: dict(part) for name, part in db.items()}
     for entity in state.entities("flight_dates"):
-        dates = patched["flights"][entity["flight_number"]]["dates"]
+        flight = patched["flights"][entity["flight_number"]]
+        dates = flight["dates"]
         if entity["status"] == "cancelled":
-            dates[entity["date"]] = {"status": "cancelled"}
+            if dates[entity["date"]] != {"status": "cancelled"}:
+                patched["flights"][entity["flight_number"]] = {
+                    **flight,
+                    "dates": {**dates, entity["date"]: {"status": "cancelled"}},
+                }
         elif dates[entity["date"]]["status"] != entity["status"]:
             raise ValueError(
                 f"flight date {entity['id']}: changing a status to {entity['status']!r} needs the "
                 "fields of that status, which the entity model does not hold"
             )
+    scoped = {e["user_id"] for e in state.entities("users")}
+    kept = {e["reservation_id"] for e in state.entities("reservations")}
+    for rid in [r for r, v in patched["reservations"].items() if v["user_id"] in scoped]:
+        if rid not in kept:
+            del patched["reservations"][rid]
     for entity in state.entities("reservations"):
-        target = patched["reservations"][entity["reservation_id"]]
-        for name in ("cabin", "created_at", "insurance", "flights"):
-            target[name] = copy.deepcopy(entity[name])
-        if entity.get("status"):
-            target["status"] = entity["status"]
-        else:
-            target.pop("status", None)
+        patched["reservations"][entity["reservation_id"]] = copy.deepcopy(entity)
+    for uid in scoped:
+        patched["users"][uid] = {
+            **patched["users"][uid],
+            "reservations": [r for r, v in patched["reservations"].items() if v["user_id"] == uid],
+        }
     return patched
