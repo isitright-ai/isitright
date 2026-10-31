@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 from openai_agents_adapter import OpenAIAgentsAdapter
-from sdk import OneShotUser, UserSimulator, converse, write_transcript
+from sdk import OneShotUser, UserSimulator, converse, write_conversation, write_transcript
 
 
 def prices() -> dict[str, tuple[float, float]]:
@@ -67,6 +67,7 @@ def main() -> None:
         versions = {"openai-agents": metadata.version("openai-agents")}
     except Exception:  # the version is a note, not a requirement
         pass
+    write_conversation(run_dir, conversation)
     write_transcript(
         run_dir,
         provider="openai",

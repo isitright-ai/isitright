@@ -94,6 +94,22 @@ def converse(
     return conversation
 
 
+def write_conversation(run_dir: Path, conversation: Conversation) -> None:
+    """``conversation.json``: what was said and which tools the agent called after each message.
+
+    The runner does not read it. It is there so a reviewer can see why a run went the way it did
+    (for example whether the simulated customer gave a reason the oracle did not assume).
+    """
+    rows = [
+        {"user": user, "agent": turn.text, "tool_calls": list(turn.tool_calls)}
+        for user, turn in zip(conversation.user_messages, conversation.turns, strict=False)
+    ]
+    (run_dir / "conversation.json").write_text(
+        json.dumps({"stop_reason": conversation.stop_reason, "turns": rows}, indent=1),
+        encoding="utf-8",
+    )
+
+
 def write_transcript(
     run_dir: Path,
     *,
