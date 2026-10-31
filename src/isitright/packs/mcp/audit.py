@@ -11,6 +11,7 @@ import copy
 import importlib.util
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -24,26 +25,34 @@ from isitright.core.evidence import (
     EvalCase,
     FidelityRecord,
     Finding,
+    HintUse,
     MutationRecord,
     OracleRecord,
+    ScreeningRecord,
+    ScreeningSummary,
     SearchRecord,
     ValidityRecord,
     WorldRecord,
     safe_detail,
     totals_of,
 )
+from isitright.core.minimize import NoisyMinimization, minimize_path_noisy
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome, Role, controls_status
+from isitright.core.sequential import Decision, PairedSprt, RateSprtConfig, SprtConfig
 from isitright.core.stochastic import (
     DEFAULT_K,
     Budget,
     RunOutcome,
+    Stability,
     count,
+    is_bad,
     run_repeated,
     stability,
+    stability_sequential,
 )
 from isitright.core.world import diff_states, sha256_text
-from isitright.packs.mcp.generate import GeneratedWorld, generate_worlds, select_worlds
+from isitright.packs.mcp.generate import GeneratedWorld, generate_worlds
 from isitright.packs.mcp.model import (
     WORLD_CHANGE,
     FixedWorld,
@@ -59,9 +68,20 @@ from isitright.packs.mcp.runner import (
     AgentsInputError,
     collect,
     harness_identity,
+    read_trace,
     run_agent,
     split_command,
     write_mcp_config,
+)
+from isitright.packs.mcp.screening import (
+    Ranking,
+    Screened,
+    ScreeningClass,
+    StoppingRules,
+    StopState,
+    eligible,
+    rank,
+    screen_all,
 )
 from isitright.packs.mcp.serve import world_of
 
@@ -71,6 +91,11 @@ __all__ = ["AgentsInputError", "RunWorld", "prepare_worlds", "run_scenario", "wr
 
 DEFAULT_MAX_WORLDS = 50
 """A safety rail on generated worlds, not a recommendation: set a money, run or time budget."""
+DEFAULT_MAX_TRIALS = 16
+"""The most paired runs the sequential test may use on one world."""
+NOT_RUN_RECORDS = 300
+HINT_WORLDS_LISTED = 20
+"""Not-run worlds listed one by one in the report; the rest are counted by reason."""
 
 
 @dataclass
@@ -102,10 +127,13 @@ def prepare_worlds(
     *,
     attempts: int,
     seed: int,
-    max_worlds: int | None,
     only: list[str] | None = None,
 ) -> tuple[list[RunWorld], dict[str, Any]]:
-    """The baseline, then hand-written and/or generated worlds, each with its reference."""
+    """The baseline, then hand-written and/or generated worlds, each with its reference.
+
+    Every valid generated world is returned; which ones run, and in what order, is decided later
+    by screening and the stopping rules.
+    """
     base = World(scenario.base)
     base_reference = reference_outcome(scenario, base)
     worlds = [
@@ -144,9 +172,7 @@ def prepare_worlds(
     if source in ("generated", "all"):
         generated, result = generate_worlds(scenario, attempts=attempts, seed=seed)
         accounting = result.accounting()
-        if only is None:
-            generated, selection = select_worlds(generated, max_worlds)
-            accounting["selection"] = selection
+        accounting["generated_total"] = len(generated)
         for g in generated:
             tiers = g.tiers
             worlds.append(
@@ -178,6 +204,18 @@ class WorldResult:
     example: AgentRun | None = None
     violations: list[tuple[str, str]] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
+    sequential: PairedSprt | None = None
+    minimization: NoisyMinimization | None = None
+
+
+@dataclass
+class NotRun:
+    """A world the run did not reach. It is reported as not run, never as passing."""
+
+    world: RunWorld
+    reason: str
+    screened: Screened | None = None
+    rank: int | None = None
 
 
 def _record_run(
@@ -278,15 +316,30 @@ def run_scenario(
     max_worlds: int | None = DEFAULT_MAX_WORLDS,
     only: list[str] | None = None,
     budget: Budget | None = None,
+    ranking: Ranking = "diverse",
+    rules: StoppingRules | None = None,
+    sequential: bool = True,
+    sprt: SprtConfig | None = None,
+    max_trials: int = DEFAULT_MAX_TRIALS,
+    minimize: bool = False,
+    minimize_max_runs: int = 200,
 ) -> AuditReport:
-    """Run ``agent_command`` on the baseline and on every valid world, ``k`` times each."""
+    """Run ``agent_command`` on the baseline, then on the generated worlds in ranked order.
+
+    The baseline runs first. Its recorded trace screens every candidate world without the agent
+    (`isitright.packs.mcp.screening`), which orders the live runs. Each world is run in pairs with
+    the baseline until a sequential test decides or the run cap ``max_trials`` is reached; a stratum
+    stops after ``rules.stratum_patience`` worlds without a finding, and the run after
+    ``rules.run_patience`` consecutive worlds that add nothing. Worlds not reached are reported as
+    not run, with the reason.
+    """
     if not trust_code:
         raise AgentsInputError("running a scenario executes its code; pass trust_code=True")
     if importlib.util.find_spec("mcp") is None:
         raise AgentsInputError("the MCP SDK is not installed; run: pip install 'isitright[mcp]'")
     k = trials if trials is not None else k
-    if k < 1 or timeout_seconds <= 0:
-        raise AgentsInputError("trials must be at least 1 and the timeout positive")
+    if k < 1 or timeout_seconds <= 0 or max_trials < 1:
+        raise AgentsInputError("trials and max_trials must be at least 1 and the timeout positive")
     if output_dir.exists():
         raise AgentsInputError("output directory already exists; choose a new directory")
     reference_text = absolute_reference(scenario_ref)
@@ -296,36 +349,91 @@ def run_scenario(
         raise AgentsInputError(str(error)) from error
     argv = split_command(agent_command)
     budget = budget or Budget()
+    rules = rules or StoppingRules()
+    config = sprt or SprtConfig(min_pairs=k, max_pairs=max(k, max_trials))
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True)
     harness = harness_identity(argv)
     started = time.monotonic()
-    prepared, accounting = prepare_worlds(
-        scenario, worlds, attempts=attempts, seed=seed, max_worlds=max_worlds, only=only
-    )
+    prepared, accounting = prepare_worlds(scenario, worlds, attempts=attempts, seed=seed, only=only)
     results: list[WorldResult] = []
+    not_run: list[NotRun] = []
+    extra: list[WorldResult] = []
+    baseline_rw = prepared[0]
+    base = WorldResult(baseline_rw)
+    results.append(base)
     anything_to_audit = any(rw.runnable and not rw.baseline for rw in prepared)
-    for rw in prepared:
-        result = WorldResult(rw)
-        results.append(result)
-        if not rw.runnable or not anything_to_audit:
-            continue
 
-        def run_once(trial: int, rw: RunWorld = rw, result: WorldResult = result) -> RunOutcome:
-            return _record_run(
+    def run_trial(rw: RunWorld, result: WorldResult, trial: int) -> RunOutcome:
+        return _record_run(
+            scenario,
+            rw,
+            trial + 1,
+            argv,
+            reference_text,
+            output_dir,
+            timeout_seconds,
+            harness,
+            result,
+            budget.money is not None,
+        )
+
+    if anything_to_audit:
+        base.outcomes = run_repeated(lambda t: run_trial(baseline_rw, base, t), k, budget)
+    generated = [rw for rw in prepared if rw.generated is not None]
+    fixed = [rw for rw in prepared if rw.fixed is not None]
+    trace_dir, trace = _baseline_trace(base, output_dir)
+    gen_worlds = [rw.generated for rw in generated if rw.generated is not None]
+    screens = screen_all(scenario, gen_worlds, trace)
+    by_id = {rw.id: rw for rw in generated}
+    ranked = [by_id[w.id] for w in rank(gen_worlds, screens, mode=ranking, seed=seed)]
+    rail = max_worlds if only is None else None
+    to_run = ranked if rail is None else ranked[:rail]
+    ranks = {rw.id: i + 1 for i, rw in enumerate(ranked)}
+    stop = StopState(rules, [rw.generated for rw in ranked if rw.generated is not None])
+    if only is not None:
+        keep = set(only)
+        fixed = [rw for rw in fixed if rw.id in keep]
+        to_run = [rw for rw in to_run if rw.id in keep]
+
+    def skip(rw: RunWorld, reason: str) -> None:
+        not_run.append(NotRun(rw, reason, screens.get(rw.id), ranks.get(rw.id)))
+
+    considered = {rw.id for rw in ranked} | {rw.id for rw in fixed}
+    for rw in prepared:
+        if rw.baseline or rw.id in considered or (only is not None and rw.id not in only):
+            continue
+        skip(rw, _ineligible_reason(rw))
+    for rw in [*fixed, *to_run]:
+        result = WorldResult(rw)
+        if not rw.runnable or not anything_to_audit:
+            results.append(result)
+            continue
+        reason = stop.skip_reason(rw.generated) if rw.generated is not None else None
+        if reason is None and not budget.can_run():
+            reason = f"{budget.exhausted} budget exhausted"
+            stop.record_budget(budget.exhausted)
+        if reason is not None:
+            skip(rw, reason)
+            continue
+        results.append(result)
+        _run_world(rw, result, base, run_trial, budget, config, k, sequential)
+        found = any(is_bad(o) for o in result.outcomes)
+        if rw.generated is not None:
+            stop.record(rw.generated, found)
+        if minimize and found and rw.generated is not None and len(rw.world.path) > 1:
+            result.minimization = _minimize_world(
                 scenario,
                 rw,
-                trial + 1,
-                argv,
-                reference_text,
-                output_dir,
-                timeout_seconds,
-                harness,
-                result,
-                budget.money is not None,
+                base,
+                run_trial,
+                budget,
+                extra,
+                min(minimize_max_runs, _runs_left(budget)),
             )
-
-        result.outcomes = run_repeated(run_once, k, budget)
+    if rail is not None:
+        for rw in ranked[len(to_run) :]:
+            skip(rw, f"safety rail: --max-worlds {rail} reached")
     report = build_report(
         scenario,
         reference_text,
@@ -335,9 +443,129 @@ def run_scenario(
         accounting,
         budget,
         round(time.monotonic() - started, 3),
+        context=ReportContext(
+            not_run=not_run,
+            screens=screens,
+            ranking=ranking,
+            ranks=ranks,
+            stop=stop,
+            trace_dir=trace_dir,
+            generated=generated,
+            sprt=config if sequential else None,
+            seed=seed,
+            extra_runs=[run for e in extra for run in e.runs],
+        ),
     )
     write_report(report, output_dir)
     return report
+
+
+def _runs_left(budget: Budget) -> int:
+    return budget.runs - budget.spent_runs if budget.runs is not None else 10**9
+
+
+def _minimize_world(
+    scenario: McpScenario,
+    rw: RunWorld,
+    base: WorldResult,
+    run_trial: Callable[[RunWorld, WorldResult, int], RunOutcome],
+    budget: Budget,
+    extra: list[WorldResult],
+    max_runs: int,
+) -> NoisyMinimization:
+    """Minimize the mutation path of a world that failed, judging each subset by repeated runs."""
+    baseline_bad = sum(is_bad(o) for o in base.outcomes)
+    n = max(len(base.outcomes), 1)
+    reference = min(0.5, max(0.05, baseline_bad / n))
+    config = RateSprtConfig(reference=reference, effect=min(0.95, reference + 0.45))
+    results: dict[str, tuple[RunWorld, WorldResult]] = {}
+
+    def run(world: World) -> bool:
+        label = "+".join(str(i) for i, m in enumerate(rw.world.path) if m in world.path)
+        sub_id = f"{rw.id}.min_{label or 'none'}"
+        if sub_id not in results:
+            results[sub_id] = (
+                RunWorld(
+                    sub_id,
+                    world,
+                    "minimization step: "
+                    + ("; ".join(m.description for m in world.path) or "none"),
+                    reference_outcome(scenario, world),
+                    ValidityRecord(status="NOT_ASSESSED"),
+                ),
+                WorldResult(rw),
+            )
+            extra.append(results[sub_id][1])
+        step, step_result = results[sub_id]
+        outcome = run_trial(step, step_result, len(step_result.outcomes))
+        budget.record_run(outcome.cost)
+        step_result.outcomes.append(outcome)
+        return is_bad(outcome)
+
+    result = minimize_path_noisy(
+        World(scenario.base), list(rw.world.path), run, config=config, max_runs=max_runs
+    )
+    return result
+
+
+def _ineligible_reason(rw: RunWorld) -> str:
+    g = rw.generated
+    if g is None:
+        return "not selected"
+    if g.role is Role.UNJUDGEABLE:
+        return f"the oracle cannot judge this world: {g.role_basis}"
+    if not g.observable:
+        return "the change is unobservable to the agent (a tool-contract finding, not an agent one)"
+    return "not selected"
+
+
+def _baseline_trace(
+    base: WorldResult, output_dir: Path
+) -> tuple[str | None, list[dict[str, Any]] | None]:
+    """The first completed baseline run's recorded calls, or None when there is none to replay."""
+    for run in base.runs:
+        if run["run_status"] != "COMPLETED":
+            continue
+        directory = output_dir / run["run_dir"]
+        if (directory / "state_before.json").is_file():
+            return run["run_dir"], [dict(e) for e in read_trace(directory / "trace.jsonl")]
+    return None, None
+
+
+def _run_world(
+    rw: RunWorld,
+    result: WorldResult,
+    base: WorldResult,
+    run_trial: Callable[[RunWorld, WorldResult, int], RunOutcome],
+    budget: Budget,
+    config: SprtConfig,
+    k: int,
+    sequential: bool,
+) -> None:
+    """Run one world: k runs, or paired runs with the baseline until the test decides."""
+    if not sequential or not base.outcomes:
+        result.outcomes = run_repeated(lambda t: run_trial(rw, result, t), k, budget)
+        return
+    test = PairedSprt(config)
+    result.sequential = test
+    for trial in range(config.max_pairs):
+        if not budget.can_run():
+            break
+        outcome = run_trial(rw, result, trial)
+        budget.record_run(outcome.cost)
+        result.outcomes.append(outcome)
+        if trial >= len(base.outcomes):  # the paired baseline run does not exist yet
+            if not budget.can_run():
+                break
+            extra = run_trial(base.world, base, trial)
+            budget.record_run(extra.cost)
+            base.outcomes.append(extra)
+        partner = base.outcomes[trial]
+        if outcome.error or partner.error:
+            break  # a run that did not complete cannot be paired: stop with counts only
+        test.add(is_bad(partner), is_bad(outcome))
+        if test.decision is not Decision.CONTINUE:
+            break
 
 
 def _oracle_records(scenario: McpScenario, example: WorldResult | None) -> list[OracleRecord]:
@@ -361,6 +589,23 @@ def _oracle_records(scenario: McpScenario, example: WorldResult | None) -> list[
     return records
 
 
+@dataclass
+class ReportContext:
+    """What the run decided besides the runs: not-run worlds, screening, ranking, stopping."""
+
+    not_run: list[NotRun] = field(default_factory=list)
+    screens: dict[str, Screened] = field(default_factory=dict)
+    ranking: str = "diverse"
+    ranks: dict[str, int] = field(default_factory=dict)
+    stop: StopState | None = None
+    trace_dir: str | None = None
+    generated: list[RunWorld] = field(default_factory=list)
+    sprt: SprtConfig | None = None
+    seed: int = 0
+    extra_runs: list[dict[str, Any]] = field(default_factory=list)
+    """Runs made to minimize a path: kept for replay, not worlds of the report."""
+
+
 def build_report(
     scenario: McpScenario,
     scenario_ref: str,
@@ -370,7 +615,9 @@ def build_report(
     accounting: dict[str, Any],
     budget: Budget,
     elapsed: float,
+    context: ReportContext | None = None,
 ) -> AuditReport:
+    context = context or ReportContext()
     baseline = next(r for r in results if r.world.baseline)
     baseline_outcomes = baseline.outcomes or None
     runnable = [r for r in results if r.world.runnable and not r.world.baseline]
@@ -396,6 +643,11 @@ def build_report(
                 + (f"; author's label: {rw.fixed.role}" if rw.fixed is not None else ""),
                 counts=counts.model_dump(),
                 mutation_path=_path(rw.world),
+                screening=_screening_record(context, rw.id),
+                run_status="RUN" if outcomes or rw.baseline or not rw.runnable else "NOT_RUN",
+                not_run_reason=None
+                if outcomes or rw.baseline or not rw.runnable
+                else "no run completed",
             )
         )
         if rw.baseline or not outcomes:
@@ -430,9 +682,18 @@ def build_report(
                 world_id=rw.id,
                 validity=rw.validity,
                 oracles=oracles,
-                stability=stability(baseline_outcomes, outcomes, k),
+                stability=(
+                    stability_sequential(baseline_outcomes, outcomes, k, r.sequential)
+                    if r.sequential is not None and baseline_outcomes
+                    else stability(baseline_outcomes, outcomes, k)
+                ),
                 world_diff=diff_states(scenario.base, rw.world.state),
-                mutation_path=_path(rw.world),
+                mutation_path=(
+                    _mutation_records(r.minimization.path)
+                    if r.minimization is not None and r.minimization.minimal
+                    else _path(rw.world)
+                ),
+                minimization=_minimization_record(r.minimization, len(rw.world.path)),
                 divergence={
                     "role": rw.role.value,
                     "example_run_dir": next(
@@ -452,6 +713,7 @@ def build_report(
                 headline=_finding_headline(violated, reached, len(bad), len(outcomes), rw.id),
             )
         )
+    world_records.extend(_not_run_records(context))
     completed = sum(1 for r in results for o in r.outcomes if not o.error)
     status = (
         DivergenceStatus.UNSUPPORTED
@@ -476,12 +738,15 @@ def build_report(
         if tiers_sets
         else ValidityRecord(status="INVALID")
     )
-    runs = [run for r in results for run in r.runs]
+    runs = [run for r in results for run in r.runs] + context.extra_runs
     subjects = {
         json.dumps(run.get("subject"), sort_keys=True) for run in runs if run.get("subject")
     }
-    search_record = _search_record(accounting, budget, len(runs))
-    headline = _headline(status, findings, controls_state, len(runs), len(runnable))
+    selection = _selection(accounting, results, context)
+    search_record = _search_record(accounting, budget, len(runs), context, scenario, selection)
+    headline = _headline(
+        status, findings, controls_state, len(runs), len(runnable), _not_run_count(context)
+    )
     case = CaseReport(
         case_id=scenario.id,
         pack="mcp",
@@ -491,9 +756,7 @@ def build_report(
         validity=validity,
         execution_fidelity=FidelityRecord(found_on=scenario.fidelity.value),
         oracles=_oracle_records(scenario, None),
-        stability=stability(baseline_outcomes, [o for r in runnable for o in r.outcomes], k)
-        if baseline_outcomes
-        else None,
+        stability=_counts_only_stability(baseline_outcomes, runnable, k),
         search=search_record,
         findings=findings,
         worlds=world_records,
@@ -516,7 +779,7 @@ def build_report(
                 "runs": runs,
                 "subject": json.loads(next(iter(subjects))) if len(subjects) == 1 else None,
                 "worlds_total": len(results),
-                "selection": accounting.get("selection"),
+                "selection": selection,
                 "isitright_version": __version__,
             }
         },
@@ -555,23 +818,206 @@ def _path(world: World) -> list[MutationRecord]:
     ]
 
 
-def _selection_note(selection: dict[str, Any]) -> str:
-    return (
-        f"{selection['generated']} valid worlds generated; {selection['selected']} selected for "
-        f"the agent by feature coverage ({selection['features_covered']} of "
-        f"{selection['features_total']} family/target/role features), {selection['not_selected']} "
-        f"eligible not run, {selection['unjudgeable']} unjudgeable and "
-        f"{selection['unobservable']} unobservable left out"
+def _screening_record(context: ReportContext, world_id: str) -> ScreeningRecord | None:
+    screened = context.screens.get(world_id)
+    if screened is None:
+        return None
+    return ScreeningRecord(
+        screening_class=screened.cls.value,
+        basis=screened.basis,
+        rank=context.ranks.get(world_id),
     )
 
 
-def _search_record(accounting: dict[str, Any], budget: Budget, runs: int) -> SearchRecord:
+def _not_run_count(context: ReportContext) -> int:
+    return sum(1 for n in context.not_run if n.rank is not None or n.world.fixed is not None)
+
+
+def _not_run_records(context: ReportContext) -> list[WorldRecord]:
+    """The worlds that were not run, listed one by one (up to a limit), best-ranked first."""
+    ordered = sorted(
+        context.not_run, key=lambda n: (n.rank is None, n.rank if n.rank is not None else 0)
+    )
+    out: list[WorldRecord] = []
+    for entry in ordered[:NOT_RUN_RECORDS]:
+        rw = entry.world
+        out.append(
+            WorldRecord(
+                id=rw.id,
+                role=rw.role.value,
+                description=rw.description,
+                validity=rw.validity,
+                oracle_outcome="CANNOT_JUDGE" if rw.reference.role is Role.UNJUDGEABLE else None,
+                role_basis=rw.reference.basis,
+                counts=count([]).model_dump(),
+                mutation_path=_path(rw.world),
+                screening=_screening_record(context, rw.id),
+                run_status="NOT_RUN",
+                not_run_reason=entry.reason,
+            )
+        )
+    return out
+
+
+def _reason_kind(reason: str) -> str:
+    """The reason without the numbers that differ between worlds, for counting."""
+    if reason.startswith("stratum stopped"):
+        return "stratum stopped (stratum rule)"
+    if reason.startswith("run stopped"):
+        return "run stopped (no uncovered feature and no finding)"
+    if reason.startswith("the oracle cannot judge"):
+        return "the oracle cannot judge the world"
+    return reason
+
+
+def _selection(
+    accounting: dict[str, Any], results: list[WorldResult], context: ReportContext
+) -> dict[str, Any]:
+    """Counts of what was generated, run and left unrun, for the reader and the report."""
+    run_generated = [
+        r for r in results if r.world.generated is not None and (r.outcomes or not r.world.runnable)
+    ]
+    unrun: dict[str, int] = {}
+    for entry in context.not_run:
+        key = _reason_kind(entry.reason)
+        unrun[key] = unrun.get(key, 0) + 1
+    generated = [rw.generated for rw in context.generated if rw.generated is not None]
+    pool = eligible(generated)
+    return {
+        "generated": len(generated),
+        "eligible": len(pool),
+        "unjudgeable": sum(1 for w in generated if w.role is Role.UNJUDGEABLE),
+        "unobservable": sum(
+            1 for w in generated if w.role is not Role.UNJUDGEABLE and not w.observable
+        ),
+        "run": len(run_generated),
+        "not_run": len(context.not_run),
+        "not_run_by_reason": dict(sorted(unrun.items())),
+        "not_run_listed": min(len(context.not_run), NOT_RUN_RECORDS),
+        "ranking": context.ranking,
+        "generation": accounting.get("generated_total"),
+    }
+
+
+def _mutation_records(path: Any) -> list[MutationRecord]:
+    return [
+        MutationRecord(
+            family=m.family,
+            target=m.target,
+            description=m.description,
+            hints=m.hints,
+            atoms=[list(a) for a in m.atoms],
+        )
+        for m in path
+    ]
+
+
+def _minimization_record(result: NoisyMinimization | None, original: int) -> dict[str, Any]:
+    """What the noisy minimization did, with its evidence. A path is replaced only when minimal."""
+    if result is None:
+        return {}
+    return {
+        "method": "delta debugging over the path's mutations, steps judged by a sequential test",
+        "status": result.status.value,
+        "minimal": result.minimal,
+        "mutations_before": original,
+        "mutations_after": len(result.path),
+        "runs": result.runs,
+        "kept": [m.description for m in result.path],
+        "note": result.note,
+        "confidence": result.confidence,
+        "steps": [
+            {"kept": list(s.kept), "decision": s.decision, "runs": s.runs, "failures": s.bad}
+            for s in result.steps
+        ],
+    }
+
+
+def _selection_note(selection: dict[str, Any]) -> str:
+    reasons = "; ".join(f"{n} {why}" for why, n in selection["not_run_by_reason"].items())
+    return (
+        f"{selection['generated']} valid worlds generated, {selection['eligible']} judgeable and "
+        f"observable, ranked by {selection['ranking']}; {selection['run']} run, "
+        f"{selection['not_run']} not run"
+        + (f" ({reasons})" if reasons else "")
+        + ". Worlds not run are not evidence of correctness"
+    )
+
+
+def _counts_only_stability(
+    baseline: list[RunOutcome] | None, runnable: list[WorldResult], k: int
+) -> Any:
+    """Case-level counts. A rate claim belongs to one world's paired runs (see each finding)."""
+    if not baseline:
+        return None
+    world = [o for r in runnable for o in r.outcomes]
+    flaky = 0 < sum(is_bad(b) for b in baseline) < len(baseline)
+    note = "counts over all worlds that ran; a rate claim is made per world (see the findings)"
+    if flaky:
+        note = "the baseline itself is flaky, which weakens any finding. " + note
+    return Stability(k=k, baseline=count(baseline), world=count(world), note=note)
+
+
+def _hint_use(scenario: McpScenario, context: ReportContext) -> list[HintUse]:
+    """Which hints led to which generated worlds (provenance shown, `proposed` marked)."""
+    out = []
+    for hint in scenario.hints:
+        ids = [
+            rw.id
+            for rw in context.generated
+            if rw.generated is not None
+            and any(hint.name in m.hints for m in rw.generated.world.path)
+        ]
+        out.append(
+            HintUse(
+                name=hint.name,
+                kind=hint.kind,
+                provenance=hint.provenance.value,
+                worlds=ids[:HINT_WORLDS_LISTED],
+                world_count=len(ids),
+            )
+        )
+    return out
+
+
+def _search_record(
+    accounting: dict[str, Any],
+    budget: Budget,
+    runs: int,
+    context: ReportContext,
+    scenario: McpScenario | None,
+    selection: dict[str, Any],
+) -> SearchRecord:
+    screening = None
+    if context.screens:
+        counts: dict[str, int] = {c.value: 0 for c in ScreeningClass}
+        for s in context.screens.values():
+            counts[s.cls.value] += 1
+        screening = ScreeningSummary(
+            ranking=context.ranking,
+            baseline_trace=context.trace_dir,
+            counts=counts,
+            note=(
+                "screening replays the baseline trace on each world and runs the oracle, with no "
+                "agent; it orders the runs and never removes a world from the report"
+            ),
+        )
+    stopping = (
+        context.stop.to_record(budget.exhausted)
+        if context.stop is not None and context.stop.universe
+        else None
+    )
+    extra: dict[str, Any] = {
+        "screening": screening,
+        "stopping": stopping,
+        "hint_use": _hint_use(scenario, context) if scenario is not None else [],
+    }
     if accounting:
-        record = {k: v for k, v in accounting.items() if k != "selection"}
-        if "selection" in accounting:
-            record["notes"] = [*record.get("notes", []), _selection_note(accounting["selection"])]
+        record = {k: v for k, v in accounting.items() if k not in ("selection", "generated_total")}
+        if context.generated:
+            record["notes"] = [*record.get("notes", []), _selection_note(selection)]
         record["budget"] = {**record.get("budget", {}), "runs": budget.to_json()}
-        return SearchRecord(**record)
+        return SearchRecord(**record, **extra)
     return SearchRecord(
         seed=0,
         attempts=0,
@@ -595,6 +1041,7 @@ def _headline(
     controls: str,
     runs: int,
     worlds: int,
+    not_run: int = 0,
 ) -> str:
     if status is DivergenceStatus.UNSUPPORTED:
         return "Unsupported: no world in the scenario is valid"
@@ -614,14 +1061,15 @@ def _headline(
         "NOT_APPLICABLE": "; no control world completed, so this is weak evidence",
         "NOT_DISCRIMINATING": "",
     }[controls]
+    unrun = f"; {not_run} eligible worlds were not run" if not_run else ""
     return (
         f"No invariant violation or expectation mismatch in {runs} runs across {worlds} worlds"
-        f"{tail}"
+        f"{unrun}{tail}"
     )
 
 
 def write_report(report: AuditReport, output_dir: Path) -> None:
-    """Write ``report.json`` (schema 0.4) and ``report.md`` (a human summary)."""
+    """Write ``report.json`` (schema 0.5) and ``report.md`` (a human summary)."""
     (output_dir / "report.json").write_text(
         json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -656,24 +1104,45 @@ def write_report(report: AuditReport, output_dir: Path) -> None:
             f"Baseline: {base.met} of {base.n} runs reached the expected behavior. "
             f"{case.stability.note}"
         )
+    for note in case.search.notes:
+        if "ranked by" in note:
+            lines.append(f"Worlds: {note}.")
+    stopping = case.search.stopping
+    if stopping is not None:
+        if stopping.run_stop_reason:
+            lines.append(f"Run stopped: {stopping.run_stop_reason}.")
+        lines += [
+            f"- {s.family} / {s.target} / {s.role}: {s.summary}"
+            for s in stopping.strata
+            if s.stopped
+        ]
     lines += [
         "",
-        "| World | Role | Validity | Oracle | Runs | Violating runs | Not met |",
-        "|---|---|---|---|---|---|---|",
+        "| World | Role | Screening | Validity | Oracle | Runs | Violating runs | Not met |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for w in case.worlds[:200]:
+        screened = w.screening.screening_class if w.screening else "-"
+        oracle_text = "NOT RUN" if w.run_status == "NOT_RUN" else (w.oracle_outcome or "n/a")
         lines.append(
-            f"| {w.id} | {w.role} | {', '.join(w.validity.tiers) or w.validity.status}"
-            f"{' (unobservable)' if w.validity.unobservable else ''} | {w.oracle_outcome or 'n/a'} "
+            f"| {w.id} | {w.role} | {screened} | "
+            f"{', '.join(w.validity.tiers) or w.validity.status}"
+            f"{' (unobservable)' if w.validity.unobservable else ''} | {oracle_text} "
             f"| {w.counts.get('n', 0)} | {w.counts.get('violated', 0)} "
             f"| {w.counts.get('not_met', 0)} |"
         )
     if len(case.worlds) > 200:
-        lines.append(f"| ... {len(case.worlds) - 200} more worlds in report.json | | | | | | |")
+        lines.append(f"| ... {len(case.worlds) - 200} more worlds in report.json | | | | | | | |")
     if case.findings:
         lines += ["", "## Findings", ""]
         lines += [
             f"- {f.world_id}: {f.headline}. Example: {f.divergence['example_run_dir']}."
+            + (
+                f" Test: {f.stability.sequential.decision.value} after "
+                f"{f.stability.sequential.pairs} pairs."
+                if f.stability and f.stability.sequential
+                else ""
+            )
             for f in case.findings
         ]
     lines += [

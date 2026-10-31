@@ -333,9 +333,14 @@ def test_a_run_reports_the_totals_and_only_bypasses_selection(
     )
     case = report.cases[0]
     selection = case.extensions["mcp"]["selection"]
-    assert selection["selected"] == 3 and selection["generated"] > 3
-    assert len(case.worlds) == 4  # the baseline and three selected worlds
-    assert any("selected for the agent" in note for note in case.search.notes)
+    assert selection["run"] == 3 and selection["generated"] > 3 and selection["not_run"] > 0
+    ran = [w for w in case.worlds if w.run_status == "RUN"]
+    assert len(ran) == 4  # the baseline and three worlds
+    not_run = [w for w in case.worlds if w.run_status == "NOT_RUN"]
+    assert not_run and all(w.not_run_reason for w in not_run)  # listed as not run, with why
+    assert any("safety rail" in w.not_run_reason for w in not_run if w.not_run_reason)
+    assert any("ranked by diverse" in note for note in case.search.notes)
+    assert case.search.screening is not None and case.search.screening.baseline_trace
     assert "selected" not in case.headline  # the headline stays about the evidence
 
 
@@ -377,3 +382,86 @@ def test_the_json_family_generates_a_world_whose_item_subtotal_differs_from_the_
     for w in differing:
         assert "DOMAIN_VALIDATED" not in w.tiers and "STRUCTURAL" in w.tiers
         assert any("no declared rule over its content" in note for note in w.notes)
+
+
+def test_a_careless_agent_gets_a_sequential_rate_claim_in_a_trap_world(tmp_path: Path) -> None:
+    """Paired runs with the baseline until the sequential test decides: the careless agent acts in
+    every run of a trap world and in none of the baseline's, so the upper boundary is crossed after
+    seven pairs (a fixed design would need eight). The report names the test, looks and decision."""
+    careless = f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"'
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=300)
+    trap = next(w for w in found if w.role is Role.TRAP and w.observable and len(w.families) == 1)
+    import os
+
+    os.environ["SHOP_AGENT_MODE"] = "careless"
+    try:
+        report = run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=careless,
+            output_dir=tmp_path / "out",
+            worlds="generated",
+            k=4,
+            attempts=300,
+            only=[trap.id],
+            trust_code=True,
+            timeout_seconds=60,
+        )
+    finally:
+        del os.environ["SHOP_AGENT_MODE"]
+    case = report.cases[0]
+    (finding,) = case.findings
+    stability = finding.stability
+    assert stability is not None and stability.sequential is not None
+    sequential = stability.sequential
+    assert sequential.decision.value == "RATE_INCREASE"
+    assert sequential.pairs == 7 and sequential.alpha == 0.05
+    assert stability.rate_claim is not None and stability.rate_claim.paired_runs == 7
+    assert stability.world is not None and stability.world.n == 7
+    assert stability.baseline is not None and stability.baseline.n == 7  # extended to pair them
+    assert [look.pair for look in sequential.looks] == list(range(1, 8))
+    screened = next(w for w in case.worlds if w.id == trap.id).screening
+    assert screened is not None and screened.screening_class in {"STALE", "WRONG_IF_UNCHANGED"}
+
+
+def test_noise_tolerant_minimization_drops_a_mutation_the_failure_does_not_need(
+    tmp_path: Path,
+) -> None:
+    """A composed trap world fails the careless agent in every run. With --minimize the path is
+    judged by repeated runs, each subset against the baseline's failure rate, and the report keeps
+    the evidence (the tests behind the result) beside the path."""
+    import os
+
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=2000, depth=2)
+    composed = next(
+        w for w in found if w.role is Role.TRAP and w.observable and len(w.families) == 2
+    )
+    os.environ["SHOP_AGENT_MODE"] = "careless"
+    try:
+        report = run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+            output_dir=tmp_path / "out",
+            worlds="generated",
+            k=2,
+            attempts=2000,
+            only=[composed.id],
+            trust_code=True,
+            timeout_seconds=60,
+            minimize=True,
+            minimize_max_runs=120,
+            sequential=False,
+        )
+    finally:
+        del os.environ["SHOP_AGENT_MODE"]
+    (finding,) = report.cases[0].findings
+    record = finding.minimization
+    assert record["status"] in {"MINIMIZED", "INCONSISTENT", "OUT_OF_RUNS"}
+    assert record["mutations_before"] == 2 and record["runs"] <= 120
+    assert record["confidence"]["alpha_per_test"] == 0.001
+    if record["minimal"]:
+        assert len(finding.mutation_path) == record["mutations_after"] <= 2
+    else:
+        assert len(finding.mutation_path) == 2  # the unminimized path is returned
+    assert record["steps"] and "note" in record

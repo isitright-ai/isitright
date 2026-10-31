@@ -273,7 +273,7 @@ def test_world_validation_statuses() -> None:
             _fixed("boom", validate=lambda s: 1 / 0),  # type: ignore[arg-type,return-value]
         ]
     )
-    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0)
     by_id = {w.id: w.validity for w in worlds}
     assert by_id["none"].status == "NOT_ASSESSED"
     assert by_id["good"].status == "VALID" and "DOMAIN_VALIDATED" in by_id["good"].tiers
@@ -420,7 +420,7 @@ def _results(
     status: str = "COMPLETED",
     violations: dict[str, str] | None = None,
 ) -> list[WorldResult]:
-    worlds, _ = prepare_worlds(booking, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(booking, "fixed", attempts=1, seed=0)
     results: list[WorldResult] = []
     for rw in worlds:
         result = WorldResult(rw)
@@ -509,7 +509,7 @@ def test_no_completed_run_is_inconclusive_and_no_valid_world_is_unsupported(
     assert inconclusive.divergence_status is DivergenceStatus.INCONCLUSIVE
     assert inconclusive.controls is not None and inconclusive.controls.status == "NOT_APPLICABLE"
     invalid = _tiny(fixed=[_fixed("bad", validate=lambda s: ["x"])])
-    worlds, _ = prepare_worlds(invalid, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(invalid, "fixed", attempts=1, seed=0)
     results = [WorldResult(w) for w in worlds]
     for result in results:
         result.world.validity = result.world.validity.model_copy(update={"status": "INVALID"})
@@ -520,7 +520,7 @@ def test_no_completed_run_is_inconclusive_and_no_valid_world_is_unsupported(
 
 def test_without_control_worlds_the_headline_says_the_evidence_is_weak() -> None:
     scenario = _tiny(fixed=[_fixed("only")])
-    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0)
     results = [WorldResult(w, [MET]) for w in worlds]
     case = build_report(scenario, "x:y", "agent", 1, results, {}, Budget(), 0.1).cases[0]
     assert case.controls is not None and case.controls.status == "NOT_APPLICABLE"

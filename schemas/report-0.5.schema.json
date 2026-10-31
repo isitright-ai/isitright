@@ -424,6 +424,11 @@
           "title": "Provenance",
           "type": "string"
         },
+        "world_count": {
+          "default": 0,
+          "title": "World Count",
+          "type": "integer"
+        },
         "worlds": {
           "items": {
             "type": "string"

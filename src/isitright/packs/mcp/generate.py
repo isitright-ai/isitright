@@ -6,6 +6,7 @@ role from the reference procedure, and the mutation path with the hints behind i
 
 from __future__ import annotations
 
+import heapq
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -134,6 +135,37 @@ def generate_worlds(
     return found, result
 
 
+Feature = tuple[str, str, str]
+
+
+def features_of(w: GeneratedWorld) -> frozenset[Feature]:
+    """What a world exercises: per mutation, family and touched field, hints, atoms and edit kinds,
+    each in the world's role. The greedy coverage order and the stopping rule both read this."""
+    found: set[Feature] = set()
+    for m in w.world.path:
+        role = w.role.value
+        for touched in m.touches or [""]:
+            found.add((m.family, touched, role))
+        found.add((m.family, "hints:" + "+".join(sorted(m.hints)), role))
+        for collection, key in m.atoms:
+            found.add((m.family, f"atom:{collection}:{key}", role))
+        found.add((m.family, "edits:" + "+".join(sorted({e.op for e in m.edits})), role))
+    return frozenset(found)
+
+
+def coverage_order(worlds: list[GeneratedWorld], limit: int | None = None) -> list[GeneratedWorld]:
+    """Worlds in the 0.4 coverage order: greedy on uncovered features (three single mutations to
+    one composition), earlier visiting order breaking ties. ``limit`` caps the length."""
+    keyed = [(w, features_of(w)) for w in worlds]
+    cap = len(keyed) if limit is None else min(limit, len(keyed))
+    composed_cap = cap // 4 if limit is not None else cap
+    single = [(w, f) for w, f in keyed if len(w.world.path) <= 1]
+    composed = [(w, f) for w, f in keyed if len(w.world.path) > 1]
+    chosen_single, _ = _greedy(single, cap - min(composed_cap, len(composed)))
+    chosen_composed, _ = _greedy(composed, cap - len(chosen_single))
+    return _interleave(chosen_single, chosen_composed)
+
+
 def select_worlds(
     worlds: list[GeneratedWorld], limit: int | None
 ) -> tuple[list[GeneratedWorld], dict[str, Any]]:
@@ -147,20 +179,7 @@ def select_worlds(
     out, so a small run is never mistaken for an exhaustive one.
     """
     eligible = [w for w in worlds if w.role is not Role.UNJUDGEABLE and w.observable]
-
-    def features(w: GeneratedWorld) -> frozenset[tuple[str, str, str]]:
-        found: set[tuple[str, str, str]] = set()
-        for m in w.world.path:
-            role = w.role.value
-            for touched in m.touches or [""]:
-                found.add((m.family, touched, role))
-            found.add((m.family, "hints:" + "+".join(sorted(m.hints)), role))
-            for collection, key in m.atoms:
-                found.add((m.family, f"atom:{collection}:{key}", role))
-            found.add((m.family, "edits:" + "+".join(sorted({e.op for e in m.edits})), role))
-        return frozenset(found)
-
-    keyed = [(w, features(w)) for w in eligible]
+    keyed = [(w, features_of(w)) for w in eligible]
     universe = set().union(*(f for _, f in keyed)) if keyed else set()
     cap = len(keyed) if limit is None else min(limit, len(keyed))
     # Single mutations explain a finding best, so they fill most of the budget; a quarter is kept
@@ -211,32 +230,34 @@ def _count(items: Iterable[str]) -> dict[str, int]:
 
 
 def _greedy(
-    keyed: list[tuple[GeneratedWorld, frozenset[tuple[str, str, str]]]], cap: int
-) -> tuple[list[GeneratedWorld], set[tuple[str, str, str]]]:
+    keyed: list[tuple[GeneratedWorld, frozenset[Feature]]], cap: int
+) -> tuple[list[GeneratedWorld], set[Feature]]:
+    """Greedy cover, lazily: a world's gain only shrinks, so a stale gain on the heap is an upper
+    bound and a world is taken when its refreshed gain still leads. Same picks as scanning every
+    world each step, in O(n log n) for the usual case."""
     chosen: list[GeneratedWorld] = []
-    taken: set[str] = set()
-    covered: set[tuple[str, str, str]] = set()
-    ever: set[tuple[str, str, str]] = set()
-    cleared = False
+    covered: set[Feature] = set()
+    ever: set[Feature] = set()
     cap = min(cap, len(keyed))
-    while len(chosen) < cap:
-        best: tuple[int, int] | None = None
-        pick: tuple[GeneratedWorld, frozenset[tuple[str, str, str]]] | None = None
-        for index, (w, f) in enumerate(keyed):
-            if w.id in taken:
-                continue
-            key = (-len(f - covered), index)
-            if best is None or key < best:
-                best, pick = key, (w, f)
-        if pick is None:  # pragma: no cover - cap bounds the loop
-            break
-        if best is not None and best[0] == 0 and not cleared:
+    heap = [(-len(f), i) for i, (_, f) in enumerate(keyed)]
+    heapq.heapify(heap)
+    cleared = False
+    while len(chosen) < cap and heap:
+        negative, index = heapq.heappop(heap)
+        world, features = keyed[index]
+        gain = len(features - covered)
+        if gain != -negative:
+            heapq.heappush(heap, (-gain, index))
+            continue
+        if gain == 0 and not cleared:
+            # everything left adds nothing: start another round with the covered set cleared
             covered.clear()
             cleared = True
+            heap = [(-len(keyed[i][1]), i) for _, i in [*heap, (negative, index)]]
+            heapq.heapify(heap)
             continue
         cleared = False
-        chosen.append(pick[0])
-        taken.add(pick[0].id)
-        covered |= pick[1]
-        ever |= pick[1]
+        chosen.append(world)
+        covered |= features
+        ever |= features
     return chosen, ever

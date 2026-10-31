@@ -68,18 +68,70 @@ and the agent under test (`shop_agent.py`) a third's. `oracle.py` and `shop_agen
 received.
 
 `scenario.py` declares the shop: the entity schema (customers with embedded payment methods,
-orders, payments, refunds), constraints (payments sum to the order total, no order from the
-future), service parameters, hints, prior operations (the service's own cancel and refund tools)
-and the oracle. It does not list worlds: `--worlds generated` produces about ten thousand valid
-worlds from two levels of generic mutations. The 24 hand-written worlds remain as `--worlds fixed`,
-a regression fixture. Running the agent on all of them is not the default. `agents run` ranks the
-eligible worlds by coverage of (family, target, role), three single mutations for every
-composition, leaves out worlds the oracle cannot judge or the agent cannot observe, and runs them
-in that order until a budget stops it: `--max-money`, `--max-runs`, `--max-seconds`, or
-`--max-worlds` (default 50, a safety rail rather than a recommendation). The report says how many
-worlds were generated, selected and left out, and why (`extensions.mcp.selection`, and a note in
-`search.notes`). A world you name with `--world` is always run. Ranking is a stand-in for
-screening without the agent (0.5).
+orders with a JSON `items` field and its declared shape, payments, refunds), constraints (payments
+sum to the order total, no order from the future), service parameters, hints, prior operations
+(the service's own cancel and refund tools) and the oracle. It does not list worlds:
+`--worlds generated` produces about fourteen thousand valid worlds from two levels of generic
+mutations. The 24 hand-written worlds remain as `--worlds fixed`, a regression fixture.
+
+## Choosing which worlds to run
+
+A live run costs money and time, and most generated worlds tell us nothing: the agent never reads
+what changed, or the right action is the same as before. `agents run` therefore does the
+following, and reports each step.
+
+1. **Baseline first.** The baseline world runs `--trials` times. Its recorded calls are the
+   *baseline trace*.
+2. **Screening, without the agent.** Each candidate world's service replays the baseline trace and
+   the oracle judges the result. Four classes:
+
+   | Class | Meaning | Priority |
+   |---|---|---|
+   | `WRONG_IF_UNCHANGED` | The trace replays identically and the oracle says the old behavior is now wrong | Highest |
+   | `STALE` | A response the agent saw differs from the recorded one, so the recording says nothing about this world | Normal |
+   | `UNSCREENABLE` | No usable baseline trace, the oracle cannot judge, or the world is unobservable | Normal |
+   | `RIGHT_IF_UNCHANGED` | The trace replays identically and the oracle is satisfied | Lowest |
+
+   Screening is a ranking, not a verdict. It decides the order of live runs and never removes a
+   world from the report: a world that was not reached is listed as **not run** (`run_status:
+   NOT_RUN`, with the reason), never as passing. A `RIGHT_IF_UNCHANGED` world can still fail if the
+   agent's behavior is not deterministic.
+3. **Ranking (`--ranking`).** `diverse` (the default) takes the best-screened world of every
+   stratum (family chain, target chain, role) first, then the second best of every stratum, and so
+   on; `screening` is strict class order; `coverage` is the 0.4 order (feature coverage);
+   `random` is a seeded shuffle. See `REPORT.md` of the 0.5 notes for the measured difference.
+4. **Stopping rules.** A stratum stops after `--stratum-patience` worlds (default 10) with no
+   finding; the whole run stops after `--run-patience` consecutive worlds (default 30) that added
+   no uncovered feature and no finding. `0` turns a rule off. `--max-money`, `--max-runs` and
+   `--max-seconds` are the real budgets; `--max-worlds` (default 50) is a safety rail after
+   ranking, not a recommendation. A stopped stratum or run is reported as "no finding in n of m
+   worlds" with the reason (`search.stopping`). That is not evidence of correctness.
+5. **Sequential testing, per world.** Each world runs in pairs with the baseline (its run *i*
+   against baseline run *i*) until a sequential probability ratio test on discordant pairs decides,
+   up to `--max-trials` pairs (default 16). Boundaries are 1/alpha and beta on the likelihood ratio
+   with alpha 0.05 and beta 0.2 against an alternative where 80 percent of discordant pairs go
+   against the world, so the false-claim rate is at most 0.05 at any look. Decisions:
+   `RATE_INCREASE` (a rate claim), `NO_INCREASE_AT_EFFECT` (evidence against an increase of that
+   size only), `UNDECIDED`, and `NO_DISCORDANCE` (after `--trials` pairs nothing was against the
+   world: counts only, no claim). Extra baseline runs are made, and billed, when a world needs
+   more pairs than the baseline has. The record (test, looks, boundaries, decision) is in the
+   finding's `stability.sequential`. There is no correction across worlds: a rate claim is per
+   world, and the case-level `stability` is counts only. `--no-sequential` runs `--trials` per
+   world with counts only.
+6. **Minimization (`--minimize`, off by default).** For a finding with more than one mutation,
+   delta debugging over the path's mutations judges each subset by repeated runs (a Bernoulli
+   sequential test against the baseline's failure rate), and keeps a smaller path only after such
+   a test said it still fails. The finding's `minimization` records the tests and their error
+   bounds; the path is replaced only when every single removal was tested and did not reproduce.
+   Inconsistent evidence returns the unminimized path.
+
+A world you name with `--world` is always run.
+
+**JSON values.** A field of type `json` is opaque unless a scope is declared: a `shape` on the
+field, or a `json_path` hint such as `orders.items[*].price`. The `json_edit` family acts only
+there (a leaf moved, a list element removed or duplicated, a key removed or set to null, each as
+one whole-field edit). Without a rule that reads the content (`JsonSum`), such a world is
+`STRUCTURAL` only, and its validity record says so.
 
 ## Declaring a scenario
 
@@ -145,17 +197,17 @@ run is refused with exit code 2 (after that first run) instead of running unboun
 ## Stochastic subjects
 
 The default is `--trials 4` runs of the baseline world and of each world. Reports give counts
-(for example 6 of 8). A **rate claim** (this world raises the failure rate) needs at least 8 paired
-runs per arm and an exact McNemar test on discordant pairs at alpha 0.05, and the report names the
-test and the pair counts. Below that, `stability` carries counts and a note only. A flaky baseline
-is reported first. `--max-money` stops the search once the cost the agent reports reaches the
+(for example 6 of 8). A **rate claim** (this world raises the failure rate) comes from the
+sequential test described above, or, with `--no-sequential`, from an exact McNemar test on at
+least 8 paired runs at alpha 0.05; the report names the test and the pair counts. Below that,
+`stability` carries counts and a note only. A flaky baseline is reported first. `--max-money` stops the search once the cost the agent reports reaches the
 budget; `search.budget.runs` records what was spent and what stopped it.
 
 ## Reading the report
 
-`report.json` follows [`schemas/report-0.4.schema.json`](../schemas/report-0.4.schema.json) (see
-[contracts](contracts.md)). The scenario is one case. Notable fields: `worlds` (every world with its
-role, validity tiers, oracle outcome and counts), `findings` (per world: oracle results, stability,
+`report.json` follows [`schemas/report-0.5.schema.json`](../schemas/report-0.5.schema.json) (see
+[contracts](contracts.md)). The scenario is one case. Notable fields: `worlds` (every world run, and the best-ranked worlds not run, with
+role, validity tiers, oracle outcome, counts, screening class and rank), `findings` (per world: oracle results, stability,
 world diff, mutation path with the hints behind it), `controls`, `stability` (baseline counts),
 `search` (attempts, rejections by reason, families run and skipped, budget per hint group) and
 `extensions.mcp` (the runs, the stack under test, the command).
@@ -165,6 +217,8 @@ world diff, mutation path with the hints behind it), `controls`, `stability` (ba
 ```
 isitright agents run --scenario REF --agent-command CMD --trust-code
         [--worlds generated|fixed|all] [--trials N] [--world ID ...] [--max-worlds N, default 50]
+        [--ranking diverse|screening|coverage|random] [--stratum-patience N] [--run-patience N]
+        [--max-trials N] [--sequential/--no-sequential] [--minimize]
         [--max-money X] [--max-runs N] [--max-seconds S] [--timeout SECONDS] [--output-dir DIR]
         [--fail-on none|invariant-violation|any-finding]
 isitright agents replay --report report.json --trust-code [--findings-only]
@@ -176,7 +230,7 @@ valid world), `3` the opt-in `--fail-on` policy triggered.
 
 ## Limits
 
-- No simulated user, noise-tolerant minimization or screening without the agent (planned for 0.5).
+- No simulated user. Screening replays the baseline trace, so it is a heuristic: a changed world can change what the agent reads.
 - Handlers are yours: `SIMULATED` means a finding is evidence about your stand-in for the service.
 - The transport is stdio. The server process (and most agents) need the MCP SDK: `isitright[mcp]`.
 - The agent command runs with your permissions and network. isitright does not sandbox it.

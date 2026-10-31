@@ -54,6 +54,7 @@ def runs(tmp_path_factory: pytest.TempPathFactory) -> dict[str, tuple[AuditRepor
                 output_dir=output,
                 worlds="fixed",
                 k=1,
+                sequential=False,  # one run per hand-written world, as the assertions below count
                 trust_code=True,
                 timeout_seconds=120,
             )

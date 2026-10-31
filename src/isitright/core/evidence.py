@@ -136,7 +136,8 @@ class HintUse(Closed):
     kind: str
     provenance: str
     worlds: list[str] = Field(default_factory=list)
-    """Worlds that a hint led to (generated from a mutation carrying the hint)."""
+    """Worlds that a hint led to (the first ones; ``world_count`` has the total)."""
+    world_count: int = 0
 
 
 class SearchRecord(Closed):

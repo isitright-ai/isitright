@@ -1,7 +1,11 @@
 """Sequential tests for live agents: stop when the evidence is adequate, with the error controlled.
 
-Two Wald sequential probability ratio tests (SPRT), both truncated at a maximum number of looks.
-Truncation only removes the chance to reject, so the type I error stays at or below alpha.
+Two sequential probability ratio tests, both truncated at a maximum number of looks. The boundaries
+are 1/alpha above and beta below on the likelihood ratio, which Ville's inequality makes exact
+bounds rather than Wald's approximations: under the null the ratio is a martingale, so it reaches
+1/alpha at any look with probability at most alpha, and under the alternative its inverse reaches
+1/beta with probability at most beta. Truncation only removes chances to stop, so type I stays at
+or below alpha.
 
 * `PairedSprt` compares a world with the baseline on paired runs. Only discordant pairs carry
   information. Under the null (the world fails no more often than the baseline) a discordant pair
@@ -55,11 +59,11 @@ class SprtConfig:
 
     @property
     def upper(self) -> float:
-        return math.log((1 - self.beta) / self.alpha)
+        return math.log(1 / self.alpha)
 
     @property
     def lower(self) -> float:
-        return math.log(self.beta / (1 - self.alpha))
+        return math.log(self.beta)
 
 
 class Look(BaseModel):
@@ -147,7 +151,8 @@ class PairedSprt:
             "counts only",
             Decision.NO_DISCORDANCE: "no pair was against the world after the minimum number of "
             "pairs: counts only, no rate claim",
-            Decision.CONTINUE: "stopped before a decision (budget): counts only",
+            Decision.CONTINUE: "stopped before a decision (a budget ended or a run did not "
+            "complete): counts only",
         }
         return SequentialRecord(
             alpha=c.alpha,
@@ -181,9 +186,9 @@ class RateSprtConfig:
     """Failure rate with nothing perturbed (the noise floor)."""
     effect: float = 0.5
     """Failure rate the alternative states for a subset that carries the cause."""
-    alpha: float = 0.01
-    beta: float = 0.01
-    max_runs: int = 30
+    alpha: float = 0.001
+    beta: float = 0.001
+    max_runs: int = 60
 
 
 class RateSprt:
@@ -196,8 +201,8 @@ class RateSprt:
             raise ValueError("need 0 < reference < effect < 1")
         self._bad = math.log(c.effect / c.reference)
         self._good = math.log((1 - c.effect) / (1 - c.reference))
-        self.upper = math.log((1 - c.beta) / c.alpha)
-        self.lower = math.log(c.beta / (1 - c.alpha))
+        self.upper = math.log(1 / c.alpha)
+        self.lower = math.log(c.beta)
         self.llr = 0.0
         self.runs = 0
         self.bad = 0

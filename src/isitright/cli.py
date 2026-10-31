@@ -537,6 +537,36 @@ def agents_run_command(
     only: Annotated[
         list[str] | None, typer.Option("--world", help="Run only this world id (repeatable).")
     ] = None,
+    ranking: Annotated[
+        str,
+        typer.Option(help="Order of live runs: diverse (default), screening, coverage or random."),
+    ] = "diverse",
+    stratum_patience: Annotated[
+        int,
+        typer.Option(
+            min=0, help="Stop a stratum after this many worlds without a finding (0 = never)."
+        ),
+    ] = 10,
+    run_patience: Annotated[
+        int,
+        typer.Option(
+            min=0,
+            help="Stop the run after this many consecutive worlds with no new feature and no "
+            "finding (0 = never).",
+        ),
+    ] = 30,
+    max_trials: Annotated[
+        int, typer.Option(min=1, help="Most paired runs the sequential test may use per world.")
+    ] = 16,
+    sequential: Annotated[
+        bool, typer.Option(help="Stop each world when a sequential test decides.")
+    ] = True,
+    minimize: Annotated[
+        bool,
+        typer.Option(
+            help="Minimize the mutation path of each finding with repeated runs (costs runs)."
+        ),
+    ] = False,
     max_money: Annotated[
         float | None, typer.Option(min=0, help="Stop when the reported cost reaches this.")
     ] = None,
@@ -554,9 +584,12 @@ def agents_run_command(
     from isitright.packs.mcp.audit import run_scenario
     from isitright.packs.mcp.model import ScenarioError
     from isitright.packs.mcp.runner import AgentsInputError
+    from isitright.packs.mcp.screening import StoppingRules
 
     if worlds not in {"generated", "fixed", "all"}:
         raise typer.BadParameter("worlds must be generated, fixed or all")
+    if ranking not in {"screening", "diverse", "coverage", "random"}:
+        raise typer.BadParameter("ranking must be screening, diverse, coverage or random")
     try:
         report = run_scenario(
             scenario_ref=scenario,
@@ -569,6 +602,11 @@ def agents_run_command(
             max_worlds=max_worlds,
             only=only,
             budget=Budget(money=max_money, runs=max_runs, seconds=max_seconds),
+            ranking=ranking,  # type: ignore[arg-type]
+            rules=StoppingRules(stratum_patience or None, run_patience or None),
+            sequential=sequential,
+            max_trials=max_trials,
+            minimize=minimize,
         )
     except (AgentsInputError, ScenarioError, OSError) as error:
         typer.echo(str(error), err=True)
@@ -581,8 +619,11 @@ def agents_run_command(
     controls = case.controls.status if case.controls else "NOT_APPLICABLE"
     typer.echo(f"Status: {case.divergence_status.value}. Controls: {controls}.")
     for note in case.search.notes:
-        if "selected for the agent" in note:
+        if "ranked by" in note:
             typer.echo(f"Worlds: {note}.")
+    stopping = case.search.stopping
+    if stopping is not None and stopping.run_stop_reason:
+        typer.echo(f"Stopped: {stopping.run_stop_reason}.")
     typer.echo(f"Report: {output_dir / 'report.json'}")
     if case.divergence_status is DivergenceStatus.UNSUPPORTED:
         raise typer.Exit(EXIT_INVALID_INPUT)
