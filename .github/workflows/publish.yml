@@ -97,3 +97,30 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
 
+
+  release:
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+      - name: Create the release for this version
+        shell: bash
+        run: |
+          wheel=$(find dist -name 'isitright-*.whl' -print -quit)
+          version=${wheel##*/isitright-}
+          version=${version%-py3-none-any.whl}
+          flags=""
+          if [[ "$version" =~ (a|b|rc|dev)[0-9]*$ ]]; then flags="--prerelease"; fi
+          gh release create "v$version" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "isitright $version" \
+            --generate-notes \
+            $flags
