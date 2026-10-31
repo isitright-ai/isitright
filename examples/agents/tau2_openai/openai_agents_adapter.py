@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +27,13 @@ class OpenAIAgentsAdapter:
         from agents.mcp import MCPServerStdio
 
         entry = json.loads(mcp_config.read_text(encoding="utf-8"))["mcpServers"]["isitright"]
+        # The SDK's default is 5 seconds for each MCP request, which includes the server's start-up:
+        # a scenario that imports a large package (tau2) can take longer when the machine is busy.
+        timeout = float(os.environ.get("ISITRIGHT_MCP_TIMEOUT", "60"))
         self._server = MCPServerStdio(
-            params={"command": entry["command"], "args": entry["args"]}, cache_tools_list=True
+            params={"command": entry["command"], "args": entry["args"]},
+            cache_tools_list=True,
+            client_session_timeout_seconds=timeout,
         )
         self._agents = agents
         self._agent = agents.Agent(

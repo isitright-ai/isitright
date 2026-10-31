@@ -558,26 +558,32 @@ def _run_world(
     sequential: bool,
 ) -> None:
     """Run one world: k runs, or paired runs with the baseline until the test decides."""
-    if not sequential or not base.outcomes:
+    if not sequential or all(o.error for o in base.outcomes):  # no baseline run to pair with
         result.outcomes = run_repeated(lambda t: run_trial(rw, result, t), k, budget)
         return
     test = PairedSprt(config)
     result.sequential = test
-    for trial in range(config.max_pairs):
+    errors = 0
+    for _ in range(config.max_pairs + 1):  # one spare run for a run that did not complete
         if not budget.can_run():
             break
-        outcome = run_trial(rw, result, trial)
+        outcome = run_trial(rw, result, len(result.outcomes))
         budget.record_run(outcome.cost)
         result.outcomes.append(outcome)
-        if trial >= len(base.outcomes):  # the paired baseline run does not exist yet
+        if outcome.error:
+            errors += 1  # a run that did not complete is not a pair: skip it, stop after two
+            if errors >= 2:
+                break
+            continue
+        if test.pairs >= len(base.outcomes):  # the paired baseline run does not exist yet
             if not budget.can_run():
                 break
-            extra = run_trial(base.world, base, trial)
+            extra = run_trial(base.world, base, len(base.outcomes))
             budget.record_run(extra.cost)
             base.outcomes.append(extra)
-        partner = base.outcomes[trial]
-        if outcome.error or partner.error:
-            break  # a run that did not complete cannot be paired: stop with counts only
+        partner = base.outcomes[test.pairs]
+        if partner.error:
+            break  # the baseline run did not complete: nothing to pair with, counts only
         test.add(is_bad(partner), is_bad(outcome))
         if test.decision is not Decision.CONTINUE:
             break

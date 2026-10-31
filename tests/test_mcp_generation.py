@@ -543,3 +543,35 @@ def test_a_named_world_is_run_even_when_it_is_unobservable_or_unjudgeable(tmp_pa
     )
     record = next(w for w in report.cases[0].worlds if w.id == hidden.id)
     assert record.run_status == "RUN" and record.validity.unobservable and record.counts["n"] == 1
+
+
+def test_a_run_that_does_not_complete_is_skipped_not_paired_and_the_test_goes_on(
+    tmp_path: Path,
+) -> None:
+    """A transient failure (here the agent exits with an error on a world's first run) is not a
+    pair and does not end the world's sequence; the baseline's runs are paired with the rest."""
+    agent = tmp_path / "flaky_start.py"
+    agent.write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "if os.environ['ISITRIGHT_WORLD'] != 'baseline' and Path(os.environ['ISITRIGHT_RUN_DIR']).name == '1':\n"
+        "    sys.exit(3)\n",
+        encoding="utf-8",
+    )
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=300)
+    world = next(w for w in found if w.observable and len(w.families) == 1)
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{agent}"',
+        output_dir=tmp_path / "out",
+        attempts=300,
+        k=2,
+        only=[world.id],
+        trust_code=True,
+        timeout_seconds=60,
+    )
+    runs = [r for r in report.cases[0].extensions["mcp"]["runs"] if r["world_id"] == world.id]
+    assert [r["run_status"] for r in runs] == ["SUBJECT_ERROR", "COMPLETED", "COMPLETED"]
+    record = next(w for w in report.cases[0].worlds if w.id == world.id)
+    assert record.counts["errors"] == 1 and record.counts["n"] == 3
