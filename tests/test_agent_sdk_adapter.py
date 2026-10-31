@@ -117,3 +117,14 @@ def test_a_one_shot_user_gives_the_task_once_and_then_ends_the_conversation() ->
     conversation = converse(agent, OneShotUser("delete the drafts"))
     assert agent.heard == ["delete the drafts"] and conversation.stop_reason == "final"
     assert len(conversation.turns) == 1
+
+
+def test_the_conversation_is_written_for_a_reviewer(tmp_path: Path) -> None:
+    from sdk import write_conversation
+
+    conversation = converse(FakeAgent(), ScriptedUser(["cancel", "yes"]))
+    write_conversation(tmp_path, conversation)
+    data = json.loads((tmp_path / "conversation.json").read_text(encoding="utf-8"))
+    assert [t["user"] for t in data["turns"]] == ["cancel", "yes"]
+    assert data["turns"][1]["tool_calls"] == ["get_reservation_details"]
+    assert data["turns"][0]["agent"] == "reply 1" and data["stop_reason"] == "final"

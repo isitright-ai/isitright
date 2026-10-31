@@ -36,7 +36,7 @@ import os
 import sys
 
 os.environ.setdefault(
-    "LOGURU_LEVEL", "WARNING"
+    "LOGURU_LEVEL", "ERROR"
 )  # tau2 logs debug lines; the host's stdout is the protocol
 from datetime import datetime
 from functools import cache
