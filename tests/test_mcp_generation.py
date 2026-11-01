@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -576,3 +577,150 @@ def test_a_run_that_does_not_complete_is_skipped_not_paired_and_the_test_goes_on
     assert [r["run_status"] for r in runs] == ["SUBJECT_ERROR", "COMPLETED", "COMPLETED"]
     record = next(w for w in report.cases[0].worlds if w.id == world.id)
     assert record.counts["errors"] == 1 and record.counts["n"] == 3
+
+
+# --- the run's own edge cases -----------------------------------------------------------------
+
+
+def test_a_run_budget_spent_on_the_baseline_is_reported_not_unsupported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FLAKY_AGENT_COST", "0.0")
+    report = run_scenario(
+        scenario_ref=BOOKING_REF,
+        agent_command=FLAKY,
+        output_dir=tmp_path / "out",
+        worlds="fixed",
+        k=4,
+        budget=Budget(runs=1),
+        trust_code=True,
+        timeout_seconds=120,
+    )
+    case = report.cases[0]
+    assert case.divergence_status.value != "UNSUPPORTED"
+    assert case.search.budget["runs"]["stopped_by"] == "runs"
+    assert "runs budget ended the run" in case.headline
+
+
+def test_generated_world_ids_do_not_depend_on_the_search_order(shop: McpScenario) -> None:
+    a, _ = generate_worlds(shop, attempts=800, depth=1, seed=5)
+    b, _ = generate_worlds(shop, attempts=800, depth=1, seed=6)
+    assert len({w.id for w in a}) == len(a)
+    by_state = {w.world.fingerprint(): w.id for w in a}
+    shared = [
+        (by_state[w.world.fingerprint()], w.id) for w in b if w.world.fingerprint() in by_state
+    ]
+    assert shared and all(first == second for first, second in shared)
+    assert not any(re.match(r"g\d{4}_", w.id) for w in a)
+
+
+def test_the_baseline_can_have_its_own_run_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FLAKY_AGENT_COST", "0.0")
+    report = run_scenario(
+        scenario_ref=BOOKING_REF,
+        agent_command=FLAKY,
+        output_dir=tmp_path / "out",
+        worlds="fixed",
+        only=["booked_23h_59m"],
+        k=3,
+        baseline_trials=2,
+        sequential=False,
+        trust_code=True,
+        timeout_seconds=120,
+    )
+    per_world = {w.id: w.counts["n"] for w in report.cases[0].worlds}
+    assert per_world["baseline"] == 2 and per_world["booked_23h_59m"] == 3
+
+
+def test_orderings_are_compared_offline_from_a_finished_run(tmp_path: Path) -> None:
+    import os
+
+    from isitright.packs.mcp.ordering import compare_orderings
+
+    careless = f'"{sys.executable}" "{EXAMPLES / "shop" / "shop_agent.py"}"'
+    os.environ["SHOP_AGENT_MODE"] = "careless"
+    try:
+        report = run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=careless,
+            output_dir=tmp_path / "out",
+            worlds="generated",
+            k=1,
+            attempts=300,
+            max_worlds=6,
+            max_trials=1,
+            sequential=False,
+            trust_code=True,
+            timeout_seconds=60,
+        )
+    finally:
+        del os.environ["SHOP_AGENT_MODE"]
+    results = compare_orderings(report, tmp_path / "out", load_scenario(SHOP_REF), random_seeds=5)
+    assert [r.ranking for r in results] == ["screening", "diverse", "coverage", "random"]
+    ran = results[0].worlds
+    assert 1 <= ran <= 6 and all(
+        r.worlds == ran and r.findings == results[0].findings for r in results
+    )
+    for r in results:
+        assert r.first_finding is None or 1 <= r.first_finding <= ran
+    assert results[-1].seeds == 5
+
+
+# --- a threshold hint says where its cut-off value falls --------------------------------------
+
+
+def _booking_with_cutoff(**declared: Any) -> McpScenario:
+    import dataclasses
+
+    from isitright.core.hints import Hint, Hints, Provenance
+
+    base = load_scenario(BOOKING_REF)
+    cutoff = Hint(
+        kind="threshold",
+        name="booked_within_24h",
+        provenance=Provenance.DECLARED,
+        args={"path": "bookings.created_at", "value": "2024-05-14T15:00:00", **declared},
+    )
+    return dataclasses.replace(base, hints=Hints([*base.hints, cutoff]))
+
+
+def _on_the_cutoff(scenario: McpScenario) -> list[GeneratedWorld]:
+    worlds, _ = generate_worlds(scenario, attempts=400, depth=1)
+    return [
+        w
+        for w in worlds
+        if any(
+            getattr(e, "value", None) == "2024-05-14T15:00:00"
+            for m in w.world.path
+            for e in m.edits
+        )
+    ]
+
+
+def test_a_world_on_an_undeclared_cutoff_is_not_judged() -> None:
+    (exact,) = _on_the_cutoff(_booking_with_cutoff())
+    assert exact.role is Role.UNJUDGEABLE
+    assert "does not say whether that value is inside" in (exact.unjudgeable or "")
+
+
+def test_a_declared_cutoff_the_reference_agrees_with_is_judged() -> None:
+    # The booking reference uses `age < 24h`, so the exact cut-off is outside "within 24 hours".
+    scenario = _booking_with_cutoff(inclusive=False, holds="above")
+    (exact,) = _on_the_cutoff(scenario)
+    assert exact.role is not Role.UNJUDGEABLE and exact.unjudgeable is None
+
+
+def test_a_declared_cutoff_the_reference_contradicts_is_not_judged() -> None:
+    scenario = _booking_with_cutoff(inclusive=True, holds="above")
+    (exact,) = _on_the_cutoff(scenario)
+    assert exact.role is Role.UNJUDGEABLE
+    assert "treats it like the opposite side" in (exact.unjudgeable or "")
+
+
+def test_inclusive_and_holds_come_together() -> None:
+    with pytest.raises(ScenarioError, match="come together"):
+        _booking_with_cutoff(inclusive=True)
+    with pytest.raises(ScenarioError, match="above or below"):
+        _booking_with_cutoff(inclusive=True, holds="left")

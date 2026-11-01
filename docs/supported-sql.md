@@ -53,6 +53,13 @@ Python version, and SQLite version. The families were named `boundary`, `null`, 
   they are not a general sandbox for arbitrary SQLite programs.
 - Reproductions retain table DDL and standalone unique indexes. Other performance-
   only indexes and triggers are intentionally omitted.
+- The whole database is the base world, and it is read into memory once. A database with many rows
+  makes each case slow. `isitright sql slice --database DB --reference REF.sql --output SLICE.sqlite`
+  writes a small database with the rows the reference query used (up to `--cap` joined tuples,
+  closed under foreign keys); audit that instead. The audit then covers worlds near the slice, not the
+  original database.
+- SQLite databases whose foreign keys reference columns that are not the parent's primary key or
+  unique (SQLite reports `foreign key mismatch`) cannot be opened: SQLite cannot enforce them.
 - Timing fields vary across runs. Other report fields and reproduction scripts are
   deterministic under the fixed-environment conditions above.
 

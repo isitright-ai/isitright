@@ -19,9 +19,16 @@ from typing import Any
 
 from sdk import AgentTurn, Usage
 
+# Model calls allowed for one user message. The SDK's own default is 10, which a task that checks
+# many reservations before answering can exceed.
+DEFAULT_MAX_TURNS = 30
+
 
 class OpenAIAgentsAdapter:
-    def __init__(self, mcp_config: Path, instructions: str, model: str) -> None:
+    def __init__(
+        self, mcp_config: Path, instructions: str, model: str, max_turns: int = DEFAULT_MAX_TURNS
+    ) -> None:
+        self.max_turns = max_turns
         import agents  # imported late: the SDK is the owner's to install
         from agents.mcp import MCPServerStdio
 
@@ -48,7 +55,9 @@ class OpenAIAgentsAdapter:
                 await self._server.connect()
                 self._connected = True
             return await self._agents.Runner.run(
-                self._agent, [*self._history, {"role": "user", "content": text}]
+                self._agent,
+                [*self._history, {"role": "user", "content": text}],
+                max_turns=self.max_turns,
             )
 
         return self._loop.run_until_complete(go())

@@ -33,10 +33,72 @@ class QueryGuidance:
     has_join: bool
     has_filter: bool
     has_aggregate: bool
+    bound_literals: tuple[tuple[str | None, str, Any], ...] = ()
+    """``(table, column, literal)`` where the query compares the column (or an expression over it)
+    with the literal. A literal that is only an argument, such as the format of ``STRFTIME``, is not
+    bound to any column."""
 
     def references_column(self, table: str, column: str) -> bool:
         """Include unqualified references conservatively for each matching table."""
         return (table, column) in self.columns or (None, column) in self.columns
+
+
+_COMPARISONS = (
+    exp.EQ,
+    exp.NEQ,
+    exp.GT,
+    exp.GTE,
+    exp.LT,
+    exp.LTE,
+    exp.Like,
+    exp.ILike,
+    exp.Glob,
+    exp.NullSafeEQ,
+    exp.NullSafeNEQ,
+)
+
+
+def _literal_value(literal: exp.Literal) -> Any:
+    sign = -1 if isinstance(literal.parent, exp.Neg) else 1
+    if literal.is_int:
+        return sign * int(literal.this)
+    if literal.is_number:
+        return sign * float(literal.this)
+    if literal.is_string:
+        return str(literal.this)
+    return None
+
+
+def _comparison_sides(node: exp.Expression) -> tuple[list[exp.Expression], list[exp.Expression]]:
+    if isinstance(node, _COMPARISONS):
+        return [node.this], [node.args["expression"]]
+    if isinstance(node, exp.In):
+        return [node.this], list(node.expressions)
+    if isinstance(node, exp.Between):
+        return [node.this], [node.args["low"], node.args["high"]]
+    return [], []
+
+
+def _bind_literals(
+    statement: SqlStatement, aliases: dict[str, str]
+) -> list[tuple[str | None, str, Any]]:
+    """Pair each column with the literals it is compared against, in either direction."""
+    bound: list[tuple[str | None, str, Any]] = []
+    for node in statement.expression.walk():
+        left, right = _comparison_sides(node)
+        for these, others in ((left, right), (right, left)):
+            columns = [c for e in these for c in e.find_all(exp.Column)]
+            literals = [
+                value
+                for e in others
+                for lit in e.find_all(exp.Literal)
+                if (value := _literal_value(lit)) is not None
+            ]
+            for column in columns:
+                qualifier = column.table or None
+                resolved = aliases.get(qualifier, qualifier) if qualifier else None
+                bound.extend((resolved, column.name, value) for value in literals)
+    return bound
 
 
 def harvest_query_guidance(*statements: SqlStatement) -> QueryGuidance:
@@ -47,6 +109,7 @@ def harvest_query_guidance(*statements: SqlStatement) -> QueryGuidance:
     tables: set[str] = set()
     columns: set[tuple[str | None, str]] = set()
     literals: list[Any] = []
+    bound: list[tuple[str | None, str, Any]] = []
     has_distinct = False
     has_join = False
     has_filter = False
@@ -62,13 +125,9 @@ def harvest_query_guidance(*statements: SqlStatement) -> QueryGuidance:
             resolved_qualifier = aliases.get(qualifier, qualifier) if qualifier else None
             columns.add((resolved_qualifier, column.name))
         for literal in statement.expression.find_all(exp.Literal):
-            sign = -1 if isinstance(literal.parent, exp.Neg) else 1
-            if literal.is_int:
-                literals.append(sign * int(literal.this))
-            elif literal.is_number:
-                literals.append(sign * float(literal.this))
-            elif literal.is_string:
-                literals.append(str(literal.this))
+            if (value := _literal_value(literal)) is not None:
+                literals.append(value)
+        bound.extend(_bind_literals(statement, aliases))
         has_distinct = has_distinct or any(
             select.args.get("distinct") is not None
             for select in statement.expression.find_all(exp.Select)
@@ -86,6 +145,7 @@ def harvest_query_guidance(*statements: SqlStatement) -> QueryGuidance:
         has_join=has_join,
         has_filter=has_filter,
         has_aggregate=has_aggregate,
+        bound_literals=tuple(dict.fromkeys(bound)),
     )
 
 

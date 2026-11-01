@@ -34,6 +34,16 @@ from isitright.packs.sql.models import (
     OrderingPolicy,
 )
 from isitright.packs.sql.reports import ReportFormat, write_case_report, write_suite_report
+from isitright.packs.sql.slicing import (
+    DEFAULT_CAP as DEFAULT_SLICE_CAP,
+)
+from isitright.packs.sql.slicing import (
+    DEFAULT_PAD as DEFAULT_SLICE_PAD,
+)
+from isitright.packs.sql.slicing import (
+    SliceError,
+    slice_database,
+)
 from isitright.packs.sql.suite import SuiteInputError
 
 EXIT_INTERNAL_ERROR = 1
@@ -270,6 +280,35 @@ def check_command(
         raise typer.Exit(EXIT_INTERNAL_ERROR)
     if policy_triggered(result, fail_on):
         raise typer.Exit(EXIT_POLICY_TRIGGERED)
+
+
+@sql_app.command("slice")
+def slice_command(
+    database: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
+    ],
+    reference_sql: Annotated[Path, typer.Option("--reference", exists=True, dir_okay=False)],
+    output: Annotated[Path, typer.Option(help="The slice to write (a new SQLite file).")],
+    cap: Annotated[
+        int, typer.Option(min=1, help="Joined tuples of the reference query to keep.")
+    ] = DEFAULT_SLICE_CAP,
+    pad: Annotated[
+        int, typer.Option(min=0, help="Rows kept of each table only a subquery names.")
+    ] = DEFAULT_SLICE_PAD,
+) -> None:
+    """Cut a small database from a large one: the rows the reference query used.
+
+    Use the result as --database of `sql check`. The audit then covers worlds near the slice, not
+    the original database, and says so only if you do: keep the slice with the report.
+    """
+    try:
+        result = slice_database(
+            database, reference_sql.read_text(encoding="utf-8"), output, cap=cap, pad=pad
+        )
+    except (SliceError, OSError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
+    typer.echo(f"Wrote {result.path}: {result.rows} rows, {result.tuples} joined tuples.")
 
 
 @sql_app.command("suite")
@@ -575,8 +614,16 @@ def agents_run_command(
         str, typer.Option(help="generated, fixed (hand-written regression worlds) or all.")
     ] = "generated",
     trials: Annotated[
-        int, typer.Option(min=1, help="Runs per world; also the baseline run count.")
+        int,
+        typer.Option(
+            min=1,
+            help="Runs per world; also the baseline run count unless --baseline-trials is set.",
+        ),
     ] = 4,
+    baseline_trials: Annotated[
+        int | None,
+        typer.Option(min=1, help="Baseline runs, when they should differ from --trials."),
+    ] = None,
     timeout: Annotated[float, typer.Option(min=0.001, help="Seconds per agent run.")] = 300.0,
     max_worlds: Annotated[
         int,
@@ -659,6 +706,11 @@ def agents_run_command(
     if ranking not in {"screening", "diverse", "coverage", "random"}:
         raise typer.BadParameter("ranking must be screening, diverse, coverage or random")
     progress = _RunProgress()
+    typer.echo(f"Generating worlds (up to {attempts} candidates)...", err=True)
+
+    def generation_progress(visited: int, valid: int, limit: int) -> None:
+        typer.echo(f"  {visited} of {limit} candidates visited, {valid} valid", err=True)
+
     typer.echo(f"Agent runs: {progress.LEGEND}", err=True)
     try:
         report = run_scenario(
@@ -667,6 +719,7 @@ def agents_run_command(
             output_dir=output_dir,
             worlds=worlds,  # type: ignore[arg-type]
             k=trials,
+            baseline_trials=baseline_trials,
             timeout_seconds=timeout,
             trust_code=trust_code,
             max_worlds=max_worlds,
@@ -680,6 +733,7 @@ def agents_run_command(
             minimize=minimize,
             hints_file=hints,
             progress=progress.update,
+            generation_progress=generation_progress,
         )
         progress.finish()
     except (AgentsInputError, ScenarioError, OSError) as error:
@@ -788,6 +842,41 @@ def hints_confirm_command(
         typer.echo(str(error), err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
     typer.echo(f"Confirmed {len(done)} hint(s): {', '.join(done) or 'none'}")
+
+
+@agents_app.command("order")
+def agents_order_command(
+    report: Annotated[Path, typer.Option(exists=True, dir_okay=False, readable=True)],
+    trust_code: Annotated[
+        bool, typer.Option("--trust-code", help="Required: confirm the scenario is trusted code.")
+    ] = False,
+    random_seeds: Annotated[int, typer.Option(min=1, help="Random orders to average over.")] = 100,
+) -> None:
+    """Where the findings of a finished run sit under each world ordering (offline, free).
+
+    Re-ranks the worlds the run executed with screening, diverse, coverage and random orders and
+    reports how many worlds each needs before the first finding. Only executed worlds count.
+    """
+    from isitright.packs.mcp.model import ScenarioError, load_scenario
+    from isitright.packs.mcp.ordering import OrderingError, compare_orderings
+
+    if not trust_code:
+        typer.echo("This executes the scenario's code; pass --trust-code.", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT)
+    try:
+        data = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
+        scenario = load_scenario(data.cases[0].extensions["mcp"]["scenario_ref"])
+        results = compare_orderings(data, report.parent, scenario, random_seeds=random_seeds)
+    except (OrderingError, ScenarioError, OSError, KeyError) as error:
+        typer.echo(f"Ordering error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
+    typer.echo("ranking     worlds  findings  first finding (mean / worst)  seeds")
+    for r in results:
+        first = (
+            "-" if r.first_finding is None else f"{r.first_finding:.1f} / {r.first_finding_worst}"
+        )
+        typer.echo(f"{r.ranking:<11} {r.worlds:>6}  {r.findings:>8}  {first:<28}  {r.seeds:>5}")
+    typer.echo("Only worlds the run executed are placed; an early-stopped run is biased.")
 
 
 @agents_app.command("replay")

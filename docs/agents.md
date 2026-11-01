@@ -80,7 +80,7 @@ A live run costs money and time, and most generated worlds tell us nothing: the 
 what changed, or the right action is the same as before. `agents run` therefore does the
 following, and reports each step.
 
-1. **Baseline first.** The baseline world runs `--trials` times. Its recorded calls are the
+1. **Baseline first.** The baseline world runs `--trials` times (`--baseline-trials` sets a different count). Its recorded calls are the
    *baseline trace*.
 2. **Screening, without the agent.** Each candidate world's service replays the baseline trace and
    the oracle judges the result. Four classes:
@@ -231,7 +231,36 @@ agent and its server (`TIMEOUT`). An agent may write `transcript.json` (`provide
 `input_tokens`, `output_tokens` and `cost`); the runner records the stack under test and the
 cost. `--max-money` needs every usage entry to state its `cost`: if a completed run does not, the
 run is refused with exit code 2 (after that first run) instead of running unbounded. Use
-`--max-runs` or `--max-seconds` for agents that do not report cost.
+`--max-runs` or `--max-seconds` for agents that do not report cost. A simulated user that is itself
+a model can add `user_usage` (the same entries): the runner records `user_model_calls`,
+`user_input_tokens`, `user_output_tokens` and `user_money` apart from the agent's, and `money` (what
+`--max-money` counts) is then the agent's cost plus the user's.
+
+Agents run with one thread for OpenBLAS, OpenMP and MKL (`OPENBLAS_NUM_THREADS`,
+`OMP_NUM_THREADS`, `MKL_NUM_THREADS`) unless the environment sets them: several agent processes at
+once, each with a server that imports numpy, could not start on a small machine otherwise.
+
+A generated world's id is `g<hash>_<families>`. The hash covers what the mutations change, so the
+same world has the same id under any seed, hint arm or attempt budget, and `--world` can name it
+across runs (the attempt budget must still be large enough to reach it).
+
+A `threshold` hint on a field may say where its cut-off value itself falls: `holds` (`above` or
+`below`) is the side of the cut-off where the condition the hint names is true, and `inclusive`
+says whether the cut-off value is on that side; they come together. A generated world that sits
+exactly on the cut-off is judged only when the hint says so, and only if the reference procedure
+agrees with it (the world must have the role of the neighbor on the side the hint puts it). With no
+declaration the world is `CANNOT_JUDGE` ("the hint does not say whether that value is inside"),
+because the reference's `<` or `<=` would otherwise decide the right answer.
+
+`ScenarioOracle.ignored_writes` names tools whose successful calls are left out of the comparison
+between the agent's writes and the reference's, for a write the policy allows besides what the
+reference does. Invariants still see them.
+
+`isitright agents order --trust-code --report REPORT` re-ranks the worlds a finished run executed
+with each ranking (screening, diverse, coverage, and random averaged over `--random-seeds`) and
+prints how many worlds each needs before the first finding. It runs nothing and costs nothing. Only
+executed worlds are placed, so a run stopped early by patience or `--max-worlds` is biased toward
+its own ranking.
 
 ## Stochastic subjects
 
@@ -255,7 +284,7 @@ world diff, mutation path with the hints behind it), `controls`, `stability` (ba
 
 ```
 isitright agents run --scenario REF --agent-command CMD --trust-code
-        [--worlds generated|fixed|all] [--trials N] [--world ID ...] [--max-worlds N, default 50]
+        [--worlds generated|fixed|all] [--trials N] [--baseline-trials N] [--world ID ...] [--max-worlds N, default 50]
         [--attempts N] [--ranking diverse|screening|coverage|random] [--stratum-patience N] [--run-patience N]
         [--max-trials N] [--sequential/--no-sequential] [--minimize]
         [--max-money X] [--max-runs N] [--max-seconds S] [--timeout SECONDS] [--output-dir DIR]

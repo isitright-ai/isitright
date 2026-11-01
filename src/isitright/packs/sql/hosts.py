@@ -19,7 +19,11 @@ from isitright.packs.sql.models import QueryResult
 from isitright.packs.sql.postgres_ddl import Schema
 from isitright.packs.sql.postgres_server import _execute_postgres, _postgres_server
 from isitright.packs.sql.schema import DatabaseSchema
-from isitright.packs.sql.sqlite_sandbox import QueryExecutionError, execute_query
+from isitright.packs.sql.sqlite_sandbox import (
+    QueryExecutionError,
+    execute_query,
+    foreign_key_problem,
+)
 from isitright.packs.sql.state import DatabaseState
 from isitright.packs.sql.state_loader import load_state
 
@@ -80,8 +84,9 @@ class SqliteHost(SqlHost):
                 raise StateRejected(str(error)) from error
             except sqlite3.Error as error:
                 raise StateRejected(f"{type(error).__name__}: {error}") from error
-            if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
-                raise StateRejected("foreign-key check failed")
+            problem = foreign_key_problem(connection)
+            if problem is not None:
+                raise StateRejected(f"foreign-key check failed: {problem}")
             connection.execute("PRAGMA query_only = ON")
         except BaseException:
             connection.close()

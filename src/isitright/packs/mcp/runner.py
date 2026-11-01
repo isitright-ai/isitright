@@ -53,6 +53,15 @@ def harness_identity(argv: list[str]) -> tuple[str | None, str | None]:
     return None, None
 
 
+THREAD_LIMITS = {
+    name: "1" for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
+}
+"""Numeric libraries allocate buffers for every thread when they are imported. Several agent
+processes at once, each with an MCP server that imports one (tau2 does), could not start on a small
+machine ("OpenBLAS: memory allocation failed"). Agents and servers inherit one thread each; a value
+already in the environment wins."""
+
+
 def read_transcript(run_dir: Path, harness: tuple[str | None, str | None]) -> dict[str, Any]:
     """What the agent's ``transcript.json`` says about the stack under test and its usage.
 
@@ -92,6 +101,23 @@ def read_transcript(run_dir: Path, harness: tuple[str | None, str | None]) -> di
             result["money"] = float(sum(float(u["cost"]) for u in usage))
         except (KeyError, TypeError, ValueError):
             result.pop("money", None)
+    user = data.get("user_usage")
+    if isinstance(user, list) and user:
+        # The simulated user's calls are part of what the run cost, kept apart from the agent's.
+        try:
+            result["user_model_calls"] = len(user)
+            result["user_input_tokens"] = sum(int(u["input_tokens"]) for u in user)
+            result["user_output_tokens"] = sum(int(u["output_tokens"]) for u in user)
+        except (KeyError, TypeError, ValueError):
+            for key in ("user_model_calls", "user_input_tokens", "user_output_tokens"):
+                result.pop(key, None)
+        try:
+            result["user_money"] = float(sum(float(u["cost"]) for u in user))
+            if "money" in result:
+                result["agent_money"] = result["money"]
+                result["money"] = result["agent_money"] + result["user_money"]
+        except (KeyError, TypeError, ValueError):
+            pass
     return result
 
 
@@ -127,6 +153,7 @@ def run_agent(
             token = token.replace(key, value)
         resolved.append(token)
     environment = {
+        **THREAD_LIMITS,
         **os.environ,
         "ISITRIGHT_MCP_CONFIG": str(mcp_config),
         "ISITRIGHT_TASK_FILE": str(task_file),

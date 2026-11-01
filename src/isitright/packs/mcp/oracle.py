@@ -107,6 +107,7 @@ def successful_writes(scenario: McpScenario, trace: list[TraceDict]) -> tuple[st
             and not event["is_error"]
             and (tool := scenario.tool(event["name"])) is not None
             and tool.writes
+            and event["name"] not in scenario.oracle.ignored_writes
         )
     )
 

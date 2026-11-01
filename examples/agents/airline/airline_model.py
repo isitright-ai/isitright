@@ -181,6 +181,8 @@ def hints(task_id: str) -> Hints:
             ),
             Hint(
                 kind="threshold",  # policy: "The booking was made within the last 24 hrs"
+                # Whether exactly 24 hours counts as "within" is not in the policy, so the hint
+                # does not say (no inclusive/holds) and the world on the cut-off is not judged.
                 name="booked_within_24h",
                 provenance=Provenance.DECLARED,
                 args={"path": "reservations.created_at", "value": "2024-05-14T15:00:00"},

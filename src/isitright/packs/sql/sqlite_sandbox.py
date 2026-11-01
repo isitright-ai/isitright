@@ -30,6 +30,32 @@ class QueryResourceLimitError(QueryExecutionError):
     """Raised when a query produces more rows than the configured cap."""
 
 
+def foreign_key_problem(connection: sqlite3.Connection) -> str | None:
+    """What ``PRAGMA foreign_key_check`` finds, in words, or None when the database is consistent.
+
+    A violation names the child table, the parent table and how many rows have no parent. A
+    ``foreign key mismatch`` is a declaration SQLite cannot enforce at all: the parent columns are
+    neither the primary key nor covered by a unique index.
+    """
+    try:
+        rows = connection.execute("PRAGMA foreign_key_check").fetchall()
+    except sqlite3.OperationalError as error:
+        if "foreign key mismatch" in str(error):
+            return (
+                f"{error}; the referenced columns are not the parent's primary key or unique, so "
+                "SQLite cannot enforce the declaration"
+            )
+        raise
+    if not rows:
+        return None
+    counts: dict[tuple[str, str], int] = {}
+    for child, _rowid, parent, _index in rows:
+        counts[(child, parent)] = counts.get((child, parent), 0) + 1
+    shown = [f"{child} -> {parent} ({n} rows)" for (child, parent), n in sorted(counts.items())]
+    more = f" and {len(shown) - 5} more" if len(shown) > 5 else ""
+    return "rows without a parent: " + ", ".join(shown[:5]) + more
+
+
 class SQLiteSandbox(AbstractContextManager["SQLiteSandbox"]):
     """An in-memory copy of a source database with query-only execution enabled."""
 
@@ -84,9 +110,9 @@ class SQLiteSandbox(AbstractContextManager["SQLiteSandbox"]):
         if integrity is None or integrity[0] != "ok":
             detail = "unknown" if integrity is None else str(integrity[0])
             raise DatabaseInputError(f"SQLite integrity check failed: {detail}")
-        foreign_key_violation = connection.execute("PRAGMA foreign_key_check").fetchone()
-        if foreign_key_violation is not None:
-            raise DatabaseInputError("SQLite foreign-key check failed")
+        problem = foreign_key_problem(connection)
+        if problem is not None:
+            raise DatabaseInputError(f"SQLite foreign-key check failed: {problem}")
 
     def execute(
         self, sql: str, *, timeout_seconds: float, max_result_rows: int = 10_000

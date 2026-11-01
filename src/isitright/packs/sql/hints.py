@@ -7,6 +7,8 @@ duplicates, empty relations and dangling references there are tried first).
 
 from __future__ import annotations
 
+from typing import Any
+
 from isitright.core.entities import EntitySchema, ModelError
 from isitright.core.hints import Hint, HintKind, Hints, Provenance, register_hint_kind
 from isitright.packs.sql.analysis import QueryGuidance
@@ -56,6 +58,10 @@ def hints_from_guidance(model: SqlModel, guidance: QueryGuidance) -> Hints:
             )
     for literal in guidance.literals:
         for table_name, column_name, kind in referenced:
+            if guidance.bound_literals and not _is_bound(
+                guidance, table_name, column_name, literal
+            ):
+                continue  # the query never compares this column with this literal
             primary = model.db.table(table_name)
             if any(c.name == column_name and c.primary_key_position for c in primary.columns):
                 continue
@@ -75,6 +81,16 @@ def hints_from_guidance(model: SqlModel, guidance: QueryGuidance) -> Hints:
                     )
                 )
     return Hints(hints)
+
+
+def _is_bound(guidance: QueryGuidance, table: str, column: str, literal: Any) -> bool:
+    return any(
+        name == column
+        and qualifier in (None, table)
+        and value == literal
+        and type(value) is type(literal)
+        for qualifier, name, value in guidance.bound_literals
+    )
 
 
 def _is_numeric_declared(model: SqlModel, table: str, column: str) -> bool:

@@ -6,17 +6,20 @@ role from the reference procedure, and the mutation path with the hints behind i
 
 from __future__ import annotations
 
+import hashlib
 import heapq
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 from isitright.core.constraints import Validity, ValidityStatus, ValidityTier
 from isitright.core.families import default_mutators
-from isitright.core.hints import Provenance, lookup_matches
-from isitright.core.mutations import Candidate, Mutation, World
+from isitright.core.families._util import neighbors
+from isitright.core.hints import Hint, Provenance, lookup_matches
+from isitright.core.mutations import Candidate, EditError, Mutation, SetField, World
 from isitright.core.oracles import Role
-from isitright.core.search import Evaluation, SearchResult, Verdict, search
+from isitright.core.search import Evaluation, Progress, SearchResult, Verdict, search
 from isitright.core.stochastic import Budget
 from isitright.packs.mcp.model import McpScenario
 from isitright.packs.mcp.oracle import Reference, reference_outcome
@@ -82,7 +85,12 @@ def annotate(
     state_steps = [m for m in world.path if m.target == "state"]
     if state_steps and all(m.reachable for m in state_steps):
         tiers.append(ValidityTier.REACHABLE.value)
-    reference = reference_outcome(scenario, world)
+    problem = _cutoff_problem(scenario, world)
+    reference = (
+        Reference(Role.UNJUDGEABLE, problem, None, 0, problem)
+        if problem is not None
+        else reference_outcome(scenario, world)
+    )
     return GeneratedWorld(
         world_id,
         world,
@@ -98,12 +106,100 @@ def annotate(
     )
 
 
+def _cutoff_problem(scenario: McpScenario, world: World) -> str | None:
+    """Why a world on the exact cut-off of a threshold hint cannot be judged, or None.
+
+    The hint must say whether the cut-off value counts as inside (``inclusive`` and ``holds``);
+    without it the reference's operator decides the role, and that is a choice, not a fact about
+    the policy. When the hint does say, the reference must agree: the world on the cut-off must
+    have the role of the neighbor on the side the hint puts it, not the other.
+    """
+    thresholds = {h.name: h for h in scenario.hints.of("threshold") if "path" in h.args}
+    for index, mutation in enumerate(world.path):
+        for edit in mutation.edits:
+            if not isinstance(edit, SetField) or len(edit.path) != 1:
+                continue
+            for name in mutation.hints:
+                hint = thresholds.get(name)
+                if hint is None:
+                    continue
+                collection, field = scenario.spec.schema.resolve(hint.args["path"])
+                if (edit.collection, edit.path[0]) != (collection.name, field.name):
+                    continue
+                values = neighbors(field.type, hint.args["value"])
+                if len(values) != 3 or edit.value != values[0]:
+                    continue  # not an ordered value, or not exactly on the cut-off
+                if "inclusive" not in hint.args:
+                    return (
+                        f"the world sits exactly on the cut-off of hint {name!r} "
+                        f"({hint.args['value']!r}) and the hint does not say whether that value "
+                        "is inside: declare inclusive and holds on the hint"
+                    )
+                return _cutoff_disagreement(scenario, world, index, edit, values, hint)
+    return None
+
+
+def _cutoff_disagreement(
+    scenario: McpScenario, world: World, index: int, edit: SetField, values: list[Any], hint: Hint
+) -> str | None:
+    below, above = values[1], values[2]
+    roles = {}
+    for side, value in (("below", below), ("above", above)):
+        steps = [
+            m.model_copy(
+                update={
+                    "edits": [
+                        e.model_copy(update={"value": value}) if e is edit else e for e in m.edits
+                    ]
+                }
+            )
+            if i == index
+            else m
+            for i, m in enumerate(world.path)
+        ]
+        neighbor = World(scenario.base)
+        try:
+            for step in steps:
+                neighbor = neighbor.apply(step)
+        except EditError:
+            return None
+        roles[side] = reference_outcome(scenario, neighbor).role
+    exact = reference_outcome(scenario, world).role
+    if Role.UNJUDGEABLE in {*roles.values(), exact} or roles["below"] == roles["above"]:
+        return None  # nothing changes across the cut-off, or the oracle cannot say
+    inside = (
+        hint.args["holds"]
+        if hint.args["inclusive"]
+        else ("below" if hint.args["holds"] == "above" else "above")
+    )
+    if exact == roles[inside]:
+        return None
+    return (
+        f"the hint {hint.name!r} declares the cut-off value "
+        f"{'inside' if hint.args['inclusive'] else 'outside'} the side where its condition holds "
+        f"({hint.args['holds']}), but the reference procedure treats it like the opposite side"
+    )
+
+
+def _world_id(path: tuple[Mutation, ...]) -> str:
+    """``g<hash>_<families>``: the hash covers what the mutations change, not the order the search
+    found them in or the hints behind them, so the same world has the same id under any hint arm,
+    seed or attempt budget."""
+    content = [
+        m.model_dump(mode="json", include={"family", "target", "edits", "response", "trigger"})
+        for m in path
+    ]
+    digest = hashlib.sha256(json.dumps(content, sort_keys=True).encode("utf-8")).hexdigest()[:8]
+    return f"g{digest}_" + "+".join(m.family for m in path)
+
+
 def generate_worlds(
     scenario: McpScenario,
     *,
     attempts: int = 20_000,
     seed: int = 0,
     depth: int = 2,
+    progress: Progress | None = None,
 ) -> tuple[list[GeneratedWorld], SearchResult]:
     """All valid worlds within the attempt budget (the baseline excluded), in visiting order."""
     found: list[GeneratedWorld] = []
@@ -112,7 +208,10 @@ def generate_worlds(
         if validity.status is not ValidityStatus.VALID:  # pragma: no cover - search filters these
             return Evaluation(Verdict.REJECTED)
         path = candidate.world.path
-        world_id = f"g{len(found) + 1:04d}_" + "+".join(m.family for m in path)
+        world_id = _world_id(path)
+        taken = {w.id for w in found}
+        while world_id in taken:  # two paths with the same content: keep the ids distinct
+            world_id += "x"
         found.append(
             annotate(
                 scenario, candidate.world, validity, world_id, candidate.group, candidate.depth
@@ -134,6 +233,7 @@ def generate_worlds(
         stop_on_first=False,
         compose_from="all",
         max_parents=300,
+        progress=progress,
     )
     return found, result
 
