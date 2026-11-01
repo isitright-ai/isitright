@@ -332,3 +332,11 @@ def test_run_pair_executes_in_order_and_stops_on_failure(
             state, "SELECT * FROM nope", "SELECT 3", timeout_seconds=5, max_result_rows=10
         )
     assert seen == ["SELECT * FROM nope"]
+
+
+def test_a_literal_is_paired_only_with_the_columns_the_query_compares_it_with() -> None:
+    model = _sqlite_model("CREATE TABLE t (id INTEGER PRIMARY KEY, kind TEXT, born TEXT);")
+    sql = "SELECT COUNT(*) FROM t WHERE kind = 'VYBER' AND STRFTIME('%Y', born) >= '2012'"
+    guidance = harvest_query_guidance(validate_read_only_query(sql))
+    names = {h.name for h in hints_from_guidance(model, guidance).of("literal")}
+    assert names == {"literal:t.kind='VYBER'", "literal:t.born='2012'"}

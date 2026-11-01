@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import sys
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -46,10 +48,22 @@ def worlds(shop: McpScenario) -> list[GeneratedWorld]:
     return found
 
 
+@cache
+def _shop_module(name: str) -> Any:
+    """The shop's own ``oracle`` or ``scripted_agent``, loaded by path: other examples have modules
+    of the same names, and loading a scenario puts its directory first on ``sys.path``."""
+    spec = importlib.util.spec_from_file_location(f"shop_{name}", SHOP / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _trace(shop: McpScenario, mode: str) -> list[dict[str, Any]]:
     """What a scripted agent does in the unmutated world, recorded in-process."""
-    import oracle
-    import scripted_agent
+    oracle = _shop_module("oracle")
+    scripted_agent = _shop_module("scripted_agent")
 
     from isitright.core.mutations import World
 

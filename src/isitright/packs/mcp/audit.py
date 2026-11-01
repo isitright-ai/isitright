@@ -39,6 +39,7 @@ from isitright.core.evidence import (
 from isitright.core.minimize import NoisyMinimization, minimize_path_noisy
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome, Role, controls_status
+from isitright.core.search import Progress
 from isitright.core.sequential import Decision, PairedSprt, RateSprtConfig, SprtConfig
 from isitright.core.stochastic import (
     DEFAULT_K,
@@ -93,6 +94,8 @@ __all__ = ["AgentsInputError", "RunWorld", "prepare_worlds", "run_scenario", "wr
 DEFAULT_MAX_WORLDS = 50
 """A safety rail on generated worlds, not a recommendation: set a money, run or time budget."""
 DEFAULT_MAX_TRIALS = 16
+GENERATION_REPORT_EVERY = 100
+"""Candidates visited between two progress reports while the worlds are generated."""
 """The most paired runs the sequential test may use on one world."""
 NOT_RUN_RECORDS = 300
 HINT_WORLDS_LISTED = 20
@@ -129,6 +132,7 @@ def prepare_worlds(
     attempts: int,
     seed: int,
     only: list[str] | None = None,
+    progress: Progress | None = None,
 ) -> tuple[list[RunWorld], dict[str, Any]]:
     """The baseline, then hand-written and/or generated worlds, each with its reference.
 
@@ -171,7 +175,9 @@ def prepare_worlds(
                 )
             )
     if source in ("generated", "all"):
-        generated, result = generate_worlds(scenario, attempts=attempts, seed=seed)
+        generated, result = generate_worlds(
+            scenario, attempts=attempts, seed=seed, progress=progress
+        )
         accounting = result.accounting()
         accounting["generated_total"] = len(generated)
         for g in generated:
@@ -310,6 +316,7 @@ def run_scenario(
     worlds: WorldSource = "generated",
     k: int = DEFAULT_K,
     trials: int | None = None,
+    baseline_trials: int | None = None,
     timeout_seconds: float = 300.0,
     trust_code: bool = False,
     seed: int = 0,
@@ -326,6 +333,7 @@ def run_scenario(
     minimize_max_runs: int = 200,
     hints_file: Path | None = None,
     progress: Callable[[str, str], None] | None = None,
+    generation_progress: Callable[[int, int, int], None] | None = None,
 ) -> AuditReport:
     """Run ``agent_command`` on the baseline, then on the generated worlds in ranked order.
 
@@ -336,14 +344,16 @@ def run_scenario(
     ``rules.run_patience`` consecutive worlds that add nothing. Worlds not reached are reported as
     not run, with the reason. ``progress(world_id, marker)`` is called after every agent run with
     one character: ``.`` as expected, ``V`` invariant violated, ``N`` expected behavior not met,
-    ``?`` could not be judged, ``E`` the run did not complete.
+    ``?`` could not be judged, ``E`` the run did not complete. ``baseline_trials`` sets the
+    baseline's run count when it should differ from ``trials`` (default: the same).
     """
     if not trust_code:
         raise AgentsInputError("running a scenario executes its code; pass trust_code=True")
     if importlib.util.find_spec("mcp") is None:
         raise AgentsInputError("the MCP SDK is not installed; run: pip install 'isitright[mcp]'")
     k = trials if trials is not None else k
-    if k < 1 or timeout_seconds <= 0 or max_trials < 1:
+    baseline_k = baseline_trials if baseline_trials is not None else k
+    if k < 1 or baseline_k < 1 or timeout_seconds <= 0 or max_trials < 1:
         raise AgentsInputError("trials and max_trials must be at least 1 and the timeout positive")
     if output_dir.exists():
         raise AgentsInputError("output directory already exists; choose a new directory")
@@ -365,13 +375,24 @@ def run_scenario(
     output_dir.mkdir(parents=True)
     harness = harness_identity(argv)
     started = time.monotonic()
-    prepared, accounting = prepare_worlds(scenario, worlds, attempts=attempts, seed=seed, only=only)
+    visited = valid = 0
+
+    def count_candidate(event: str) -> None:
+        nonlocal visited, valid
+        visited += 1
+        valid += event != "rejected"
+        if generation_progress is not None and visited % GENERATION_REPORT_EVERY == 0:
+            generation_progress(visited, valid, attempts)
+
+    prepared, accounting = prepare_worlds(
+        scenario, worlds, attempts=attempts, seed=seed, only=only, progress=count_candidate
+    )
     if only is not None:
         unknown = sorted(set(only) - {rw.id for rw in prepared})
         if unknown:
             raise AgentsInputError(
-                f"no such world: {', '.join(unknown)} (ids come from the generation, so they "
-                "depend on --seed and the attempt budget)"
+                f"no such world: {', '.join(unknown)} (generated ids come from the mutations, so "
+                "the attempt budget must be large enough to reach the world)"
             )
     results: list[WorldResult] = []
     not_run: list[NotRun] = []
@@ -399,7 +420,7 @@ def run_scenario(
         return outcome
 
     if anything_to_audit:
-        base.outcomes = run_repeated(lambda t: run_trial(baseline_rw, base, t), k, budget)
+        base.outcomes = run_repeated(lambda t: run_trial(baseline_rw, base, t), baseline_k, budget)
     generated = [rw for rw in prepared if rw.generated is not None]
     fixed = [rw for rw in prepared if rw.fixed is not None]
     trace_dir, trace = _baseline_trace(base, output_dir)
@@ -582,6 +603,10 @@ def _run_world(
     test = PairedSprt(config)
     result.sequential = test
     errors = 0
+    base_errors = 0
+    cursor = (
+        0  # the next baseline run to pair with; baseline runs that did not complete are skipped
+    )
     for _ in range(config.max_pairs + 1):  # one spare run for a run that did not complete
         if not budget.can_run():
             break
@@ -593,16 +618,19 @@ def _run_world(
             if errors >= 2:
                 break
             continue
-        if test.pairs >= len(base.outcomes):  # the paired baseline run does not exist yet
-            if not budget.can_run():
+        while True:
+            while cursor < len(base.outcomes) and base.outcomes[cursor].error:
+                cursor += 1
+            if cursor < len(base.outcomes) or base_errors >= 2 or not budget.can_run():
                 break
             extra = run_trial(base.world, base, len(base.outcomes))
             budget.record_run(extra.cost)
             base.outcomes.append(extra)
-        partner = base.outcomes[test.pairs]
-        if partner.error:
-            break  # the baseline run did not complete: nothing to pair with, counts only
-        test.add(is_bad(partner), is_bad(outcome))
+            base_errors += extra.error
+        if cursor >= len(base.outcomes):
+            break  # no completed baseline run to pair with: counts only
+        test.add(is_bad(base.outcomes[cursor]), is_bad(outcome))
+        cursor += 1
         if test.decision is not Decision.CONTINUE:
             break
 
@@ -756,7 +784,7 @@ def build_report(
     completed = sum(1 for r in results for o in r.outcomes if not o.error)
     status = (
         DivergenceStatus.UNSUPPORTED
-        if not runnable
+        if not runnable and not any(n.world.runnable for n in context.not_run)
         else DivergenceStatus.COUNTEREXAMPLE_FOUND
         if findings
         else DivergenceStatus.INCONCLUSIVE
@@ -784,7 +812,13 @@ def build_report(
     selection = _selection(accounting, results, context)
     search_record = _search_record(accounting, budget, len(runs), context, scenario, selection)
     headline = _headline(
-        status, findings, controls_state, len(runs), len(runnable), _not_run_count(context)
+        status,
+        findings,
+        controls_state,
+        len(runs),
+        len(runnable),
+        _not_run_count(context),
+        budget.exhausted,
     )
     case = CaseReport(
         case_id=scenario.id,
@@ -1081,6 +1115,7 @@ def _headline(
     runs: int,
     worlds: int,
     not_run: int = 0,
+    stopped_by: str | None = None,
 ) -> str:
     if status is DivergenceStatus.UNSUPPORTED:
         return "Unsupported: no world in the scenario is valid"
@@ -1101,6 +1136,8 @@ def _headline(
         "NOT_DISCRIMINATING": "",
     }[controls]
     unrun = f"; {not_run} eligible worlds were not run" if not_run else ""
+    if stopped_by:
+        unrun += f" (the {stopped_by} budget ended the run)"
     return (
         f"No invariant violation or expectation mismatch in {runs} runs across {worlds} worlds"
         f"{unrun}{tail}"

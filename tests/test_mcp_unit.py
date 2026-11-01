@@ -802,3 +802,15 @@ def test_the_booking_clock_is_the_task_clock_everywhere(booking: McpScenario) ->
     before["now"] = "2030-01-01T00:00:00"  # a changed service clock does not change eligibility
     mine = [_event(0, "cancel_booking", {"booking_id": "B100"})]
     assert invariant.check(before, before, mine) == []
+
+
+def test_ignored_writes_are_left_out_of_the_write_comparison(booking: McpScenario) -> None:
+    import dataclasses
+
+    from isitright.packs.mcp.oracle import successful_writes
+
+    assert len(successful_writes(booking, [_cancel_event()])) == 1
+    lenient = dataclasses.replace(
+        booking, oracle=dataclasses.replace(booking.oracle, ignored_writes=["cancel_booking"])
+    )
+    assert successful_writes(lenient, [_cancel_event()]) == ()

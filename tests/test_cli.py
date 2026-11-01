@@ -52,7 +52,7 @@ def test_commands_explain_ordering_policy(command: list[str]) -> None:
 def test_version_is_available() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == "isitright 0.5.0"
+    assert result.output.strip() == "isitright 0.5.1"
 
 
 def test_invalid_fail_on_uses_reserved_input_exit_code(tmp_path: Path) -> None:

@@ -3,6 +3,47 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
+## 0.5.1 - 2026-11-01
+
+### Added
+
+- `agents run --baseline-trials` (a baseline run count apart from `--trials`), a progress line
+  while worlds are generated, `ScenarioOracle.ignored_writes`, `agents order` (compare world
+  orderings offline from a finished run), and `sql slice` (a small database holding the rows the
+  reference query used, with `isitright.packs.sql.slicing`).
+- The runner records a simulated user's usage (`user_usage` in `transcript.json`) apart from the
+  agent's and counts it in `money`. The tau2 example reports it, and ends a conversation the user
+  stopped right after the agent's question as a run that did not complete (exit code 3;
+  `--accept-unanswered-stop` keeps the old behavior). Its adapter passes `max_turns` (default 30,
+  `ISITRIGHT_AGENT_MAX_TURNS`) instead of the SDK's 10.
+
+### Changed
+
+- A `threshold` hint can declare `inclusive` and `holds`. A generated world exactly on a cut-off
+  that is not declared is `CANNOT_JUDGE`; one that is declared is judged only if the reference
+  agrees with the declaration.
+- **Neighbor values of a boundary** are written like the value: a datetime without a zone no
+  longer gets a `Z` (a scenario comparing it with a naive clock raised `TypeError`, which made
+  every ±1 s world `CANNOT_JUDGE`), and a date moves by a day.
+- **Generated world ids** are `g<hash>_<families>` and no longer depend on the order of the
+  search, so ids from older reports do not match.
+- SQL literal hints pair a literal only with the columns the query compares it with, so a format
+  string such as the first argument of `STRFTIME` is no longer tried as a value of a date column.
+- Applying edits to a state copies only the rows it changes, which makes a proposal on a large
+  database much cheaper.
+- Agents start with one numeric-library thread each unless the environment says otherwise.
+- SQLite foreign-key failures name the tables and the number of rows involved.
+- The airline example judges certificates and flight changes with two policy invariants
+  (`policy_checks.py`) instead of comparing them with the reference, and leaves the world exactly
+  on the 24-hour cut-off undeclared, so it is `CANNOT_JUDGE`.
+
+### Fixed
+
+- `agents run --max-runs 1` (any budget spent before a generated world ran) no longer fails the
+  report validation; it reports `NOT_FOUND_WITHIN_BUDGET` and the budget that ended the run.
+- A baseline run that did not complete is skipped when pairing instead of ending the world's runs
+  with the sequential test undecided.
+
 ## 0.5.0 - Evidence at scale
 
 0.5 makes live-agent audits affordable and their evidence defensible: it chooses which worlds to

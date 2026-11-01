@@ -128,3 +128,56 @@ def test_the_conversation_is_written_for_a_reviewer(tmp_path: Path) -> None:
     assert [t["user"] for t in data["turns"]] == ["cancel", "yes"]
     assert data["turns"][1]["tool_calls"] == ["get_reservation_details"]
     assert data["turns"][0]["agent"] == "reply 1" and data["stop_reason"] == "final"
+
+
+class _AskingAgent:
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+
+    def respond(self, user_message: str) -> AgentTurn:
+        return AgentTurn(self.reply, (), (Usage(10, 1),))
+
+    def close(self) -> None:
+        pass
+
+
+@pytest.mark.parametrize(
+    ("reply", "unanswered"),
+    [
+        ("Your flight was cancelled. Shall I refund it?", True),
+        ("I can refund it. Please reply yes to confirm.", True),
+        ("Done. The refund is on its way.", False),
+        ("YOU ARE BEING TRANSFERRED TO A HUMAN AGENT. ###TRANSFER###", False),
+    ],
+)
+def test_a_user_who_stops_after_a_question_is_recorded_as_unanswered(
+    reply: str, unanswered: bool
+) -> None:
+    conversation = converse(_AskingAgent(reply), ScriptedUser(["cancel it"]))
+    assert (conversation.stop_reason == "user_stop_unanswered") is unanswered
+
+
+def test_the_simulated_users_usage_is_recorded_and_added_to_the_money(tmp_path: Path) -> None:
+    from sdk import UserUsage
+
+    from isitright.packs.mcp.runner import read_transcript
+
+    class Metered(ScriptedUser):
+        last_usage: UserUsage | None = None
+
+        def next_message(self, agent_text: str) -> str | None:
+            self.last_usage = UserUsage(200, 20, 0.001)
+            return super().next_message(agent_text)
+
+    conversation = converse(FakeAgent(), Metered(["a"]))
+    assert len(conversation.user_usage) == 2  # the reply, and the call that ended the conversation
+    write_transcript(
+        tmp_path,
+        provider="openai",
+        model="m1",
+        conversation=conversation,
+        prices_per_million={"m1": (1.0, 2.0)},
+    )
+    extra = read_transcript(tmp_path, (None, None))
+    assert extra["user_money"] == pytest.approx(0.002) and extra["user_model_calls"] == 2
+    assert extra["money"] == pytest.approx(extra["agent_money"] + 0.002)

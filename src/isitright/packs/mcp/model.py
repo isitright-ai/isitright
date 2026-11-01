@@ -172,6 +172,11 @@ class ScenarioOracle:
     )
     """Reduces a write call to what matters (drop free text such as a reason) for comparing the
     agent's successful writes with the reference's: "exactly once" is part of the right behavior."""
+    ignored_writes: Sequence[str] = ()
+    """Tools whose successful calls are left out of that comparison, on both sides. For a write the
+    policy allows besides what the reference does (a goodwill gesture, an allowed alternative):
+    without it the run is judged as not reaching the expected behavior. Invariants still see
+    them."""
     judgeable: Callable[[Any], str | None] = lambda world: None
     assumptions: Sequence[str] = ()
     description: str = "the reference procedure's final state"

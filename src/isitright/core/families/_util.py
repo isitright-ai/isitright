@@ -6,7 +6,7 @@ import contextlib
 import copy
 import re
 from collections.abc import Iterable, Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from isitright.core.constraints import Pattern, Unique
@@ -185,14 +185,31 @@ def neighbors(kind: str, value: Any) -> list[Any]:
         return [value, round(number - step, 10), round(number + step, 10)]
     if kind in {"date", "datetime"} and isinstance(value, str):
         instant = parse_instant(value)
-        return [
-            value,
-            (instant - timedelta(seconds=1)).isoformat().replace("+00:00", "Z"),
-            (instant + timedelta(seconds=1)).isoformat().replace("+00:00", "Z"),
-        ]
+        day_only = kind == "date" and len(value) == 10
+        span = timedelta(days=1) if day_only else timedelta(seconds=1)
+        return [value, _written_like(value, instant - span), _written_like(value, instant + span)]
     if isinstance(value, str):
         return [value]
     return [value]
+
+
+_OFFSET = re.compile(r"[+-]\d\d:?\d\d$")
+
+
+def _written_like(original: str, instant: datetime) -> str:
+    """An instant in the style of ``original``: a value without a zone stays without one (a
+    scenario that compares it with a naive clock would otherwise fail on the neighbor), a ``Z``
+    stays ``Z``, a date stays a date, a space stays a space."""
+    text = instant.isoformat()
+    if original.endswith("Z"):
+        text = text.replace("+00:00", "Z")
+    elif not _OFFSET.search(original):
+        text = instant.replace(tzinfo=None).isoformat()
+    if len(original) == 10:
+        text = text[:10]
+    if " " in original:
+        text = text.replace("T", " ")
+    return text
 
 
 def neighbor_text(value: str) -> str:

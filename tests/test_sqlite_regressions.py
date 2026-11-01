@@ -100,3 +100,22 @@ def test_cyclic_deferred_foreign_keys_survive_reproduction(tmp_path: Path) -> No
         tmp_path / "cycle-artifacts" / "case_report.json",
         tmp_path / "cycle-artifacts" / "counterexample.sql",
     )["reproduced"]
+
+
+def test_foreign_key_problems_name_the_tables() -> None:
+    import sqlite3
+
+    from isitright.packs.sql.sqlite_sandbox import foreign_key_problem
+
+    connection = sqlite3.connect(":memory:")
+    connection.execute("CREATE TABLE parent (id INTEGER PRIMARY KEY)")
+    connection.execute("CREATE TABLE child (p INTEGER REFERENCES parent(id))")
+    connection.execute("INSERT INTO child VALUES (7)")
+    problem = foreign_key_problem(connection)
+    assert problem is not None and "child -> parent (1 rows)" in problem
+
+    connection.execute("CREATE TABLE loose (a INTEGER, b INTEGER)")
+    connection.execute("CREATE TABLE ref (x INTEGER REFERENCES loose(b))")
+    connection.execute("DELETE FROM child")
+    mismatch = foreign_key_problem(connection)
+    assert mismatch is not None and "cannot enforce" in mismatch

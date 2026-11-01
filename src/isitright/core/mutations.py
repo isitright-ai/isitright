@@ -74,8 +74,13 @@ class EditError(ValueError):
 
 
 def apply_edits(state: State, edits: Sequence[Edit]) -> State:
-    """Apply edits in order to a copy of the state."""
-    data = state.mutable()
+    """Apply edits in order to a copy of the state.
+
+    Only the rows an edit changes are copied; the others are shared with ``state`` (rows are never
+    edited in place), so the cost of a proposal does not grow with the size of the database.
+    """
+    data = {c: list(rows) for c, rows in state.collections.items()}
+    owned: set[int] = set()  # rows copied for this call, which later edits may change in place
     params = dict(state.params)
     for edit in edits:
         if isinstance(edit, SetParam):
@@ -88,13 +93,16 @@ def apply_edits(state: State, edits: Sequence[Edit]) -> State:
                 raise EditError(f"{edit.collection} already has key {edit.entity.get(key_name)!r}")
             rows.append(copy.deepcopy(edit.entity))
             continue
-        target = next((r for r in rows if r.get(key_name) == edit.key), None)
-        if target is None:
+        index = next((i for i, r in enumerate(rows) if r.get(key_name) == edit.key), None)
+        if index is None:
             raise EditError(f"no {edit.collection}[{edit.key!r}] to edit")
         if isinstance(edit, RemoveEntity):
-            rows.remove(target)
+            del rows[index]
             continue
-        holder: Any = target
+        if id(rows[index]) not in owned:
+            rows[index] = copy.deepcopy(rows[index])
+            owned.add(id(rows[index]))
+        holder: Any = rows[index]
         for token in edit.path[:-1]:
             holder = holder[token]
         if isinstance(edit, SetField):

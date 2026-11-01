@@ -14,6 +14,7 @@ which is what lets `--max-money` work.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,6 +25,15 @@ from typing import Protocol
 class Usage:
     input_tokens: int
     output_tokens: int
+
+
+@dataclass(frozen=True)
+class UserUsage:
+    """What one user-simulator reply cost, as the simulator reported it (``cost`` in dollars)."""
+
+    input_tokens: int
+    output_tokens: int
+    cost: float | None = None
 
 
 @dataclass(frozen=True)
@@ -44,7 +54,11 @@ class SdkAgent(Protocol):
 
 class UserSimulator(Protocol):
     def next_message(self, agent_text: str) -> str | None:
-        """The user's reply to the agent, or None when the user ends the conversation."""
+        """The user's reply to the agent, or None when the user ends the conversation.
+
+        A simulator backed by a model may also set ``last_usage`` (a `UserUsage`) after each call,
+        which `converse` records as the cost of the simulated user.
+        """
         ...
 
 
@@ -65,10 +79,25 @@ class Conversation:
     turns: list[AgentTurn] = field(default_factory=list)
     user_messages: list[str] = field(default_factory=list)
     stop_reason: str = "final"
+    """``final``, ``max_turns``, or ``user_stop_unanswered`` (the user ended the conversation right
+    after the agent asked something, so the agent's behavior was never completed)."""
+    user_usage: list[UserUsage] = field(default_factory=list)
 
     @property
     def usage(self) -> list[Usage]:
         return [u for turn in self.turns for u in turn.usage]
+
+
+_ASKS_FOR_AN_ANSWER = re.compile(
+    r"\?\s*$|\b(reply|respond|answer|type|say)\b[^.?!\n]{0,40}\b(yes|no|confirm)\b|\byes/no\b",
+    re.IGNORECASE,
+)
+
+
+def asks_for_an_answer(text: str) -> bool:
+    """Whether the agent's message ends by asking the user to answer (a question or a yes/no)."""
+    lines = [line for line in text.strip().splitlines() if line.strip()]
+    return bool(lines) and _ASKS_FOR_AN_ANSWER.search(lines[-1]) is not None
 
 
 def converse(
@@ -83,7 +112,12 @@ def converse(
     heard = greeting
     for _ in range(max_turns):
         message = user.next_message(heard)
+        reported = getattr(user, "last_usage", None)
+        if isinstance(reported, UserUsage):
+            conversation.user_usage.append(reported)
         if message is None:
+            if conversation.turns and asks_for_an_answer(heard):
+                conversation.stop_reason = "user_stop_unanswered"
             return conversation
         conversation.user_messages.append(message)
         turn = agent.respond(message)
@@ -135,6 +169,14 @@ def write_transcript(
         }
         for u in conversation.usage
     ]
+    user_usage = [
+        {
+            "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens,
+            **({"cost": u.cost} if u.cost is not None else {}),
+        }
+        for u in conversation.user_usage
+    ]
     (run_dir / "transcript.json").write_text(
         json.dumps(
             {
@@ -143,6 +185,7 @@ def write_transcript(
                 "sdk_versions": dict(sdk_versions or {}),
                 "settings": dict(settings or {}),
                 "usage": usage,
+                **({"user_usage": user_usage} if user_usage else {}),
                 "stop_reason": conversation.stop_reason,
             }
         ),

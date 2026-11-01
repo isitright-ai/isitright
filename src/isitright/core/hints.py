@@ -103,13 +103,27 @@ def _check_scope(schema: EntitySchema, hint: Hint) -> None:
 
 def _check_threshold(schema: EntitySchema, hint: Hint) -> None:
     """A cut-off on a field (``path`` and ``value``) or on a collection size (``collection``
-    and ``count``, optionally limited by ``where``), such as a page size."""
+    and ``count``, optionally limited by ``where``), such as a page size.
+
+    A cut-off on a field may say where the cut-off value itself falls: ``holds`` is the side of
+    the cut-off where the condition the hint names is true (``above`` or ``below``), and
+    ``inclusive`` says whether the cut-off value is on that side. They come together. Without
+    them a world that sits exactly on the cut-off has no agreed right answer (is "within 24 hours"
+    true at exactly 24 hours?), and a pack that judges worlds may decline to judge it.
+    """
     if "count" in hint.args:
         _need(hint, "collection", "count")
         _where(schema, hint)
     else:
         _need(hint, "path", "value")
         schema.resolve(hint.args["path"])
+        if ("inclusive" in hint.args) != ("holds" in hint.args):
+            raise ModelError(f"hint {hint.name!r}: inclusive and holds come together")
+        if "inclusive" in hint.args:
+            if not isinstance(hint.args["inclusive"], bool):
+                raise ModelError(f"hint {hint.name!r}: inclusive must be true or false")
+            if hint.args["holds"] not in {"above", "below"}:
+                raise ModelError(f"hint {hint.name!r}: holds must be above or below")
 
 
 def _check_json_path(schema: EntitySchema, hint: Hint) -> None:

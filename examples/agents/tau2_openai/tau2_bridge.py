@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sdk import UserUsage
+
 
 class Tau2UserBridge:
     def __init__(self, task: Any, llm: str, llm_args: dict[str, Any] | None = None) -> None:
@@ -20,10 +22,19 @@ class Tau2UserBridge:
         self._simulator = UserSimulator(llm=llm, instructions=instructions, llm_args=llm_args)
         self._state = self._simulator.get_init_state()
         self._assistant = AssistantMessage
+        self.last_usage: UserUsage | None = None
 
     def next_message(self, agent_text: str) -> str | None:
         message = self._assistant(role="assistant", content=agent_text)
         reply, self._state = self._simulator.generate_next_message(message, self._state)
+        usage = getattr(reply, "usage", None) or {}
+        cost = getattr(reply, "cost", None)
+        # litellm names the counts prompt_tokens and completion_tokens
+        self.last_usage = UserUsage(
+            int(usage.get("prompt_tokens", usage.get("input_tokens", 0))),
+            int(usage.get("completion_tokens", usage.get("output_tokens", 0))),
+            float(cost) if cost is not None else None,
+        )
         if self._simulator.is_stop(reply):
             return None
         return str(reply.content)

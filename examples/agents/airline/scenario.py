@@ -45,6 +45,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 
 import airline_model as model
+import policy_checks
 from tau2.domains.airline.data_model import FlightDB
 from tau2.domains.airline.tools import AirlineTools
 from tau2.environment.environment import Environment
@@ -241,16 +242,35 @@ def build(task_id: str, reservation: str, reason: str) -> McpScenario:
                 "a reservation with a segment already flown is not cancelled",
                 not_a_flown_segment,
             ),
+            Invariant(
+                "certificates_follow_the_compensation_policy",
+                "a certificate goes to an eligible customer, for 100 or 50 times the passengers "
+                "of a cancelled or delayed flight",
+                policy_checks.certificate_problems,
+            ),
+            Invariant(
+                "flight_changes_follow_the_modification_policy",
+                "flights of a basic economy reservation are not changed, and a change keeps the "
+                "trip's origin, destination and type",
+                policy_checks.flight_change_problems,
+            ),
         ],
         reference=reference,
         normalize=lambda state: cancelled(state),
         normalize_call=lambda tool, args: (tool, args),
+        # Allowed besides a cancellation: a compensation certificate, and a flight change the
+        # policy permits outside basic economy. Comparing them with the reference made correct
+        # runs NOT_MET; the two invariants above (policy_checks.py) judge them instead.
+        ignored_writes=["send_certificate", "update_reservation_flights"],
         assumptions=[
             "the policy's four conditions are applied to the whole reservation: one cancelled "
             "segment is enough ('the flight is cancelled by airline')",
             f"the customer's reason is {reason!r}; insurance justifies cancelling only for "
             "'covered_by_insurance'",
             "the clock is the tools' fixed 2024-05-15 15:00",
+            "send_certificate and update_reservation_flights calls are not compared with the "
+            "reference: the reservations cancelled are, and the two policy invariants judge those "
+            "writes (not checked: confirmation, consent, ordering, which reservation was meant)",
         ],
         description="the reservations cancelled equal those the policy-based reference cancels",
     )
