@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """The narrow interface between isitright's runner and an agent SDK, and the turn driver.
 
 An SDK agent answers one user message at a time and calls MCP tools itself, over the stdio host

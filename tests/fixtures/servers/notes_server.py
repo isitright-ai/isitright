@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """A small MCP server whose state lives in a SQLite file: the in-repository stand-in for a
 third-party server in the tests of the external-server host.
 

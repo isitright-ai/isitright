@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """Scenario over the Memory reference MCP server (a knowledge graph in a JSON-lines file).
 
 The server is `@modelcontextprotocol/server-memory`, written and maintained by others. isitright

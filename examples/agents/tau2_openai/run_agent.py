@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """An isitright agent command: the OpenAI Agents SDK agent talking to the tau2 user simulator.
 
     isitright agents run --trust-code --scenario <a tau2 scenario> ^

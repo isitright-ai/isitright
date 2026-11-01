@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """Scripted agents (no model) for the Memory-server scenario. ``MEMORY_AGENT_MODE``:
 
 reference  reads the graph, removes the old fact (observation and works_at relation) if present,

@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """The tau2 airline domain as an isitright scenario: tau2's own tools, a policy-based oracle.
 
 What is tau2's: the tools (`AirlineTools`, run unchanged on a `FlightDB` built from a generated

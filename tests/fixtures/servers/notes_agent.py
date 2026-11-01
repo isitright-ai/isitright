@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """Scripted agents for the notes scenario (no model). ``NOTES_AGENT_MODE``:
 
 reference  deletes every note whose text contains "draft", ignoring capitalization

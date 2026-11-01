@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """A scenario over the notes server: the world is its SQLite database, the oracle is ours.
 
 Task: delete every note that mentions "draft" and keep the others. Written by the same author as

@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """Scripted agents (no model) for the airline scenario. ``AIRLINE_AGENT_MODE``:
 
     careful   the oracle's reference procedure (the policy's "Cancel flight" section), run through

@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """Scenario: a retail support-desk agent that must cancel and refund the customer's latest order.
 
 Three authors, so that fixtures and checks do not agree merely because one hand wrote both:

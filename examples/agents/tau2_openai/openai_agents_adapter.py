@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """The OpenAI Agents SDK behind `SdkAgent`. Needs the SDK and a key; no test runs it.
 
 Install it yourself (it is not an isitright dependency): ``pip install openai-agents``. The key is

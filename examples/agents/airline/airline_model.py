@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """The tau2 airline domain as an entity model with hints, for the 0.5 rediscovery check.
 
 The entity schema comes from tau2's `data_model.py` (the shapes of users, reservations and flight

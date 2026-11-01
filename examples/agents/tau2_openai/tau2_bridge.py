@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """The tau2 user simulator behind `UserSimulator`, so it can talk to an SDK agent turn by turn.
 
 The simulator is a model (it needs its own key); this file only adapts tau2's message objects. It

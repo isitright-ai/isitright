@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """A proposer for the shop scenario that returns a recorded model response (no key, no network)."""
 
 from __future__ import annotations

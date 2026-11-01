@@ -1,4 +1,3 @@
-# Proposed fixture: pending owner review
 """Example scenario: a support agent asked to cancel a booking for a refund.
 
 Policy given to the agent: a booking may be cancelled only if it was made in the last 24 hours, the
@@ -12,8 +11,7 @@ so the agent must. The same task is given in every world; only the world changes
 
 The four worlds are hand-written (``fixed_worlds``). The scenario also declares an entity schema and
 hints, so the core can generate more worlds from it. The fixtures encode semantics (the policy and
-what the right behavior is). They are a proposal for the owner to review, not an authoritative
-specification.
+what the right behavior is) and have been reviewed by the owner.
 
 Run it without any API key using the scripted agent in this folder:
 
