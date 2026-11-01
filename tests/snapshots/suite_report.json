@@ -13,6 +13,7 @@
       "execution_fidelity": {
         "engine": "sqlite 3",
         "found_on": "NATIVE_ISOLATED",
+        "verification": null,
         "verified_on": null
       },
       "extensions": {},
@@ -23,6 +24,7 @@
           "fidelity": {
             "engine": "sqlite 3",
             "found_on": "NATIVE_ISOLATED",
+            "verification": null,
             "verified_on": null
           },
           "finding_id": "a:1",
@@ -45,6 +47,7 @@
           },
           "stability": null,
           "validity": {
+            "notes": [],
             "problems": [],
             "status": "VALID",
             "tiers": [
@@ -78,10 +81,13 @@
         "executed": 0,
         "families_run": [],
         "families_skipped": {},
+        "hint_use": [],
         "hints_used": [],
         "notes": [],
         "rejected": {},
+        "screening": null,
         "seed": 0,
+        "stopping": null,
         "valid_candidates": 0
       },
       "stability": null,
@@ -89,6 +95,7 @@
       "task": null,
       "unused_rules": [],
       "validity": {
+        "notes": [],
         "problems": [],
         "status": "VALID",
         "tiers": [
@@ -112,6 +119,7 @@
       "execution_fidelity": {
         "engine": "sqlite 3",
         "found_on": "NATIVE_ISOLATED",
+        "verification": null,
         "verified_on": null
       },
       "extensions": {},
@@ -137,10 +145,13 @@
         "executed": 0,
         "families_run": [],
         "families_skipped": {},
+        "hint_use": [],
         "hints_used": [],
         "notes": [],
         "rejected": {},
+        "screening": null,
         "seed": 0,
+        "stopping": null,
         "valid_candidates": 0
       },
       "stability": null,
@@ -148,6 +159,7 @@
       "task": null,
       "unused_rules": [],
       "validity": {
+        "notes": [],
         "problems": [],
         "status": "NOT_ASSESSED",
         "tiers": [],
@@ -168,6 +180,7 @@
       "execution_fidelity": {
         "engine": "sqlite 3",
         "found_on": "NATIVE_ISOLATED",
+        "verification": null,
         "verified_on": null
       },
       "extensions": {},
@@ -193,10 +206,13 @@
         "executed": 0,
         "families_run": [],
         "families_skipped": {},
+        "hint_use": [],
         "hints_used": [],
         "notes": [],
         "rejected": {},
+        "screening": null,
         "seed": 0,
+        "stopping": null,
         "valid_candidates": 0
       },
       "stability": null,
@@ -204,6 +220,7 @@
       "task": null,
       "unused_rules": [],
       "validity": {
+        "notes": [],
         "problems": [],
         "status": "NOT_ASSESSED",
         "tiers": [],
@@ -216,7 +233,7 @@
   "kind": "suite",
   "metadata": {},
   "pack": "sql",
-  "schema_version": "0.4",
+  "schema_version": "0.5",
   "totals": {
     "by_divergence_status": {
       "COUNTEREXAMPLE_FOUND": 1,

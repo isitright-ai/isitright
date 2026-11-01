@@ -12,11 +12,13 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Hashable, Iterable, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Generic, TypeVar
 
 from isitright.core.constraints import ValidityStatus
 from isitright.core.entities import ModelError
 from isitright.core.mutations import EditError, Mutation, World
+from isitright.core.sequential import RateDecision, RateSprt, RateSprtConfig
 from isitright.core.spec import WorldSpec
 from isitright.core.world import Atom, State
 
@@ -222,3 +224,165 @@ def _replay_path(base: World, path: Sequence[Mutation]) -> World:
     for mutation in path:
         world = world.apply(mutation)
     return world
+
+
+# --- noise-tolerant minimization of a mutation path -----------------------------------------
+
+
+class NoisyStatus(StrEnum):
+    MINIMIZED = "MINIMIZED"
+    NOT_REPRODUCED = "NOT_REPRODUCED"
+    """The full path did not show a failure rate above the reference: nothing to minimize."""
+    INCONSISTENT = "INCONSISTENT"
+    """Some step stayed between the boundaries: the path is returned unminimized."""
+    OUT_OF_RUNS = "OUT_OF_RUNS"
+
+
+@dataclass(frozen=True)
+class NoisyStep:
+    kept: tuple[int, ...]
+    decision: str
+    runs: int
+    bad: int
+
+
+@dataclass(frozen=True)
+class NoisyMinimization:
+    """A path minimized through noise. ``minimal`` is claimed only with the evidence behind it."""
+
+    path: tuple[Mutation, ...]
+    minimal: bool
+    status: NoisyStatus
+    runs: int
+    steps: tuple[NoisyStep, ...]
+    confidence: dict[str, object]
+    note: str
+
+
+class _OutOfRuns(Exception):
+    pass
+
+
+class _Inconsistent(Exception):
+    pass
+
+
+def minimize_path_noisy(
+    base: World,
+    path: Sequence[Mutation],
+    run: Callable[[World], bool],
+    *,
+    config: RateSprtConfig | None = None,
+    max_runs: int = 400,
+) -> NoisyMinimization:
+    """Delta debugging over the mutations of a path, each step judged by repeated runs.
+
+    ``run(world)`` runs the subject once and returns whether it failed. A subset of the path
+    *reproduces* when a Bernoulli SPRT finds its failure rate above the reference rate (the noise
+    floor of the unperturbed world); it does *not* when the test accepts the reference rate. A
+    subset that stays between the boundaries within the test's run cap makes the evidence
+    inconsistent, and the unminimized path is returned. A smaller path is accepted only after such
+    a test said so, so the result is never a path that was not seen to fail. Minimality is claimed
+    only when every single removal from the result was tested and did not reproduce.
+
+    The error bounds in ``confidence`` hold for the simple alternative the test states (the failure
+    rate ``effect``) and are union bounds over the tests made: a subset wrongly judged to
+    reproduce has probability at most ``alpha`` per test, and one wrongly judged not to reproduce at
+    most ``beta`` per test.
+    """
+    cfg = config or RateSprtConfig()
+    original = tuple(path)
+    cache: dict[tuple[int, ...], RateDecision] = {}
+    steps: list[NoisyStep] = []
+    used = 0
+
+    def judge(indexes: tuple[int, ...]) -> RateDecision:
+        nonlocal used
+        if indexes in cache:
+            return cache[indexes]
+        try:
+            world = _replay_path(base, [original[i] for i in indexes])
+        except EditError:  # a later mutation needs what a dropped one made: not a candidate
+            cache[indexes] = RateDecision.NOT_ABOVE
+            steps.append(NoisyStep(indexes, "NOT_APPLICABLE", 0, 0))
+            return RateDecision.NOT_ABOVE
+        test = RateSprt(cfg)
+        decision: RateDecision | None = None
+        while decision is None:
+            if used >= max_runs:
+                raise _OutOfRuns
+            decision = test.add(run(world))
+            used += 1
+        cache[indexes] = decision
+        steps.append(NoisyStep(indexes, decision.value, test.runs, test.bad))
+        return decision
+
+    def unminimized(status: NoisyStatus, note: str) -> NoisyMinimization:
+        return NoisyMinimization(
+            original, False, status, used, tuple(steps), _confidence(cfg, steps), note
+        )
+
+    full = tuple(range(len(original)))
+    try:
+        first = judge(full)
+        if first is not RateDecision.ABOVE:
+            return unminimized(
+                NoisyStatus.NOT_REPRODUCED
+                if first is RateDecision.NOT_ABOVE
+                else NoisyStatus.INCONSISTENT,
+                "the full path did not show a failure rate above the reference with adequate "
+                "evidence: returned unminimized",
+            )
+
+        def accepts(kept: list[int]) -> bool:
+            decision = judge(tuple(sorted(kept)))
+            if decision is RateDecision.UNDECIDED:
+                raise _Inconsistent
+            return decision is RateDecision.ABOVE
+
+        reduction = ddmin(list(full), max_attempts=10 * len(full) ** 2 + 10, accepts=accepts)
+    except _OutOfRuns:
+        return unminimized(
+            NoisyStatus.OUT_OF_RUNS, f"the run budget ({max_runs}) ended: returned unminimized"
+        )
+    except _Inconsistent:
+        return unminimized(
+            NoisyStatus.INCONSISTENT,
+            "the evidence for a smaller path stayed between the boundaries: returned unminimized",
+        )
+    kept = tuple(sorted(reduction.kept))
+    singles_tested = reduction.complete and all(
+        tuple(i for i in kept if i != j) in cache for j in kept
+    )
+    minimal = singles_tested and all(
+        cache[tuple(i for i in kept if i != j)] is RateDecision.NOT_ABOVE for j in kept
+    )
+    return NoisyMinimization(
+        tuple(original[i] for i in kept),
+        minimal,
+        NoisyStatus.MINIMIZED,
+        used,
+        tuple(steps),
+        _confidence(cfg, steps),
+        "every single removal was tested and did not show a failure rate above the reference"
+        if minimal
+        else "the result reproduces, but not every single removal was tested: minimality is not "
+        "claimed",
+    )
+
+
+def _confidence(cfg: RateSprtConfig, steps: Sequence[NoisyStep]) -> dict[str, object]:
+    accepted = sum(s.decision == RateDecision.ABOVE.value for s in steps)
+    rejected = sum(s.decision == RateDecision.NOT_ABOVE.value for s in steps)
+    return {
+        "test": "Bernoulli sequential probability ratio test per subset",
+        "reference_failure_rate": cfg.reference,
+        "alternative_failure_rate": cfg.effect,
+        "alpha_per_test": cfg.alpha,
+        "beta_per_test": cfg.beta,
+        "tests_judged_to_reproduce": accepted,
+        "tests_judged_not_to_reproduce": rejected,
+        "bound_a_needed_mutation_was_dropped": round(min(1.0, accepted * cfg.alpha), 6),
+        "bound_an_unneeded_mutation_was_kept": round(min(1.0, rejected * cfg.beta), 6),
+        "bounds_hold_for": "the stated alternative failure rate; union bounds over the tests made",
+    }

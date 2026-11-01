@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from isitright.core.oracles import Outcome
+from isitright.core.sequential import Decision, PairedSprt, SequentialRecord
 from isitright.core.subjects import Cost
 
 DEFAULT_K = 4
@@ -54,6 +55,8 @@ class Stability(BaseModel):
     baseline: Counts | None = None
     world: Counts | None = None
     rate_claim: RateClaim | None = None
+    sequential: SequentialRecord | None = None
+    """The sequential test behind a world's run count: looks, boundaries, decision (0.5)."""
     note: str = ""
 
 
@@ -78,7 +81,8 @@ def count(outcomes: list[RunOutcome]) -> Counts:
     )
 
 
-def _bad(outcome: RunOutcome) -> bool:
+def is_bad(outcome: RunOutcome) -> bool:
+    """An observed failure: an invariant violation or an expected behavior not reached."""
     return outcome.violated or outcome.outcome is Outcome.NOT_MET
 
 
@@ -102,8 +106,8 @@ def rate_claim(baseline: list[RunOutcome], world: list[RunOutcome]) -> RateClaim
     pairs = min(len(baseline), len(world))
     if pairs < MIN_PAIRS_FOR_RATE_CLAIM:
         return None
-    only_baseline = sum(_bad(b) and not _bad(w) for b, w in zip(baseline, world, strict=False))
-    only_world = sum(_bad(w) and not _bad(b) for b, w in zip(baseline, world, strict=False))
+    only_baseline = sum(is_bad(b) and not is_bad(w) for b, w in zip(baseline, world, strict=False))
+    only_world = sum(is_bad(w) and not is_bad(b) for b, w in zip(baseline, world, strict=False))
     p_value = mcnemar_exact(only_baseline, only_world)
     if p_value >= ALPHA or only_world <= only_baseline:
         return None
@@ -130,7 +134,7 @@ def stability(baseline: list[RunOutcome] | None, world: list[RunOutcome], k: int
         note = "no significant increase over the baseline: counts only"
     else:
         note = "paired comparison supports a higher failure rate in this world"
-    flaky = baseline is not None and 0 < sum(_bad(b) for b in baseline) < len(baseline)
+    flaky = baseline is not None and 0 < sum(is_bad(b) for b in baseline) < len(baseline)
     if flaky:
         note = "the baseline itself is flaky, which weakens any finding. " + note
     return Stability(
@@ -138,6 +142,36 @@ def stability(baseline: list[RunOutcome] | None, world: list[RunOutcome], k: int
         baseline=count(baseline) if baseline is not None else None,
         world=count(world),
         rate_claim=claim,
+        note=note,
+    )
+
+
+def stability_sequential(
+    baseline: list[RunOutcome], world: list[RunOutcome], k: int, test: PairedSprt
+) -> Stability:
+    """Stability for a world run in pairs with a sequential test: counts, and a rate claim only
+    when the test crossed its upper boundary."""
+    record = test.record()
+    claim = None
+    if test.decision is Decision.RATE_INCREASE:
+        claim = RateClaim(
+            test=record.test,
+            paired_runs=record.pairs,
+            discordant_baseline_only=record.discordant_baseline_only,
+            discordant_world_only=record.discordant_world_only,
+            p_value=record.p_value,
+            alpha=record.alpha,
+        )
+    flaky = 0 < sum(is_bad(b) for b in baseline) < len(baseline)
+    note = record.note
+    if flaky:
+        note = "the baseline itself is flaky, which weakens any finding. " + note
+    return Stability(
+        k=k,
+        baseline=count(baseline),
+        world=count(world),
+        rate_claim=claim,
+        sequential=record,
         note=note,
     )
 

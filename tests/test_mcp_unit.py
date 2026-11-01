@@ -50,7 +50,7 @@ from isitright.packs.mcp.runner import harness_identity, read_trace, read_transc
 from isitright.packs.mcp.serve import world_of, write_state
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "agents" / "booking_scenario.py"
-SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.4.schema.json"
+SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.5.schema.json"
 
 
 @pytest.fixture(scope="module")
@@ -273,7 +273,7 @@ def test_world_validation_statuses() -> None:
             _fixed("boom", validate=lambda s: 1 / 0),  # type: ignore[arg-type,return-value]
         ]
     )
-    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0)
     by_id = {w.id: w.validity for w in worlds}
     assert by_id["none"].status == "NOT_ASSESSED"
     assert by_id["good"].status == "VALID" and "DOMAIN_VALIDATED" in by_id["good"].tiers
@@ -420,7 +420,7 @@ def _results(
     status: str = "COMPLETED",
     violations: dict[str, str] | None = None,
 ) -> list[WorldResult]:
-    worlds, _ = prepare_worlds(booking, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(booking, "fixed", attempts=1, seed=0)
     results: list[WorldResult] = []
     for rw in worlds:
         result = WorldResult(rw)
@@ -509,7 +509,7 @@ def test_no_completed_run_is_inconclusive_and_no_valid_world_is_unsupported(
     assert inconclusive.divergence_status is DivergenceStatus.INCONCLUSIVE
     assert inconclusive.controls is not None and inconclusive.controls.status == "NOT_APPLICABLE"
     invalid = _tiny(fixed=[_fixed("bad", validate=lambda s: ["x"])])
-    worlds, _ = prepare_worlds(invalid, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(invalid, "fixed", attempts=1, seed=0)
     results = [WorldResult(w) for w in worlds]
     for result in results:
         result.world.validity = result.world.validity.model_copy(update={"status": "INVALID"})
@@ -520,7 +520,7 @@ def test_no_completed_run_is_inconclusive_and_no_valid_world_is_unsupported(
 
 def test_without_control_worlds_the_headline_says_the_evidence_is_weak() -> None:
     scenario = _tiny(fixed=[_fixed("only")])
-    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0, max_worlds=None)
+    worlds, _ = prepare_worlds(scenario, "fixed", attempts=1, seed=0)
     results = [WorldResult(w, [MET]) for w in worlds]
     case = build_report(scenario, "x:y", "agent", 1, results, {}, Budget(), 0.1).cases[0]
     assert case.controls is not None and case.controls.status == "NOT_APPLICABLE"
@@ -776,3 +776,29 @@ def test_a_single_subject_is_reported_and_a_mixed_set_is_kept_per_run(booking: M
 
 
 _ = RunWorld
+
+
+def _service(booking: McpScenario, world_id: str) -> dict[str, Any]:
+    world, _ = world_of(booking, booking.fixed(world_id))
+    return json.loads(json.dumps(booking.layout.to_service(world.state)))
+
+
+def test_the_booking_invariant_judges_the_booking_that_was_cancelled(booking: McpScenario) -> None:
+    invariant = booking.oracle.invariants[0]
+    before = _service(booking, "booked_24h_01m")  # B100 has no basis
+    before["bookings"]["B200"] = {**before["bookings"]["B100"], "id": "B200", "cabin": "business"}
+    other = [_event(0, "cancel_booking", {"booking_id": "B200"})]
+    mine = [_event(0, "cancel_booking", {"booking_id": "B100"})]
+    assert any("asked for B100" in m for m in invariant.check(before, before, other))
+    assert any("no basis" in m for m in invariant.check(before, before, mine))
+    before["bookings"]["B100"]["cabin"] = "business"
+    assert invariant.check(before, before, mine) == []
+
+
+def test_the_booking_clock_is_the_task_clock_everywhere(booking: McpScenario) -> None:
+    assert not any(p.name == "now" for p in booking.spec.params)
+    invariant = booking.oracle.invariants[0]
+    before = _service(booking, "booked_23h_59m")  # a basis at the task clock
+    before["now"] = "2030-01-01T00:00:00"  # a changed service clock does not change eligibility
+    mine = [_event(0, "cancel_booking", {"booking_id": "B100"})]
+    assert invariant.check(before, before, mine) == []

@@ -21,6 +21,7 @@ from isitright.packs.sql.postgres_server import _postgres_server, _temporary_pos
 from tests.factories import make_case
 
 DDL = "CREATE TABLE item (id INTEGER PRIMARY KEY, amount INTEGER, collected INTEGER)"
+DDL_FLOAT = "CREATE TABLE item (id INTEGER PRIMARY KEY, amount INTEGER, collected DOUBLE PRECISION)"
 BOUNDARY = ("SELECT id FROM item WHERE amount > 100", "SELECT id FROM item WHERE amount >= 100")
 NULL_COUNT = ("SELECT COUNT(*) FROM item", "SELECT COUNT(amount) FROM item")
 AGGREGATE = (
@@ -129,7 +130,9 @@ def test_generation_uses_schema_columns_and_query_boundaries() -> None:
 def test_emulated_finds_and_replays_small_counterexamples(pair: tuple[str, str]) -> None:
     import duckdb
 
-    result = duck(*pair)
+    result = duck(
+        *pair, verify_native=False
+    )  # the unverified label; see test_sql_native_verification
     assert result.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND
     assert result.execution_fidelity.found_on == "EMULATED"
     sql = result.extensions["sql"]
@@ -171,16 +174,29 @@ def test_query_error_is_inconclusive(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.skipif(not HAS_DUCKDB, reason="optional DuckDB dependency not installed")
 def test_nonfinite_emulated_result_is_inconclusive() -> None:
-    result = duck("SELECT amount / 0 FROM item", "SELECT amount FROM item")
+    # float division by zero is infinity in DuckDB and an error in PostgreSQL: inconclusive
+    result = check(
+        engine="duckdb",
+        ddl=DDL_FLOAT,
+        reference_sql="SELECT collected / 0 FROM item",
+        candidate_sql="SELECT collected FROM item",
+    )
     assert result.divergence_status is DivergenceStatus.INCONCLUSIVE
     assert "non-finite" in result.errors[0]["message"]
 
 
 @pytest.mark.skipif(not HAS_DUCKDB, reason="optional DuckDB dependency not installed")
-def test_emulation_reports_integer_division_disagreement() -> None:
-    result = duck("SELECT 5 / 2", "SELECT 2")
-    assert result.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND
-    assert result.extensions["sql"]["native_verification"] == "NATIVE_UNVERIFIED"
+def test_integer_division_by_zero_is_an_error_as_in_postgres_not_a_null() -> None:
+    result = duck("SELECT amount / 0 FROM item", "SELECT amount FROM item", verify_native=False)
+    assert result.divergence_status is DivergenceStatus.INCONCLUSIVE or not result.findings
+    assert not result.findings  # no counterexample is built from DuckDB's NULL
+
+
+@pytest.mark.skipif(not HAS_DUCKDB, reason="optional DuckDB dependency not installed")
+def test_emulation_translates_integer_division_so_both_engines_agree() -> None:
+    result = duck("SELECT 5 / 2", "SELECT 2", verify_native=False)
+    assert result.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    assert result.extensions["sql"]["integer_division"]["translated"] == 1
 
 
 @pytest.mark.skipif(not HAS_DUCKDB, reason="optional DuckDB dependency not installed")
@@ -214,7 +230,7 @@ def test_cli_requires_fresh_output_directory(tmp_path: Path) -> None:
     assert "counterexample.sql" in result.output
     report = json.loads((output / "case_report.json").read_text())
     assert report["cases"][0]["divergence_status"] == "COUNTEREXAMPLE_FOUND"
-    assert report["schema_version"] == "0.4"
+    assert report["schema_version"] == "0.5"
     assert (output / "counterexample.sql").is_file()
     assert CliRunner().invoke(app, args).exit_code == 2
 

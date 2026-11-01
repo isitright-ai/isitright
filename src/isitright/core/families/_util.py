@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import re
 from collections.abc import Iterable, Sequence
 from datetime import timedelta
 from typing import Any
 
-from isitright.core.constraints import Unique
+from isitright.core.constraints import Pattern, Unique
 from isitright.core.entities import CollectionSpec, parse_instant
 from isitright.core.hints import Hint, Hints
 from isitright.core.mutations import AddEntity, Edit, Mutation, RemoveEntity, SetField, SetParam
 from isitright.core.spec import WorldSpec
+from isitright.core.values import UnsupportedPattern, pattern_value
 from isitright.core.world import Atom, Entity, State
 
 
@@ -78,6 +80,17 @@ def _uniquify(
                 continue
             existing = {e.get(name) for e in state.entities(collection.name)}
             entity[name] = _next_value(existing, entity[name])
+            regex = _pattern_of(spec, f"{collection.name}.{name}")
+            if regex is not None and not re.fullmatch(regex, str(entity[name])):
+                with contextlib.suppress(UnsupportedPattern):  # the spec reports it
+                    entity[name] = pattern_value(regex, taken=existing)
+
+
+def _pattern_of(spec: WorldSpec, path: str) -> str | None:
+    for rule in spec.constraints:
+        if isinstance(rule, Pattern) and rule.path == path:
+            return rule.regex
+    return None
 
 
 def clone_cluster(

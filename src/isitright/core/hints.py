@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from isitright.core.constraints import ExprEnv, Expression
 from isitright.core.entities import EntitySchema, ModelError
+from isitright.core.jsonpaths import shape_leaf, split_hint_path
 from isitright.core.world import Entity, State
 
 
@@ -111,7 +112,23 @@ def _check_threshold(schema: EntitySchema, hint: Hint) -> None:
         schema.resolve(hint.args["path"])
 
 
+def _check_json_path(schema: EntitySchema, hint: Hint) -> None:
+    """A path inside a json field (``orders.items[*].price``), optionally with other fields of
+    the same entity whose value a leaf may take (``same_as``)."""
+    _need(hint, "path")
+    collection_name, field_name, tokens = split_hint_path(str(hint.args["path"]))
+    collection = schema.collection(collection_name)
+    spec = collection.field(field_name)
+    if spec.type != "json":
+        raise ModelError(f"{collection_name}.{field_name} is {spec.type}, not json")
+    if spec.shape is not None and shape_leaf(spec.shape, tokens) is None:
+        raise ModelError(f"path {hint.args['path']!r} is not in the declared shape of the field")
+    for other in hint.args.get("same_as", []):
+        collection.field(other)
+
+
 for _kind, _check in (
+    ("json_path", _check_json_path),
     ("lookup", _check_lookup),
     ("ordering", _check_ordering),
     ("gate", _check_gate),

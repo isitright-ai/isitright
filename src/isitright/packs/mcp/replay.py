@@ -8,6 +8,7 @@ recorded. This depends on scenario handlers being deterministic given state and 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -92,6 +93,8 @@ def replay_run(scenario: McpScenario, run: dict[str, Any], output_dir: Path) -> 
         return outcome(False, "the recorded state files are missing")
     world, interferences = _world(scenario, run, run_dir)
     events = read_trace(run_dir / "trace.jsonl")
+    if scenario.external is not None:
+        return _rejudge(scenario, run, run_dir, world, events, outcome)
 
     from isitright.packs.mcp.runtime import ServiceRuntime
 
@@ -112,6 +115,36 @@ def replay_run(scenario: McpScenario, run: dict[str, Any], output_dir: Path) -> 
         return outcome(False, "the oracle verdict differs from the recorded one")
     calls = sum(1 for e in events if e["name"] != WORLD_CHANGE)
     return outcome(True, f"{calls} calls re-executed; state and verdicts match")
+
+
+def _rejudge(
+    scenario: McpScenario,
+    run: dict[str, Any],
+    run_dir: Path,
+    world: World,
+    events: list[TraceDict],
+    outcome: Callable[[bool, str], ReplayOutcome],
+) -> ReplayOutcome:
+    """An external server is not ours to re-execute: judge the recorded run again.
+
+    The recorded state before and after and the trace go through the invariants and the
+    reference outcome (computed by running the reference procedure on a fresh copy of the world)
+    and must give the verdicts that were recorded. The calls themselves are not replayed.
+    """
+    before = read_state(run_dir / "state_before.json")
+    after = read_state(run_dir / "state_after.json")
+    judgement = judge_run(scenario, reference_outcome(scenario, world), before, after, events)
+    recorded = sorted((v["invariant"], v["message"]) for v in run["violations"])
+    if sorted(judgement.violations) != recorded:
+        return outcome(False, "invariant verdicts differ from the recorded ones")
+    if run["run_status"] == "COMPLETED" and judgement.outcome.value != run["outcome"]:
+        return outcome(False, "the oracle verdict differs from the recorded one")
+    calls = sum(1 for e in events if e["name"] != WORLD_CHANGE)
+    return outcome(
+        True,
+        f"re-judged from the recorded state and {calls} recorded call(s): verdicts match "
+        "(external server: the calls were not re-executed)",
+    )
 
 
 def replay_report(
@@ -137,6 +170,11 @@ def rerun_eval_case(case: EvalCase, scenario: McpScenario | None = None) -> dict
         scenario = scenario or load_scenario(payload["scenario_ref"])
     except ScenarioError as error:  # pragma: no cover - a stale reference
         return {"reproduced": False, "detail": str(error)}
+    if scenario.external is not None:
+        return {
+            "reproduced": False,
+            "detail": "an external server cannot be re-executed offline; replay the report instead",
+        }
     if payload.get("fixed_id"):
         world, interferences = world_of(scenario, scenario.fixed(payload["fixed_id"]))
     else:

@@ -13,8 +13,9 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal, cast
 
-from isitright.core.constraints import Constraint, Domain, OneOf, Range, Unique
+from isitright.core.constraints import Constraint, Domain, OneOf, Pattern, Range, Unique
 from isitright.core.entities import CollectionSpec, EntitySchema, FieldSpec, FieldType, RefSpec
+from isitright.core.values import UnsupportedPattern, nth_pattern_value
 from isitright.core.world import State
 from isitright.packs.sql.schema import ColumnSchema, DatabaseSchema, TableSchema
 from isitright.packs.sql.state import DatabaseState, SqlValue, TableState
@@ -200,6 +201,11 @@ def domain_value(domain: Domain | None, column: ColumnSchema, ordinal: int) -> S
     """A value inside a declared domain, else None to keep the conservative generated value."""
     if domain is None:
         return None
+    if domain.pattern is not None:
+        try:
+            return nth_pattern_value(domain.pattern, ordinal)
+        except UnsupportedPattern:
+            return None
     if domain.values:
         usable = [v for v in domain.values if v is not None]
         return usable[min(ordinal, len(usable)) - 1] if usable else None
@@ -240,7 +246,7 @@ def generate_base_state(
     db = model.db
     if not supported_for_generation(db):
         return None
-    domains = {c.path: c for c in constraints if isinstance(c, Range | OneOf)}
+    domains = {c.path: c for c in constraints if isinstance(c, Range | OneOf | Pattern)}
 
     def key_value(table: TableSchema, column: ColumnSchema, ordinal: int) -> SqlValue:
         widths = [column.type_parameters[0]] if column.type_parameters else []
@@ -364,6 +370,10 @@ def import_json_schema(model: SqlModel, schema: dict[str, Any]) -> list[Constrai
                         max=facts.get("maximum"),
                     )
                 )
+            if isinstance(facts.get("pattern"), str):
+                out.append(
+                    Pattern(name=f"domain:{path}:pattern", path=path, regex=facts["pattern"])
+                )
     return out
 
 
@@ -375,7 +385,7 @@ def fallback_base_state(model: SqlModel, constraints: list[Constraint]) -> Datab
     """
     import sqlite3
 
-    domains = {c.path: c for c in constraints if isinstance(c, Range | OneOf)}
+    domains = {c.path: c for c in constraints if isinstance(c, Range | OneOf | Pattern)}
     values: dict[str, dict[str, SqlValue]] = {}
 
     def default_of(column: ColumnSchema) -> SqlValue | None:

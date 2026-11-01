@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Any, Literal
 
+from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field
 
 from isitright.core.world import Atom, Entity, State
@@ -33,6 +34,10 @@ class FieldSpec(BaseModel):
     """The field may be absent from an entity (distinct from null)."""
     enum: list[Any] | None = None
     default: Any = None
+    shape: dict[str, Any] | None = None
+    """For a ``json`` field: the leaves it is known to hold, as a JSON Schema subset (``type``,
+    ``items``, ``properties``, ``minimum``, ``maximum``). A declared shape scopes the JSON
+    family."""
 
 
 class RefSpec(BaseModel):
@@ -168,6 +173,8 @@ def _check_entity(spec: CollectionSpec, entity: Entity, where: str) -> list[str]
             continue
         if not type_matches(field_spec.type, value):
             problems.append(f"{label}.{field_spec.name}={value!r} is not {field_spec.type}")
+        elif field_spec.shape is not None:
+            problems.extend(_shape_problems(field_spec, value, label))
         elif field_spec.enum is not None and value not in field_spec.enum:
             problems.append(f"{label}.{field_spec.name}={value!r} is not one of {field_spec.enum}")
     for nested in spec.embedded:
@@ -180,6 +187,18 @@ def _check_entity(spec: CollectionSpec, entity: Entity, where: str) -> list[str]
                 problems.append(f"{label}.{nested.name}[{key!r}] key does not match its entry")
             problems.extend(_check_entity(nested, inner, f"{label}.{nested.name}"))
     return problems
+
+
+def _shape_problems(field_spec: FieldSpec, value: Any, label: str) -> list[str]:
+    """Where a json value leaves its declared shape (a JSON Schema subset)."""
+    errors = sorted(
+        Draft202012Validator(field_spec.shape or {}).iter_errors(value),
+        key=lambda e: [str(p) for p in e.absolute_path],
+    )
+    return [
+        f"{label}.{field_spec.name}{''.join(f'[{p!r}]' for p in e.absolute_path)} {e.message}"
+        for e in errors[:3]
+    ]
 
 
 def type_matches(kind: str, value: Any) -> bool:

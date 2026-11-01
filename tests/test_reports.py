@@ -29,7 +29,7 @@ def test_writes_deterministic_json_and_markdown(tmp_path: Path) -> None:
 
     assert paths == [tmp_path / "case_report.json", tmp_path / "case_report.md"]
     payload = json.loads(paths[0].read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "0.4"
+    assert payload["schema_version"] == "0.5"
     markdown = paths[1].read_text(encoding="utf-8")
     assert "No difference found within the budget" in markdown
     assert "Technical details" in markdown

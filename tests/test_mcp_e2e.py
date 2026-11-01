@@ -20,7 +20,7 @@ from isitright.packs.mcp.runner import AgentsInputError
 EXAMPLES = Path(__file__).parents[1] / "examples" / "agents"
 SCENARIO_REF = f"{EXAMPLES / 'booking_scenario.py'}:SCENARIO"
 DEMO = f'"{sys.executable}" "{EXAMPLES / "demo_agent.py"}"'
-SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.4.schema.json"
+SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.5.schema.json"
 TRAP = ["booked_24h_01m"]
 CONTROL = ["flight_cancelled"]
 BOTH = [*TRAP, *CONTROL]
@@ -434,3 +434,39 @@ def test_an_agent_without_a_transcript_has_no_subject(tmp_path: Path) -> None:
     case = _quick(tmp_path, f'"{sys.executable}" -c "pass"').cases[0]
     assert case.extensions["mcp"]["subject"] is None
     assert case.extensions["mcp"]["runs"][0].get("subject") is None
+
+
+def test_progress_reports_each_run_with_a_marker(tmp_path: Path) -> None:
+    command = f'"{sys.executable}" -c "import time; time.sleep(120)"'
+    events: list[tuple[str, str]] = []
+    _quick(tmp_path, command, timeout_seconds=2, progress=lambda w, m: events.append((w, m)))
+    assert [m for _, m in events] == ["E", "E"]  # neither the baseline nor the world completed
+    assert events[0][0] != events[1][0]
+
+
+def test_cli_prints_progress_on_stderr_and_a_summary_with_elapsed_time(tmp_path: Path) -> None:
+    command = f'"{sys.executable}" -c "import time; time.sleep(120)"'
+    result = CliRunner().invoke(
+        app,
+        [
+            "agents",
+            "run",
+            "--trust-code",
+            "--scenario",
+            SCENARIO_REF,
+            "--agent-command",
+            command,
+            "--worlds",
+            "fixed",
+            "--world",
+            TRAP[0],
+            "--trials",
+            "1",
+            "--timeout",
+            "2",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+    assert "Agent runs: " in result.output and ": E" in result.output
+    assert "Runs: 2. Elapsed: " in result.output

@@ -51,7 +51,8 @@ def test_report_serialization_snapshots() -> None:
 
 def test_json_schema_exposes_the_versioned_report_contract() -> None:
     schema = AuditReport.model_json_schema()
-    assert schema["properties"]["schema_version"]["const"] == SCHEMA_VERSION == "0.4"
+    assert SCHEMA_VERSION == "0.5"
+    assert schema["properties"]["schema_version"]["enum"] == ["0.4", "0.5"]
     assert set(schema["required"]) >= {"pack", "kind", "cases", "totals", "elapsed_seconds"}
     case = schema["$defs"]["CaseReport"]
     assert set(case["required"]) >= {
@@ -73,6 +74,19 @@ def test_json_schema_exposes_the_versioned_report_contract() -> None:
 
 
 def test_checked_in_schema_validates_report_snapshots() -> None:
-    schema = json.loads(Path("schemas/report-0.4.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads(Path("schemas/report-0.5.schema.json").read_text(encoding="utf-8"))
     Draft202012Validator(schema).validate(load_snapshot("case_report.json"))
     Draft202012Validator(schema).validate(load_snapshot("suite_report.json"))
+
+
+def test_reports_written_by_0_4_still_load_and_validate_against_the_current_schema() -> None:
+    """Every field added in 0.5 is optional, so 0.4 reports stay readable (the fixtures are the
+    0.4 snapshots, kept as written)."""
+    schema = json.loads(Path("schemas/report-0.5.schema.json").read_text(encoding="utf-8"))
+    for name in ("case_report-0.4.json", "suite_report-0.4.json"):
+        data = json.loads(Path("tests/fixtures/reports", name).read_text(encoding="utf-8"))
+        assert data["schema_version"] == "0.4"
+        Draft202012Validator(schema).validate(data)
+        report = AuditReport.model_validate(data)
+        assert report.schema_version == "0.4"
+        assert all(c.search.screening is None and c.search.stopping is None for c in report.cases)

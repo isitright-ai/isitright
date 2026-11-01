@@ -1,0 +1,21 @@
+Here are hints for the audit.
+
+```json
+[
+  {"name": "gate_pending", "kind": "gate",
+   "args": {"collection": "orders", "field": "status", "allows": ["pending"], "action": "cancel_order"},
+   "note": "the policy allows cancelling a pending order only"},
+  {"name": "newest_first", "kind": "ordering",
+   "args": {"collection": "orders", "field": "created_at", "direction": "desc"},
+   "note": "the task says most recent order"},
+  {"name": "wrong_field", "kind": "ordering",
+   "args": {"collection": "orders", "field": "created", "direction": "desc"},
+   "note": "a field the entity model does not have"},
+  {"name": "gate_pending", "kind": "gate",
+   "args": {"collection": "orders", "field": "status", "allows": ["pending"]},
+   "note": "a repeated name"},
+  {"name": "nobody", "kind": "lookup",
+   "args": {"collection": "customers", "fields": ["name", "zip"], "value": ["Nobody Here", "00000"]},
+   "note": "a lookup no customer matches"}
+]
+```

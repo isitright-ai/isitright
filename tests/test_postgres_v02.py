@@ -121,7 +121,7 @@ def test_suite_ranks_findings_and_keeps_unsupported_cases() -> None:
         ),
         SuiteCase(case_id="boundary", reference_sql=BOUNDARY[0], candidate_sql=BOUNDARY[1]),
     ]
-    suite = check_suite(engine="duckdb", ddl=DDL, cases=cases)
+    suite = check_suite(engine="duckdb", ddl=DDL, cases=cases, verify_native=False)
     assert [case.case_id for case in suite.cases] == ["boundary", "unsupported", "same"]
     assert suite.totals.by_divergence_status == {
         "COUNTEREXAMPLE_FOUND": 1,
@@ -130,6 +130,8 @@ def test_suite_ranks_findings_and_keeps_unsupported_cases() -> None:
     }
     assert suite.cases[0].execution_fidelity.found_on == "EMULATED"
     assert suite.cases[0].execution_fidelity.verified_on is None
+    verified = check_suite(engine="duckdb", ddl=DDL, cases=cases[2:])
+    assert verified.cases[0].execution_fidelity.verified_on == "NATIVE_ISOLATED"
 
 
 @pytest.mark.skipif(not HAS_DUCKDB, reason="optional DuckDB dependency not installed")
@@ -301,6 +303,7 @@ def test_check_cli_findings_and_fail_policy(tmp_path: Path) -> None:
         str(tmp_path / "out"),
         "--fail-on",
         "any-counterexample",
+        "--no-verify-native",
     ]
     runner = CliRunner()
     result = runner.invoke(app, args)
@@ -309,6 +312,11 @@ def test_check_cli_findings_and_fail_policy(tmp_path: Path) -> None:
     assert "Generated counterexample" in result.output
     assert (tmp_path / "out" / "counterexample.sql").exists()
     assert runner.invoke(app, args).exit_code == 2
+    # The same finding, re-executed natively, is verified and may fail CI (exit code 3).
+    native = [a for a in args if a != "--no-verify-native"]
+    native[native.index(str(tmp_path / "out"))] = str(tmp_path / "out-native")
+    if HAS_POSTGRES:
+        assert runner.invoke(app, native).exit_code == 3
 
 
 @pytest.mark.skipif(not HAS_DUCKDB, reason="optional DuckDB dependency not installed")

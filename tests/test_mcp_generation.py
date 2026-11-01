@@ -45,6 +45,8 @@ def test_the_hints_come_with_provenance_and_resolve_in_the_entity_model(shop: Mc
         "ordering": "declared",
         "gate": "declared",
         "scope": "declared",
+        "item_price": "harvested:trace",
+        "item_qty": "harvested:trace",
         "page_size": "harvested:schema",
         "trace": "harvested:trace",
     }
@@ -79,7 +81,13 @@ def test_generated_worlds_are_valid_and_carry_the_hints_that_led_to_them(
     assert len(level_one) > 80
     for world in level_one:
         assert shop.spec.validate(world.world.state).status is ValidityStatus.VALID
-        assert "STRUCTURAL" in world.tiers and "DOMAIN_VALIDATED" in world.tiers
+        assert "STRUCTURAL" in world.tiers
+        # A JSON edit has no rule over the content in the shop, so it is STRUCTURAL only and says
+        # so; every other generated world keeps the tier (was: every world had both tiers).
+        if "json_edit" in world.families:
+            assert "DOMAIN_VALIDATED" not in world.tiers and world.notes
+        else:
+            assert "DOMAIN_VALIDATED" in world.tiers
     hinted = [w for w in level_one if w.group == "hinted"]
     assert hinted and all(m.hints for w in hinted for m in w.world.path[:1])
     # Collection sizes at the schema's page size, a status next to the gate, ties on the ordering.
@@ -325,9 +333,14 @@ def test_a_run_reports_the_totals_and_only_bypasses_selection(
     )
     case = report.cases[0]
     selection = case.extensions["mcp"]["selection"]
-    assert selection["selected"] == 3 and selection["generated"] > 3
-    assert len(case.worlds) == 4  # the baseline and three selected worlds
-    assert any("selected for the agent" in note for note in case.search.notes)
+    assert selection["run"] == 3 and selection["generated"] > 3 and selection["not_run"] > 0
+    ran = [w for w in case.worlds if w.run_status == "RUN"]
+    assert len(ran) == 4  # the baseline and three worlds
+    not_run = [w for w in case.worlds if w.run_status == "NOT_RUN"]
+    assert not_run and all(w.not_run_reason for w in not_run)  # listed as not run, with why
+    assert any("safety rail" in w.not_run_reason for w in not_run if w.not_run_reason)
+    assert any("ranked by diverse" in note for note in case.search.notes)
+    assert case.search.screening is not None and case.search.screening.baseline_trace
     assert "selected" not in case.headline  # the headline stays about the evidence
 
 
@@ -346,3 +359,220 @@ def test_a_money_budget_is_refused_when_the_agent_reports_no_cost(tmp_path: Path
             trust_code=True,
             timeout_seconds=60,
         )
+
+
+def test_the_json_family_generates_a_world_whose_item_subtotal_differs_from_the_amount_paid(
+    shop: McpScenario, level_one: list[GeneratedWorld]
+) -> None:
+    """The scope (items[*].price and qty) comes from the scenario's declaration; the family names
+    nothing of the shop. Without a rule over the items, such a world is STRUCTURAL only."""
+    edits = [w for w in level_one if w.families == ["json_edit"]]
+    assert edits and all(w.role is Role.CONTROL for w in edits)
+    differing = []
+    for w in edits:
+        order = w.world.state.get(("orders", "o3"))
+        assert order is not None
+        items = order["items"]
+        if (
+            all(isinstance(i.get("price"), int | float) and "qty" in i for i in items)
+            and sum(i["price"] * i["qty"] for i in items) != order["total"]
+        ):
+            differing.append(w)
+    assert differing
+    for w in differing:
+        assert "DOMAIN_VALIDATED" not in w.tiers and "STRUCTURAL" in w.tiers
+        assert any("no declared rule over its content" in note for note in w.notes)
+
+
+def test_a_careless_agent_gets_a_sequential_rate_claim_in_a_trap_world(tmp_path: Path) -> None:
+    """Paired runs with the baseline until the sequential test decides: the careless agent acts in
+    every run of a trap world and in none of the baseline's, so the upper boundary is crossed after
+    seven pairs (a fixed design would need eight). The report names the test, looks and decision."""
+    careless = f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"'
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=300)
+    trap = next(w for w in found if w.role is Role.TRAP and w.observable and len(w.families) == 1)
+    import os
+
+    os.environ["SHOP_AGENT_MODE"] = "careless"
+    try:
+        report = run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=careless,
+            output_dir=tmp_path / "out",
+            worlds="generated",
+            k=4,
+            attempts=300,
+            only=[trap.id],
+            trust_code=True,
+            timeout_seconds=60,
+        )
+    finally:
+        del os.environ["SHOP_AGENT_MODE"]
+    case = report.cases[0]
+    (finding,) = case.findings
+    stability = finding.stability
+    assert stability is not None and stability.sequential is not None
+    sequential = stability.sequential
+    assert sequential.decision.value == "RATE_INCREASE"
+    assert sequential.pairs == 7 and sequential.alpha == 0.05
+    assert stability.rate_claim is not None and stability.rate_claim.paired_runs == 7
+    assert stability.world is not None and stability.world.n == 7
+    assert stability.baseline is not None and stability.baseline.n == 7  # extended to pair them
+    assert [look.pair for look in sequential.looks] == list(range(1, 8))
+    screened = next(w for w in case.worlds if w.id == trap.id).screening
+    assert screened is not None and screened.screening_class in {"STALE", "WRONG_IF_UNCHANGED"}
+
+
+def test_noise_tolerant_minimization_drops_a_mutation_the_failure_does_not_need(
+    tmp_path: Path,
+) -> None:
+    """A composed trap world fails the careless agent in every run. With --minimize the path is
+    judged by repeated runs, each subset against the baseline's failure rate, and the report keeps
+    the evidence (the tests behind the result) beside the path."""
+    import os
+
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=2000, depth=2)
+    composed = next(
+        w for w in found if w.role is Role.TRAP and w.observable and len(w.families) == 2
+    )
+    os.environ["SHOP_AGENT_MODE"] = "careless"
+    try:
+        report = run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+            output_dir=tmp_path / "out",
+            worlds="generated",
+            k=2,
+            attempts=2000,
+            only=[composed.id],
+            trust_code=True,
+            timeout_seconds=60,
+            minimize=True,
+            minimize_max_runs=120,
+            sequential=False,
+        )
+    finally:
+        del os.environ["SHOP_AGENT_MODE"]
+    (finding,) = report.cases[0].findings
+    record = finding.minimization
+    assert record["status"] in {"MINIMIZED", "INCONSISTENT", "OUT_OF_RUNS"}
+    assert record["mutations_before"] == 2 and record["runs"] <= 120
+    assert record["confidence"]["alpha_per_test"] == 0.001
+    if record["minimal"]:
+        assert len(finding.mutation_path) == record["mutations_after"] <= 2
+    else:
+        assert len(finding.mutation_path) == 2  # the unminimized path is returned
+    assert record["steps"] and "note" in record
+
+
+def test_the_report_shows_which_hints_are_proposed_and_the_worlds_they_led_to(
+    tmp_path: Path,
+) -> None:
+    import yaml
+
+    hints = tmp_path / "hints.yaml"
+    hints.write_text(
+        yaml.safe_dump(
+            {
+                "format": "isitright-hints",
+                "hints": [
+                    {
+                        "name": "guessed_gate",
+                        "kind": "gate",
+                        "status": "proposed",
+                        "args": {
+                            "collection": "orders",
+                            "field": "status",
+                            "allows": ["pending"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+        output_dir=tmp_path / "out",
+        worlds="generated",
+        k=1,
+        attempts=400,
+        max_worlds=2,
+        trust_code=True,
+        timeout_seconds=60,
+        hints_file=hints,
+    )
+    uses = {u.name: u for u in report.cases[0].search.hint_use}
+    guessed = uses["guessed_gate"]
+    assert guessed.provenance == "proposed" and guessed.world_count > 0 and guessed.worlds
+    assert uses["gate"].provenance == "declared"
+    assert uses["trace"].provenance == "harvested:trace"
+
+
+def test_a_world_id_that_the_generation_did_not_produce_is_an_input_error(tmp_path: Path) -> None:
+    from isitright.packs.mcp.runner import AgentsInputError
+
+    with pytest.raises(AgentsInputError, match="no such world: g9999_nothing"):
+        run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+            output_dir=tmp_path / "out",
+            attempts=50,
+            only=["g9999_nothing"],
+            trust_code=True,
+        )
+
+
+def test_a_named_world_is_run_even_when_it_is_unobservable_or_unjudgeable(tmp_path: Path) -> None:
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=3000)  # the generation the run repeats
+    hidden = next(w for w in found if not w.observable)
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+        output_dir=tmp_path / "out",
+        attempts=3000,
+        k=1,
+        sequential=False,
+        only=[hidden.id],
+        trust_code=True,
+        timeout_seconds=60,
+    )
+    record = next(w for w in report.cases[0].worlds if w.id == hidden.id)
+    assert record.run_status == "RUN" and record.validity.unobservable and record.counts["n"] == 1
+
+
+def test_a_run_that_does_not_complete_is_skipped_not_paired_and_the_test_goes_on(
+    tmp_path: Path,
+) -> None:
+    """A transient failure (here the agent exits with an error on a world's first run) is not a
+    pair and does not end the world's sequence; the baseline's runs are paired with the rest."""
+    agent = tmp_path / "flaky_start.py"
+    agent.write_text(
+        "import os, sys\n"
+        "from pathlib import Path\n"
+        "world, run = os.environ['ISITRIGHT_WORLD'], Path(os.environ['ISITRIGHT_RUN_DIR']).name\n"
+        "if world != 'baseline' and run == '1':\n"
+        "    sys.exit(3)\n",
+        encoding="utf-8",
+    )
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=300)
+    world = next(w for w in found if w.observable and len(w.families) == 1)
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{agent}"',
+        output_dir=tmp_path / "out",
+        attempts=300,
+        k=2,
+        only=[world.id],
+        trust_code=True,
+        timeout_seconds=60,
+    )
+    runs = [r for r in report.cases[0].extensions["mcp"]["runs"] if r["world_id"] == world.id]
+    assert [r["run_status"] for r in runs] == ["SUBJECT_ERROR", "COMPLETED", "COMPLETED"]
+    record = next(w for w in report.cases[0].worlds if w.id == world.id)
+    assert record.counts["errors"] == 1 and record.counts["n"] == 3

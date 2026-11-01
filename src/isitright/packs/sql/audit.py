@@ -8,6 +8,7 @@ the core's search composes mutations to depth two, and the core's minimizer shri
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import sqlite3
 import time
 from collections.abc import Callable
@@ -35,6 +36,7 @@ from isitright.core.evidence import (
     ReplayRecord,
     SearchRecord,
     ValidityRecord,
+    VerificationRecord,
     safe_detail,
     totals_of,
 )
@@ -54,6 +56,7 @@ from isitright.packs.sql.analysis import (
     validate_read_only_query,
 )
 from isitright.packs.sql.comparison import ComparisonError, compare_results, resolve_ordering
+from isitright.packs.sql.dialect_fidelity import catalog_of, translate_for_duckdb
 from isitright.packs.sql.domain_validation import domain_errors
 from isitright.packs.sql.errors import SqlInputError, StateRejected
 from isitright.packs.sql.hints import hints_from_guidance
@@ -185,6 +188,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         ddl: str | None = None,
         domain_schema: dict[str, Any] | None = None,
         validator: CandidateStateValidator | None = None,
+        verify_native: bool | None = None,
         _server: tuple[Any, str] | None = None,
     ) -> None:
         if engine not in ("sqlite", "postgres", "duckdb"):
@@ -198,6 +202,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         self.host: SqlHost
         self._executed: tuple[str, str] = ("", "")
         self._host_context: AbstractContextManager[Any] | None = None
+        self._verify_requested = verify_native
+        self._verifier: PostgresHost | None = None
+        self._verifier_note = ""
+        self._native_cache: dict[str, tuple[str, Any, Any, Any]] = {}
+        self.emulation_artifacts: list[dict[str, Any]] = []
         _validate_domain_schema(domain_schema)
         self.prepared = self._prepare(engine, database, ddl, domain_schema, validator)
 
@@ -282,7 +291,35 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         else:
             assert p.pg is not None
             self.host = DuckdbHost(p.pg)
+            self._start_verifier()
         return self
+
+    def _start_verifier(self) -> None:
+        """A PostgreSQL instance to re-execute emulated findings on, when one is available."""
+        p = self.prepared
+        wanted = self._verify_requested
+        if wanted is False:
+            self._verifier_note = "native verification was turned off"
+            return
+        if importlib.util.find_spec("embedded_postgres") is None or (
+            importlib.util.find_spec("psycopg") is None
+        ):
+            self._verifier_note = (
+                "native verification is not available: install isitright[postgres]"
+            )
+            if wanted:
+                raise SqlInputError(self._verifier_note)
+            return
+        assert p.pg is not None
+        verifier = PostgresHost(p.pg, self._server)
+        try:
+            verifier.__enter__()
+        except Exception as error:  # a server that will not start leaves the finding unverified
+            self._verifier_note = f"native verification is not available: {type(error).__name__}"
+            if wanted:
+                raise SqlInputError(self._verifier_note) from error
+            return
+        self._verifier = verifier
 
     def __exit__(
         self,
@@ -290,6 +327,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        if self._verifier is not None:
+            self._verifier.__exit__(exc_type, exc_value, traceback)
+            self._verifier = None
         if self._host_context is not None:
             self._host_context.__exit__(exc_type, exc_value, traceback)
             self._host_context = None
@@ -306,6 +346,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         config = config or CheckConfig()
         _check_budgets(config)
         p = self.prepared
+        self._native_cache = {}
+        self.emulation_artifacts = []
         try:
             statements = (
                 self._statement(case.reference_sql),
@@ -365,6 +407,45 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             left, right = run(state)
             outcome = compare_results(left, right, policy=policy, reference_has_order_by=ordered)
             return (not outcome.matches, left, right, outcome.difference)
+
+        def native_status(state: State) -> tuple[str, Any, Any, Any]:
+            """Re-execute a state on PostgreSQL: ``differ``, ``agree`` or ``unverified``."""
+            verifier = self._verifier
+            if verifier is None:
+                return "unverified", None, None, self._verifier_note or None
+            key = state.fingerprint()
+            if key not in self._native_cache:
+                try:
+                    left, right = verifier.run_pair(
+                        to_database_state(p.model, state),
+                        case.reference_sql,
+                        case.candidate_sql,
+                        timeout_seconds=config.timeout_seconds,
+                        max_result_rows=config.max_result_rows,
+                    )
+                    outcome = compare_results(
+                        left, right, policy=policy, reference_has_order_by=ordered
+                    )
+                    verdict = "agree" if outcome.matches else "differ"
+                    self._native_cache[key] = (verdict, left, right, outcome.difference)
+                except Exception as error:  # best effort: a failure leaves the finding unverified
+                    self._native_cache[key] = (
+                        "unverified",
+                        None,
+                        None,
+                        f"native re-execution failed: {type(error).__name__}: {error}",
+                    )
+            return self._native_cache[key]
+
+        def confirmed(state: State) -> tuple[bool, QueryResult, QueryResult, str | None]:
+            """DuckDB's disagreement, confirmed on PostgreSQL when a verifier is running."""
+            differs, left, right, difference = disagrees(state)
+            if not differs or self._verifier is None:
+                return differs, left, right, difference
+            status = native_status(state)[0]
+            if status == "agree":  # an emulation artifact: not a counterexample
+                return False, left, right, difference
+            return differs, left, right, difference
 
         base_world = World(p.base)
         original: dict[str, Any] = {"outputs_match": None, "note": "skipped: schema-only run"}
@@ -464,7 +545,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 original_diff,
                 referenced=referenced,
                 config=config,
-                disagrees=disagrees,
+                disagrees=confirmed,
+                native=native_status,
                 generator="original_state",
                 description="No generated mutation; the original database diverged.",
                 base=None,
@@ -515,6 +597,17 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     progress("error")
                 raise _Abort from error
             if differs:
+                status = native_status(candidate.world.state)[0]
+                if self._verifier is not None and status == "agree":
+                    self.emulation_artifacts.append(
+                        {
+                            "mutation_path": [m.description for m in candidate.world.path],
+                            "emulated_difference": difference or "query results differ",
+                            "note": "differs on DuckDB, agrees on PostgreSQL: an emulation "
+                            "artifact, excluded from the counterexamples",
+                        }
+                    )
+                    return Evaluation(Verdict.INCONCLUSIVE, reason="emulation_artifact")
                 return Evaluation(Verdict.DISAGREE, detail=(left, right, difference))
             return Evaluation(Verdict.AGREE)
 
@@ -570,7 +663,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 (left, right, difference),
                 referenced=referenced,
                 config=config,
-                disagrees=disagrees,
+                disagrees=confirmed,
+                native=native_status,
                 generator=found.candidate.world.path[-1].family
                 if len(found.candidate.world.path) == 1
                 else "+".join(m.family for m in found.candidate.world.path),
@@ -616,6 +710,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 f"No disagreement found in {result.executed} admitted generated states "
                 "within the budget; this is not evidence of equivalence"
             )
+            if self.emulation_artifacts:
+                headline += (
+                    f"; {len(self.emulation_artifacts)} divergence(s) seen only on DuckDB were "
+                    "excluded as emulation artifacts"
+                )
             if p.seeded and original.get("outputs_match"):
                 headline = (
                     f"Queries agree on the original database and {admitted} admitted generated "
@@ -673,13 +772,92 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         ):
             raise InputError("database changed while it was being analyzed")
 
-    def _fidelity(self) -> FidelityRecord:
+    def _fidelity(self, verification: VerificationRecord | None = None) -> FidelityRecord:
         return FidelityRecord(
             found_on=self.host.fidelity.value,
-            verified_on=None,
+            verified_on="NATIVE_ISOLATED"
+            if verification is not None and verification.status == "VERIFIED"
+            else None,
             engine=f"{self.host.engine} {self.host.version}"
             if self.host.version
             else self.host.engine,
+            verification=verification,
+        )
+
+    def _translation_notes(self, case: SqlCase) -> dict[str, Any]:
+        """For the emulating engine: integer divisions made to truncate, and ones left uncertain."""
+        if self.engine != "duckdb":
+            return {}
+        catalog = catalog_of(self.prepared.model.db)
+        translated = uncertain = 0
+        for sql in (case.reference_sql, case.candidate_sql):
+            try:
+                result = translate_for_duckdb(sql, catalog)
+            except Exception:  # the host reports unsupported SQL; nothing to count here
+                continue
+            translated += result.integer_divisions_translated
+            uncertain += result.divisions_uncertain
+        return {
+            "integer_division": {"translated": translated, "uncertain": uncertain},
+        }
+
+    def _native_results(self, native: tuple[str, Any, Any, Any]) -> dict[str, Any]:
+        """The outputs the native engine gave, kept beside the emulated ones the report replays."""
+        status, left, right, _ = native
+        if status != "differ" or left is None or right is None:
+            return {}
+        return {
+            "native_results": {
+                "reference_result": left.model_dump(mode="json"),
+                "candidate_result": right.model_dump(mode="json"),
+            }
+        }
+
+    def _case_verification(self, findings: list[Finding]) -> VerificationRecord | None:
+        if self.engine != "duckdb":
+            return None
+        if findings and findings[0].fidelity.verification is not None:
+            return findings[0].fidelity.verification
+        if self.emulation_artifacts:
+            return VerificationRecord(
+                status="EMULATION_ARTIFACT",
+                engine="postgres",
+                note=f"{len(self.emulation_artifacts)} divergence(s) seen on DuckDB did not "
+                "reproduce on PostgreSQL and were excluded",
+            )
+        return None
+
+    def _native_label(self, findings: list[Finding]) -> str:
+        if self.engine != "duckdb":
+            return "NATIVE_EXECUTION"
+        verification = self._case_verification(findings)
+        if verification is not None and verification.status == "VERIFIED":
+            return "NATIVE_VERIFIED"
+        if verification is not None and verification.status == "EMULATION_ARTIFACT":
+            return "ARTIFACTS_EXCLUDED"
+        return "NATIVE_UNVERIFIED"
+
+    def _verification(self, native: tuple[str, Any, Any, Any]) -> VerificationRecord | None:
+        """What native re-execution said about a finding found on an emulating engine."""
+        if self.engine != "duckdb":
+            return None
+        status, _, _, note = native
+        verifier = self._verifier
+        engine = (
+            f"postgres {verifier.version}"
+            if verifier is not None and verifier.version
+            else ("postgres")
+        )
+        if status == "differ":
+            return VerificationRecord(
+                status="VERIFIED",
+                engine=engine,
+                note="re-executed on a disposable PostgreSQL instance; the results differ there",
+            )
+        return VerificationRecord(
+            status="NOT_VERIFIED",
+            engine=None,
+            note=str(note or self._verifier_note or "the finding was not re-executed natively"),
         )
 
     def _finding(
@@ -693,6 +871,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         referenced: list[str],
         config: CheckConfig,
         disagrees: Callable[[State], tuple[bool, QueryResult, QueryResult, str | None]],
+        native: Callable[[State], tuple[str, Any, Any, Any]],
         generator: str,
         description: str,
         base: State | None,
@@ -762,8 +941,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 "original_injected_change": description,
                 "generator": generator,
                 "reproduces": differs,
+                **self._native_results(native(final_state)),
             },
-            fidelity=self._fidelity(),
+            fidelity=self._fidelity(self._verification(native(final_state))),
             replay=ReplayRecord(artifact=fixture),
             minimization={
                 "complete": minimized.complete,
@@ -836,7 +1016,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             subject_kind=SubjectKind.ARTIFACT.value,
             divergence_status=status,
             validity=validity,
-            execution_fidelity=self._fidelity(),
+            execution_fidelity=self._fidelity(self._case_verification(findings or [])),
             oracles=[
                 _oracle_record(
                     NOT_MET
@@ -864,13 +1044,14 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 "sql": {
                     "target_dialect": "sqlite" if self.engine == "sqlite" else "postgres",
                     "execution_engine": self.engine,
-                    "native_verification": (
-                        "NATIVE_UNVERIFIED" if self.engine == "duckdb" else "NATIVE_EXECUTION"
-                    ),
+                    "native_verification": self._native_label(findings or []),
+                    "emulation_artifacts": self.emulation_artifacts[:20],
+                    "emulation_artifact_count": len(self.emulation_artifacts),
                     "ordering_policy": config.ordering_policy.value,
                     "seeded": p.seeded,
                     "schema_ddl": self._ddl_statements(),
                     "translation_status": "APPLIED" if self.engine == "duckdb" else "NOT_REQUIRED",
+                    **self._translation_notes(case),
                     "executed_reference_sql": self._executed[0],
                     "executed_candidate_sql": self._executed[1],
                 }
@@ -961,6 +1142,7 @@ def _validity_record(validity: Validity) -> ValidityRecord:
         status=validity.status.value,
         tiers=[t.value for t in validity.tiers],
         problems=list(validity.problems),
+        notes=list(validity.notes),
     )
 
 

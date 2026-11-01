@@ -78,7 +78,11 @@ def test_native_join_suite_finds_minimizes_and_replays() -> None:
 @pytest.mark.skipif(importlib.util.find_spec("duckdb") is None, reason="DuckDB not installed")
 def test_emulated_join_is_not_native_verified() -> None:
     report = check_postgres(
-        ddl=DDL, reference_sql=REFERENCE, candidate_sql=CANDIDATE, engine="duckdb"
+        ddl=DDL,
+        reference_sql=REFERENCE,
+        candidate_sql=CANDIDATE,
+        engine="duckdb",
+        verify_native=False,
     )
     assert report.divergence_status.value == "COUNTEREXAMPLE_FOUND", report
     assert report.extensions["sql"]["native_verification"] == "NATIVE_UNVERIFIED"

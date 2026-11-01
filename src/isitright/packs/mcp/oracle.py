@@ -47,6 +47,8 @@ def reference_outcome(
     reason = scenario.oracle.judgeable(world)
     if reason is not None:
         return Reference(Role.UNJUDGEABLE, reason, None, 0, reason)
+    if scenario.external is not None:
+        return external_reference(scenario, world)
     runtime = ServiceRuntime.for_world(scenario, world, interferences)
     caller = RuntimeCaller(runtime)
     try:
@@ -60,6 +62,35 @@ def reference_outcome(
         basis = f"the reference procedure made {writes} write call(s): acting is right"
         return Reference(Role.CONTROL, basis, runtime.service, writes, None, calls)
     return Reference(Role.TRAP, "the reference procedure changed nothing", runtime.service, 0)
+
+
+def external_reference(scenario: McpScenario, world: World) -> Reference:
+    """The reference procedure, run against the third-party server on a copy of the world."""
+    import tempfile
+    from pathlib import Path
+
+    from isitright.packs.mcp.external import ExternalCaller
+    from isitright.packs.mcp.session import McpSession
+
+    external = scenario.external
+    with tempfile.TemporaryDirectory(prefix="isitright-ext-", ignore_cleanup_errors=True) as tmp:
+        directory = Path(tmp)
+        parameters = external.parameters(scenario.layout.to_service(world.state), directory)
+        session = McpSession(parameters)
+        caller = ExternalCaller(session)
+        try:
+            scenario.oracle.reference(caller)
+        except Exception as error:  # the reference failed: a statement about the oracle
+            reason = f"the reference procedure raised {type(error).__name__}: {error}"
+            return Reference(Role.UNJUDGEABLE, reason, None, 0, reason)
+        finally:
+            session.close()
+        after = external.adapter.read(directory)
+    calls = successful_writes(scenario, caller.trace)
+    if calls:
+        basis = f"the reference procedure made {len(calls)} write call(s): acting is right"
+        return Reference(Role.CONTROL, basis, after, len(calls), None, calls)
+    return Reference(Role.TRAP, "the reference procedure changed nothing", after, 0)
 
 
 def successful_writes(scenario: McpScenario, trace: list[TraceDict]) -> tuple[str, ...]:
