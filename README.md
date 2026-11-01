@@ -57,10 +57,14 @@ isitright agents run --trust-code \
   --worlds fixed --trials 1 --output-dir artifacts/shop
 ```
 
-`--worlds generated` (the default) runs the best-covering 50 of the worlds the core generates from the declaration (about ten
-thousand for the shop; `--max-worlds`, `--max-money`, `--max-runs` and `--max-seconds` bound a run);
-`fixed` runs the 24 hand-written regression worlds; `all` runs both. Select the scripted behavior
-with `SHOP_AGENT_MODE=careless|refuse|reference`. The report (`report.json`, schema 0.4, and
+`--worlds generated` (the default) generates the valid worlds from the declaration (about fourteen
+thousand for the shop) and chooses which ones to run: the baseline runs first, its recorded trace
+is replayed on every candidate world without the agent (*screening*), and the worlds are run in
+that order until a rule or a budget stops the run (`--stratum-patience`, `--run-patience`,
+`--max-money`, `--max-runs`, `--max-seconds`; `--max-worlds`, default 50, is a safety rail). A world
+that was not reached is reported as **not run**, never as passing. `fixed` runs the 24
+hand-written regression worlds; `all` runs both. Select the scripted behavior
+with `SHOP_AGENT_MODE=careless|refuse|reference`. The report (`report.json`, schema 0.5, and
 `report.md`) lists each world with its role, validity tiers, run counts against the baseline, and
 the findings. Replay any run offline, and export findings as new eval cases:
 
@@ -77,9 +81,13 @@ reported, never scored silently. A change no read tool can show the agent is fla
 unobservable: a finding about the tool contract, not about the agent.
 
 For a live agent, runs are repeated (`--trials`, default 4) against a baseline. The report gives
-counts. A claim that a world raises the failure rate needs at least 8 paired runs and an exact
-McNemar test, and it names the test; below that you get counts only. `--max-money` stops the
-search when the reported cost reaches the budget. See [docs/agents.md](docs/agents.md).
+counts. Each world is run in pairs with the baseline until a sequential probability ratio test on
+discordant pairs decides (false claims at most 5 percent over the whole sequence of looks); only
+its `RATE_INCREASE` decision is a rate claim, and the report names the test, its looks and its
+decision. Below that you get counts only. `--minimize` shrinks a finding's mutation path through
+the noise with repeated runs, and `--max-money` stops the search when the reported cost reaches the
+budget. A third-party MCP server (a file or SQLite database it owns) can be the service: see
+`examples/agents/memory/`. See [docs/agents.md](docs/agents.md).
 
 ## Quick start: SQL
 
@@ -91,7 +99,7 @@ isitright sql check --database example.sqlite \
 ```
 
 The two queries agree on the sample rows, but `isitright` finds a small state (an amount missing)
-where they differ, and writes `case_report.md`, `case_report.json` (schema 0.4), a hand-readable
+where they differ, and writes `case_report.md`, `case_report.json` (schema 0.5), a hand-readable
 `counterexample.sql` and a `replay.json`.
 
 ## For text-to-SQL readers
@@ -132,7 +140,8 @@ isitright sql export artifacts/postgres-example/case_report.json --output evals/
 from isitright import check
 
 report = check(
-    engine="sqlite", database="example.sqlite",
+    engine="sqlite",
+    database="example.sqlite",
     reference_sql="SELECT SUM(owed - collected) FROM debts",
     candidate_sql="SELECT SUM(owed) - SUM(collected) FROM debts",
 )
@@ -159,18 +168,25 @@ reporting for free:
 ```python
 from isitright.core.mutations import Mutation, SetField
 
+
 class RoundTotals:
     family = "round_totals"
     target = "state"
-    consumes = frozenset({"column"})          # the hint kinds this family reads
+    consumes = frozenset({"column"})  # the hint kinds this family reads
 
     def propose(self, spec, world, hints):
         for entity in world.state.entities("orders"):
             yield Mutation(
                 family=self.family,
                 description=f"orders[{entity['id']!r}].total rounded",
-                edits=[SetField(collection="orders", key=entity["id"], path=["total"],
-                                value=round(entity["total"]))],
+                edits=[
+                    SetField(
+                        collection="orders",
+                        key=entity["id"],
+                        path=["total"],
+                        value=round(entity["total"]),
+                    )
+                ],
                 touches=["orders.total"],
             )
 ```

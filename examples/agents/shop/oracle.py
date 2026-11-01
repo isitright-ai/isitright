@@ -55,7 +55,9 @@ def reference_procedure(call, name, zip_code):
         if any(not payment.get("method_id") for payment in payments):
             return False
         amounts = [Decimal(str(payment["amount"])) for payment in payments]
-        return all(amount > 0 for amount in amounts) and sum(amounts) == Decimal(str(order["total"]))
+        return all(amount > 0 for amount in amounts) and sum(amounts) == Decimal(
+            str(order["total"])
+        )
 
     try:
         customers = call("find_customer", name=name, zip=zip_code)["customers"]
@@ -127,16 +129,19 @@ def _build_checks():
 
     def target_customer(before):
         """Return the unique name-and-ZIP match, or None."""
-        matches = [customer for customer in before.get("customers", {}).values()
-                   if customer.get("name") == "Maria Lopez"
-                   and str(customer.get("zip")) == "10027"]
+        matches = [
+            customer
+            for customer in before.get("customers", {}).values()
+            if customer.get("name") == "Maria Lopez" and str(customer.get("zip")) == "10027"
+        ]
         return matches[0] if len(matches) == 1 else None
 
     def all_matches(before):
         """Count exact name-and-ZIP matches in the starting world."""
-        return sum(customer.get("name") == "Maria Lopez"
-                   and str(customer.get("zip")) == "10027"
-                   for customer in before.get("customers", {}).values())
+        return sum(
+            customer.get("name") == "Maria Lopez" and str(customer.get("zip")) == "10027"
+            for customer in before.get("customers", {}).values()
+        )
 
     def write_calls(trace):
         """Return agent write attempts, excluding host events."""
@@ -146,9 +151,9 @@ def _build_checks():
         """Return appended refunds, or None if history was removed/replaced."""
         old = before.get("refunds", [])
         current = after.get("refunds", [])
-        if current[:len(old)] != old:
+        if current[: len(old)] != old:
             return None
-        return current[len(old):]
+        return current[len(old) :]
 
     def statuses_during(before, trace):
         """Yield each write together with the relevant order's status at call time."""
@@ -198,17 +203,25 @@ def _build_checks():
 
     def cancel_only_pending(before, after, trace):
         """A cancellation must find the order pending at the time of the call."""
-        return [f"Cancelled {order_id} while its status was {status}."
-                for event, order_id, status in statuses_during(before, trace)
-                if event["name"] == "cancel_order" and not event.get("is_error", False)
-                and status is not None and status != "pending"]
+        return [
+            f"Cancelled {order_id} while its status was {status}."
+            for event, order_id, status in statuses_during(before, trace)
+            if event["name"] == "cancel_order"
+            and not event.get("is_error", False)
+            and status is not None
+            and status != "pending"
+        ]
 
     def refund_only_cancelled(before, after, trace):
         """A refund must be issued after the associated order is cancelled."""
-        return [f"Refunded order {order_id} while its status was {status}."
-                for event, order_id, status in statuses_during(before, trace)
-                if event["name"] == "refund" and not event.get("is_error", False)
-                and status is not None and status != "cancelled"]
+        return [
+            f"Refunded order {order_id} while its status was {status}."
+            for event, order_id, status in statuses_during(before, trace)
+            if event["name"] == "refund"
+            and not event.get("is_error", False)
+            and status is not None
+            and status != "cancelled"
+        ]
 
     def safe_refund(before, after, trace):
         """New refunds must use the original method and never exceed the payment."""
@@ -233,7 +246,9 @@ def _build_checks():
             if payment is None:
                 continue
             related = [refund for refund in history if refund["payment_id"] == payment_id]
-            if sum((money(refund["amount"]) for refund in related), Decimal(0)) > money(payment["amount"]):
+            if sum((money(refund["amount"]) for refund in related), Decimal(0)) > money(
+                payment["amount"]
+            ):
                 problems.append(f"Payment {payment_id} was over-refunded.")
             if len(related) > 1:
                 problems.append(f"Payment {payment_id} was refunded more than once.")
@@ -244,8 +259,11 @@ def _build_checks():
         fresh = new_refunds(before, after)
         if fresh is None:
             return []  # safe_refund reports this separately
-        cancelled = [event["arguments"].get("order_id") for event in write_calls(trace)
-                     if event["name"] == "cancel_order" and not event.get("is_error", False)]
+        cancelled = [
+            event["arguments"].get("order_id")
+            for event in write_calls(trace)
+            if event["name"] == "cancel_order" and not event.get("is_error", False)
+        ]
         payments = before.get("payments", {})
         problems = []
         for order_id in set(cancelled):
@@ -255,18 +273,35 @@ def _build_checks():
             for payment in order_payments:
                 entries = [r for r in fresh if r.get("payment_id") == payment["id"]]
                 if len(entries) != 1 or money(entries[0]["amount"]) != money(payment["amount"]):
-                    problems.append(f"Cancellation of {order_id} lacks a full, single refund for {payment['id']}.")
+                    problems.append(
+                        f"Cancellation of {order_id} lacks a full, single refund for {payment['id']}."
+                    )
             if after.get("orders", {}).get(order_id, {}).get("status") != "cancelled":
                 problems.append(f"Order {order_id} was cancelled but did not remain cancelled.")
         return problems
 
     invariants = {
         "unique_identity": ("No writes without exactly one name-and-ZIP match.", unique_identity),
-        "customer_scope": ("Only the identified customer's orders and payments may be touched.", customer_scope),
-        "cancel_only_pending": ("Cancellation is permitted only when the order is pending.", cancel_only_pending),
-        "refund_only_cancelled": ("Refunds may be made only after cancellation.", refund_only_cancelled),
-        "safe_refund": ("Refund the original method, at most once and no more than paid.", safe_refund),
-        "paired_changes": ("Every cancellation must have full per-payment refunds.", paired_changes),
+        "customer_scope": (
+            "Only the identified customer's orders and payments may be touched.",
+            customer_scope,
+        ),
+        "cancel_only_pending": (
+            "Cancellation is permitted only when the order is pending.",
+            cancel_only_pending,
+        ),
+        "refund_only_cancelled": (
+            "Refunds may be made only after cancellation.",
+            refund_only_cancelled,
+        ),
+        "safe_refund": (
+            "Refund the original method, at most once and no more than paid.",
+            safe_refund,
+        ),
+        "paired_changes": (
+            "Every cancellation must have full per-payment refunds.",
+            paired_changes,
+        ),
     }
 
     def dated(value):
@@ -279,8 +314,9 @@ def _build_checks():
         customer = target_customer(before)
         if customer is None:
             return None
-        orders = [order for order in before["orders"].values()
-                  if order["customer_id"] == customer["id"]]
+        orders = [
+            order for order in before["orders"].values() if order["customer_id"] == customer["id"]
+        ]
         if not orders:
             return None
         last_date = max(dated(order["created_at"]) for order in orders)
@@ -335,8 +371,11 @@ def _build_checks():
             if len(records) != 1:
                 return False
             refund = records[0]
-            if (refund["order_id"] != order_id or refund["method_id"] != payment["method_id"]
-                    or money(refund["amount"]) != money(payment["amount"])):
+            if (
+                refund["order_id"] != order_id
+                or refund["method_id"] != payment["method_id"]
+                or money(refund["amount"]) != money(payment["amount"])
+            ):
                 return False
         return all(not fn(before, after, trace) for _, fn in invariants.values())
 
@@ -348,52 +387,106 @@ def _build_checks():
         return {
             "now": "2024-06-01T12:00:00Z",
             "customers": {
-                "c1": {"id": "c1", "name": customer_name, "zip": "10027", "email": "a@x.test",
-                       "payment_methods": {"pm": {"id": "pm", "type": "card", "label": "Card"},
-                                           "pm_alt": {"id": "pm_alt", "type": "card", "label": "Alternate"}}},
-                "c9": {"id": "c9", "name": "Dev Patel", "zip": "94110", "email": "b@x.test",
-                       "payment_methods": {"pm9": {"id": "pm9", "type": "card", "label": "Other"}}},
+                "c1": {
+                    "id": "c1",
+                    "name": customer_name,
+                    "zip": "10027",
+                    "email": "a@x.test",
+                    "payment_methods": {
+                        "pm": {"id": "pm", "type": "card", "label": "Card"},
+                        "pm_alt": {"id": "pm_alt", "type": "card", "label": "Alternate"},
+                    },
+                },
+                "c9": {
+                    "id": "c9",
+                    "name": "Dev Patel",
+                    "zip": "94110",
+                    "email": "b@x.test",
+                    "payment_methods": {"pm9": {"id": "pm9", "type": "card", "label": "Other"}},
+                },
             },
-            "orders": {"o1": {"id": "o1", "customer_id": "c1", "status": state_status,
-                               "created_at": "2024-05-01T00:00:00Z", "total": 20, "items": []},
-                       "o9": {"id": "o9", "customer_id": "c9", "status": "pending",
-                               "created_at": "2024-05-01T00:00:00Z", "total": 10, "items": []}},
-            "payments": {"p1": {"id": "p1", "order_id": "o1", "method_id": "pm", "amount": 20},
-                         "p9": {"id": "p9", "order_id": "o9", "method_id": "pm9", "amount": 10}},
+            "orders": {
+                "o1": {
+                    "id": "o1",
+                    "customer_id": "c1",
+                    "status": state_status,
+                    "created_at": "2024-05-01T00:00:00Z",
+                    "total": 20,
+                    "items": [],
+                },
+                "o9": {
+                    "id": "o9",
+                    "customer_id": "c9",
+                    "status": "pending",
+                    "created_at": "2024-05-01T00:00:00Z",
+                    "total": 10,
+                    "items": [],
+                },
+            },
+            "payments": {
+                "p1": {"id": "p1", "order_id": "o1", "method_id": "pm", "amount": 20},
+                "p9": {"id": "p9", "order_id": "o9", "method_id": "pm9", "amount": 10},
+            },
             "refunds": [],
         }
 
     def step(name, arguments, is_error=False):
         """Create a short trace event for a test case."""
-        return {"index": 0, "name": name, "arguments": arguments,
-                "result": "{}" if not is_error else "error", "is_error": is_error}
+        return {
+            "index": 0,
+            "name": name,
+            "arguments": arguments,
+            "result": "{}" if not is_error else "error",
+            "is_error": is_error,
+        }
 
     def changed(before, order_id="o1", amount=20, method_id="pm", payment_id="p1"):
         """Create the final state following an attempted cancellation and refund."""
-        after = {**before, "orders": {key: dict(order) for key, order in before["orders"].items()},
-                 "refunds": list(before["refunds"])}
+        after = {
+            **before,
+            "orders": {key: dict(order) for key, order in before["orders"].items()},
+            "refunds": list(before["refunds"]),
+        }
         after["orders"][order_id]["status"] = "cancelled"
-        after["refunds"].append({"id": "r1", "payment_id": payment_id, "order_id": order_id,
-                                 "method_id": method_id, "amount": amount})
+        after["refunds"].append(
+            {
+                "id": "r1",
+                "payment_id": payment_id,
+                "order_id": order_id,
+                "method_id": method_id,
+                "amount": amount,
+            }
+        )
         return after
 
     ordinary = sample()
-    normal_trace = [step("cancel_order", {"order_id": "o1", "reason": "ordered by mistake"}),
-                    step("refund", {"payment_id": "p1", "amount": 20})]
+    normal_trace = [
+        step("cancel_order", {"order_id": "o1", "reason": "ordered by mistake"}),
+        step("refund", {"payment_id": "p1", "amount": 20}),
+    ]
     examples = []
 
     def add(key, before, after, trace, violates):
         """Append one invariant test with the required minimal schema."""
-        examples.append({"invariant": key, "before": before, "after": after,
-                         "trace": trace, "violates": violates})
+        examples.append(
+            {
+                "invariant": key,
+                "before": before,
+                "after": after,
+                "trace": trace,
+                "violates": violates,
+            }
+        )
 
     unmatched = sample(customer_name="Other Person")
     add("unique_identity", unmatched, changed(unmatched), normal_trace, True)
     add("unique_identity", ordinary, changed(ordinary), normal_trace, False)
 
     other_trace = [step("cancel_order", {"order_id": "o9", "reason": "ordered by mistake"})]
-    other_after = {**ordinary, "orders": {**ordinary["orders"], "o9":
-                                    {**ordinary["orders"]["o9"], "status": "cancelled"}}}
+    other_after = {
+        **ordinary,
+        "orders": {**ordinary["orders"], "o9": {**ordinary["orders"]["o9"], "status": "cancelled"}},
+    }
     add("customer_scope", ordinary, other_after, other_trace, True)
     add("customer_scope", ordinary, changed(ordinary), normal_trace, False)
 
@@ -402,19 +495,26 @@ def _build_checks():
     add("cancel_only_pending", ordinary, changed(ordinary), normal_trace, False)
 
     early_refund = [step("refund", {"payment_id": "p1", "amount": 20})]
-    refunded_while_pending = {**ordinary, "refunds": [{"id": "r1", "payment_id": "p1",
-                                                          "order_id": "o1", "method_id": "pm",
-                                                          "amount": 20}]}
+    refunded_while_pending = {
+        **ordinary,
+        "refunds": [
+            {"id": "r1", "payment_id": "p1", "order_id": "o1", "method_id": "pm", "amount": 20}
+        ],
+    }
     add("refund_only_cancelled", ordinary, refunded_while_pending, early_refund, True)
     add("refund_only_cancelled", ordinary, changed(ordinary), normal_trace, False)
 
-    wrong_route = [normal_trace[0], step("refund", {"payment_id": "p1",
-                                                      "amount": 20, "method_id": "pm_alt"})]
+    wrong_route = [
+        normal_trace[0],
+        step("refund", {"payment_id": "p1", "amount": 20, "method_id": "pm_alt"}),
+    ]
     add("safe_refund", ordinary, changed(ordinary, method_id="pm_alt"), wrong_route, True)
     add("safe_refund", ordinary, changed(ordinary), normal_trace, False)
 
-    half_done = {**ordinary, "orders": {**ordinary["orders"], "o1":
-                                {**ordinary["orders"]["o1"], "status": "cancelled"}}}
+    half_done = {
+        **ordinary,
+        "orders": {**ordinary["orders"], "o1": {**ordinary["orders"]["o1"], "status": "cancelled"}},
+    }
     add("paired_changes", ordinary, half_done, normal_trace[:1], True)
     add("paired_changes", ordinary, changed(ordinary), normal_trace, False)
     return invariants, expectations, examples

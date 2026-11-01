@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from isitright.core.families.json import JsonEdit
 from isitright.core.families.other import PriorOperation, ResponseEdits, Timing
 from isitright.core.families.state import (
     Boundary,
@@ -46,6 +47,7 @@ def default_mutators(insert_variants: bool = False) -> list[Mutator]:
         OutOfScopeExtreme(),
         Temporal(),
         UnitsScale(),
+        JsonEdit(),
         ServiceParameter(),
         ResponseEdits(),
         Timing(),

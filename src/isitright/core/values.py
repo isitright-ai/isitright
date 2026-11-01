@@ -8,7 +8,8 @@ derandomized profile, so the same inputs give the same values on every run.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Collection
 from functools import cache
 from typing import Any
 
@@ -107,3 +108,61 @@ def _inside(value: Any, domain: Domain) -> bool:
         domain.maximum is not None
         and (value > domain.maximum or (domain.max_exclusive and value == domain.maximum))
     )
+
+
+class UnsupportedPattern(ValueError):
+    """A regular expression that value generation cannot honor (reported, never guessed)."""
+
+
+_UNSUPPORTED_CONSTRUCTS = (
+    (re.compile(r"\(\?(?:=|!|<=|<!)"), "lookahead and lookbehind"),
+    (re.compile(r"\(\?P=|(?<!\\)\\[1-9]"), "backreferences"),
+    (re.compile(r"\(\?\("), "conditional groups"),
+)
+
+
+def unsupported_pattern(pattern: str) -> str | None:
+    """Why a pattern cannot drive generation, or None when it can."""
+    try:
+        re.compile(pattern)
+    except re.error as error:
+        return f"does not compile: {error}"
+    for construct, name in _UNSUPPORTED_CONSTRUCTS:
+        if construct.search(pattern):
+            return f"uses {name}, which value generation does not support"
+    return None
+
+
+def pattern_value(
+    pattern: str,
+    *,
+    taken: Collection[Any] = (),
+    domain: Domain | None = None,
+) -> str:
+    """The smallest string that fully matches ``pattern`` and is not in ``taken``.
+
+    Deterministic: the same pattern and the same ``taken`` give the same value on every run
+    (Hypothesis, derandomized, shrinks toward the simplest match, so successive calls with the
+    values already used give ``AAA``, ``AAB``, ``AAC`` for ``^[A-Z]{3}$``). A declared domain with
+    a closed set of values narrows the matches to that set. Raises `UnsupportedPattern` for a
+    construct that is not supported, and when no such value exists.
+    """
+    reason = unsupported_pattern(pattern)
+    if reason is not None:
+        raise UnsupportedPattern(f"pattern {pattern!r} {reason}")
+    used = set(taken)
+    found = _find(
+        st.from_regex(pattern, fullmatch=True),
+        lambda s: s not in used and (domain is None or _inside(s, domain)),
+    )
+    if found is None:
+        raise UnsupportedPattern(f"pattern {pattern!r} has no further value within the domain")
+    return str(found)
+
+
+def nth_pattern_value(pattern: str, ordinal: int, domain: Domain | None = None) -> str:
+    """The ``ordinal``-th (from 1) value in `pattern_value` order."""
+    taken: list[str] = []
+    for _ in range(max(ordinal, 1)):
+        taken.append(pattern_value(pattern, taken=taken, domain=domain))
+    return taken[-1]

@@ -12,6 +12,7 @@ hint, and ``a.b`` reads an attribute of a hint value.
 from __future__ import annotations
 
 import ast
+import math
 import operator
 import re
 from collections.abc import Callable, Iterator, Mapping
@@ -58,6 +59,8 @@ class Domain:
     min_exclusive: bool = False
     max_exclusive: bool = False
     values: tuple[Any, ...] | None = None
+    pattern: str | None = None
+    """A regular expression a text value must fully match."""
 
 
 # --- row-level expressions ----------------------------------------------------------------------
@@ -374,6 +377,31 @@ def _plain(value: Any) -> Any:
     return Decimal(value) if isinstance(value, str) else value
 
 
+class Pattern(_Base):
+    """A text field must fully match a regular expression (JSON Schema ``pattern``)."""
+
+    kind: Literal["pattern"] = "pattern"
+    path: str
+    regex: str
+
+    def describe(self) -> str:
+        return f"{self.path} matches {self.regex}"
+
+    def paths(self) -> list[str]:
+        return [self.path]
+
+    def check(self, schema: EntitySchema, state: State) -> list[Violation]:
+        compiled = re.compile(self.regex)
+        return [
+            Violation(self.label(), f"{atom}.{self.path}={value!r} does not match {self.regex}")
+            for atom, value, present in values_at(schema, state, self.path)
+            if present and isinstance(value, str) and not compiled.fullmatch(value)
+        ]
+
+    def value_domain(self, path: str) -> Domain | None:
+        return Domain(pattern=self.regex) if path == self.path else None
+
+
 class OneOf(_Base):
     kind: Literal["one_of"] = "one_of"
     path: str
@@ -394,6 +422,58 @@ class OneOf(_Base):
 
     def value_domain(self, path: str) -> Domain | None:
         return Domain(values=tuple(self.values)) if path == self.path else None
+
+
+class JsonSum(_Base):
+    """The sum over a JSON list of the product of leaf paths equals a field of the same entity.
+
+    ``JsonSum(collection="orders", field="items", terms=["price", "qty"], equals="total")`` reads
+    ``sum(items[*].price * items[*].qty) == total``. A field this rule does not mention has no
+    constraint over its content, which a mutation of it must say (tier STRUCTURAL only).
+    """
+
+    kind: Literal["json_sum"] = "json_sum"
+    collection: str
+    field: str
+    terms: list[str]
+    equals: str
+    tolerance: float = 1e-9
+
+    def describe(self) -> str:
+        product = " * ".join(f"{self.field}[*].{t}" for t in self.terms)
+        return f"{self.collection}: sum({product}) == {self.equals}"
+
+    def paths(self) -> list[str]:
+        return [f"{self.collection}.{self.field}", f"{self.collection}.{self.equals}"]
+
+    def check(self, schema: EntitySchema, state: State) -> list[Violation]:
+        spec = schema.collection(self.collection)
+        out: list[Violation] = []
+        for entity in state.entities(self.collection):
+            items = entity.get(self.field)
+            if not isinstance(items, list):
+                continue
+            try:
+                total = sum(math.prod(float(item[t]) for t in self.terms) for item in items)
+                expected = float(entity[self.equals])
+            except (KeyError, TypeError, ValueError):
+                out.append(
+                    Violation(
+                        self.label(),
+                        f"{self.collection}[{entity[spec.key]!r}].{self.field} lacks a number "
+                        f"for {self.terms}",
+                    )
+                )
+                continue
+            if abs(total - expected) > self.tolerance:
+                out.append(
+                    Violation(
+                        self.label(),
+                        f"{self.collection}[{entity[spec.key]!r}]: {self.field} sums to {total} "
+                        f"but {self.equals} is {expected}",
+                    )
+                )
+        return out
 
 
 class Unique(_Base):
@@ -524,7 +604,15 @@ class RowExpr(_Base):
 
 
 Constraint = Annotated[
-    NotNull | Range | OneOf | Unique | FunctionalDependency | Aggregate | RowExpr,
+    NotNull
+    | Range
+    | OneOf
+    | Pattern
+    | JsonSum
+    | Unique
+    | FunctionalDependency
+    | Aggregate
+    | RowExpr,
     Field(discriminator="kind"),
 ]
 _CONSTRAINTS = TypeAdapter(list[Constraint])
@@ -555,6 +643,8 @@ class Validity:
     problems: tuple[str, ...] = ()
     checked_rules: tuple[str, ...] = ()
     check_only_rules: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+    """Why a tier was withheld (for example a JSON field edited with no rule over its content)."""
 
 
 def check_constraints(
@@ -613,7 +703,7 @@ def check_paths(schema: EntitySchema, constraints: list[Constraint]) -> None:
     for constraint in constraints:
         for path in constraint.paths():
             schema.resolve(path)
-        if isinstance(constraint, Unique | FunctionalDependency | RowExpr | Aggregate):
+        if isinstance(constraint, Unique | FunctionalDependency | RowExpr | Aggregate | JsonSum):
             schema.collection(
                 constraint.parent if isinstance(constraint, Aggregate) else constraint.collection
             )

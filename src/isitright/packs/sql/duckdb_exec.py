@@ -8,6 +8,7 @@ import threading
 import sqlglot
 from sqlglot.errors import ErrorLevel
 
+from isitright.packs.sql.dialect_fidelity import catalog_of, translate_for_duckdb
 from isitright.packs.sql.errors import StateRejected
 from isitright.packs.sql.models import QueryResult
 from isitright.packs.sql.postgres_ddl import Schema, _ordered_schema_tables
@@ -25,6 +26,7 @@ def _execute_duckdb(
     max_rows: int,
 ) -> tuple[QueryResult, QueryResult, str]:
     duckdb = importlib.import_module("duckdb")
+    catalog = catalog_of(schema.database)
     with duckdb.connect(":memory:", config={"enable_external_access": "false"}) as connection:
         for table in _ordered_schema_tables(schema.database):
             connection.execute(
@@ -48,9 +50,7 @@ def _execute_duckdb(
             timer = threading.Timer(timeout_seconds, connection.interrupt)
             timer.start()
             try:
-                translated = sqlglot.transpile(
-                    query, read="postgres", write="duckdb", unsupported_level=ErrorLevel.RAISE
-                )[0]
+                translated = translate_for_duckdb(query, catalog).sql
                 return _result(connection.execute(translated), max_rows)
             finally:
                 timer.cancel()

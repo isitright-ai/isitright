@@ -1,4 +1,4 @@
-"""Evidence: the one report schema (0.4), headlines, suite ranking, eval-case export, CI policy.
+"""Evidence: the one report schema (0.5; 0.4 reports still load), headlines, suite ranking, export.
 
 Disagreement, validity, execution fidelity, oracle basis, stability and attribution are separate
 fields. A headline is derived from them and never says pass, fail, correct or wrong.
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from isitright.core.stochastic import Stability
 
-SCHEMA_VERSION: Literal["0.4"] = "0.4"
+SCHEMA_VERSION: Literal["0.5"] = "0.5"
 _BANNED = re.compile(r"\b(pass|passed|fail|failed|failure|correct|incorrect|wrong)\b", re.I)
 
 
@@ -53,12 +53,23 @@ class ValidityRecord(Closed):
     problems: list[str] = Field(default_factory=list)
     unobservable: bool = False
     """Every field the mutation changed is hidden from the agent: a tool-contract finding."""
+    notes: list[str] = Field(default_factory=list)
+    """Why a tier was withheld (for example a JSON field edited with no rule over its content)."""
+
+
+class VerificationRecord(Closed):
+    """What happened when an emulated finding was re-executed on the native engine."""
+
+    status: Literal["VERIFIED", "EMULATION_ARTIFACT", "NOT_VERIFIED"]
+    engine: str | None = None
+    note: str = ""
 
 
 class FidelityRecord(Closed):
     found_on: str
     verified_on: str | None = None
     engine: str | None = None
+    verification: VerificationRecord | None = None
 
 
 class OracleRecord(Closed):
@@ -83,6 +94,52 @@ class ReplayRecord(Closed):
     artifact_sha256: str | None = None
 
 
+class ScreeningRecord(Closed):
+    """Screening without the agent: a ranking input, never a verdict."""
+
+    screening_class: Literal["WRONG_IF_UNCHANGED", "STALE", "RIGHT_IF_UNCHANGED", "UNSCREENABLE"]
+    basis: str = ""
+    rank: int | None = None
+
+
+class ScreeningSummary(Closed):
+    ranking: str
+    """How worlds were ordered: ``screening``, ``coverage`` or ``random``."""
+    baseline_trace: str | None = None
+    counts: dict[str, int] = Field(default_factory=dict)
+    note: str = ""
+
+
+class StratumRecord(Closed):
+    family: str
+    target: str
+    role: str
+    worlds_total: int
+    worlds_run: int
+    worlds_not_run: int
+    with_findings: int
+    stopped: bool
+    stop_reason: str | None = None
+    summary: str = ""
+    """For example "no finding in 8 of 40 worlds: stratum rule (8 worlds without a finding)"."""
+
+
+class StoppingRecord(Closed):
+    stratum_patience: int | None = None
+    run_patience: int | None = None
+    run_stop_reason: str | None = None
+    strata: list[StratumRecord] = Field(default_factory=list)
+
+
+class HintUse(Closed):
+    name: str
+    kind: str
+    provenance: str
+    worlds: list[str] = Field(default_factory=list)
+    """Worlds that a hint led to (the first ones; ``world_count`` has the total)."""
+    world_count: int = 0
+
+
 class SearchRecord(Closed):
     seed: int
     attempts: int
@@ -96,6 +153,9 @@ class SearchRecord(Closed):
     depth_reached: int = 0
     notes: list[str] = Field(default_factory=list)
     budget: dict[str, Any] = Field(default_factory=dict)
+    screening: ScreeningSummary | None = None
+    stopping: StoppingRecord | None = None
+    hint_use: list[HintUse] = Field(default_factory=list)
 
 
 class Finding(Closed):
@@ -130,6 +190,10 @@ class WorldRecord(Closed):
     role_basis: str = ""
     counts: dict[str, int] = Field(default_factory=dict)
     mutation_path: list[MutationRecord] = Field(default_factory=list)
+    screening: ScreeningRecord | None = None
+    run_status: Literal["RUN", "NOT_RUN"] = "RUN"
+    not_run_reason: str | None = None
+    """A world that was not run is reported as not run, never as passing."""
 
 
 class ControlsRecord(Closed):
@@ -193,7 +257,8 @@ class Totals(Closed):
 class AuditReport(Closed):
     """The report of one audit: a single check, a suite, or an agent scenario."""
 
-    schema_version: Literal["0.4"] = SCHEMA_VERSION
+    schema_version: Literal["0.4", "0.5"] = SCHEMA_VERSION
+    """0.4 reports stay readable: every field added in 0.5 is optional."""
     pack: str
     kind: Literal["case", "suite", "scenario"]
     cases: list[CaseReport]
