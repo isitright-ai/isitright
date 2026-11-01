@@ -2,7 +2,7 @@
 
 `check` compares a reference and a candidate query on SQLite (a database file or DDL), PostgreSQL
 (native, from DDL) or DuckDB (emulated PostgreSQL, from DDL). `check_suite` does the same for a
-JSONL suite. Both return report models of schema 0.4. See docs/supported-sql.md.
+JSONL suite. Both return report models of schema 0.5. See https://docs.isitright.ai/sql/supported-sql/.
 """
 
 from __future__ import annotations

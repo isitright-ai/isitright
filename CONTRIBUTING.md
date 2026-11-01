@@ -34,6 +34,22 @@ than merely exercising implementation details. That covers entity schemas, const
 declarations, oracle rules and expected results: mark a draft with a `Proposed fixture: pending
 owner review` header comment and list it in the pull request.
 
+## Documentation
+
+The site at https://docs.isitright.ai is built with [Zensical](https://zensical.org) from `docs/` and
+`zensical.toml`, and deployed to GitHub Pages by `.github/workflows/docs.yml` on pushes to `main`.
+
+```console
+python -m pip install zensical==0.0.74
+zensical serve          # http://localhost:8000, rebuilds on change
+zensical build --clean  # writes site/
+```
+
+A new page needs an entry in the `nav` of `zensical.toml`. Keep examples runnable: every command and
+code block in the quick starts and guides was run against the release the docs describe. Update the
+version in the `copyright` line and in `docs/index.md` and `docs/llms.txt` with each release. Do not
+backfill documentation for earlier releases.
+
 ## Layout
 
 `src/isitright/core/` knows nothing about SQL or MCP and must not name a pack's fields or values

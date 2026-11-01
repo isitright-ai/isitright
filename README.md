@@ -5,6 +5,10 @@ that currently pass. It searches for valid changes to the world under which a pa
 holds, and returns each one as a minimized, replayable counterexample with an honest account of
 how strong the evidence is. Each counterexample can be added back to your eval set as a new case.
 
+**Documentation: [docs.isitright.ai](https://docs.isitright.ai).** It has quick starts, concepts,
+how-to guides for both packs, and prompt templates that draft hints, constraints and scenarios for
+you to review.
+
 It works on two kinds of agents, through two packs on one core:
 
 | You have | Use | World | Host |
@@ -87,7 +91,7 @@ its `RATE_INCREASE` decision is a rate claim, and the report names the test, its
 decision. Below that you get counts only. `--minimize` shrinks a finding's mutation path through
 the noise with repeated runs, and `--max-money` stops the search when the reported cost reaches the
 budget. A third-party MCP server (a file or SQLite database it owns) can be the service: see
-`examples/agents/memory/`. See [docs/agents.md](docs/agents.md).
+`examples/agents/memory/`. See the [agent pack docs](https://docs.isitright.ai/agents/).
 
 ## Quick start: SQL
 
@@ -134,7 +138,7 @@ isitright sql export artifacts/postgres-example/case_report.json --output evals/
 - **Suites.** Cases are isolated and ranked: domain-validated counterexamples first. `--fail-on
   domain-counterexample|any-counterexample` sets a CI exit code.
 - **Limits.** One read-only statement, a documented subset of SQL; unsupported input is rejected,
-  not weakened. See [docs/supported-sql.md](docs/supported-sql.md).
+  not weakened. See [supported SQL](https://docs.isitright.ai/sql/supported-sql/).
 
 ```python
 from isitright import check
@@ -157,7 +161,7 @@ print(report.divergence_status, report.headline)
 | Constraints | Declarative data (`Range`, `OneOf`, `Unique`, `Aggregate`, row expressions) that both check states and guide generation. Python predicates are check-only and listed. |
 | Hints | What the task, schemas, programs and baseline trace say matters: `lookup`, `ordering`, `gate`, `scope`, `threshold`, plus kinds you register. Hints prioritize; unhinted mutations still run on the remaining budget. |
 | Mutations | `state`, `response` (what one tool call returns) or `timing` (a state change after a matching call). Depth two by default. |
-| Evidence | One report schema ([docs/contracts.md](docs/contracts.md)) with run counts, validity tiers, fidelity, oracle, attribution. |
+| Evidence | One report schema ([report schema](https://docs.isitright.ai/reference/report/)) with run counts, validity tiers, fidelity, oracle, attribution. |
 
 ## Write your own mutator or host (experimental)
 
