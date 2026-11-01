@@ -257,7 +257,8 @@ def _record_run(
     if require_cost and status == "COMPLETED" and "money" not in run.extra:
         raise AgentsInputError(
             "a money budget needs the agent to report what each run cost, and this agent did not: "
-            "write a transcript.json whose usage entries each have a 'cost' (see docs/agents.md), "
+            "write a transcript.json whose usage entries each have a 'cost' (see "
+            "https://docs.isitright.ai/agents/run-your-agent/), "
             "or bound the run with --max-runs or --max-seconds instead"
         )
     try:

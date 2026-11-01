@@ -57,6 +57,7 @@ dev = [
 isitright = "isitright.cli:app"
 
 [project.urls]
+Documentation = "https://docs.isitright.ai"
 Repository = "https://github.com/isitright-ai/isitright"
 
 [tool.hatch.build.targets.wheel]

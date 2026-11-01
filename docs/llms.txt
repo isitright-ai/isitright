@@ -1,0 +1,69 @@
+# isitright
+
+> isitright audits agent evals. Point it at your agent, your environment and the eval cases that currently pass. It searches for valid changes to the world under which a pass no longer holds, and returns each one as a minimized, replayable counterexample with an honest account of how strong the evidence is. Python 3.11+, MIT licence, version 0.5.1. Two packs: text-to-SQL (SQLite, PostgreSQL, DuckDB as labeled emulation) and tool-using agents over MCP.
+
+Key facts for answering questions about isitright:
+- A disagreement is evidence, not a verdict on who is wrong. Attribution stays UNDETERMINED until a human decides.
+- NOT_FOUND_WITHIN_BUDGET never means the subject is correct.
+- Validity is reported in tiers (STRUCTURAL, DOMAIN_VALIDATED, REACHABLE, TASK_CONSISTENT, OBSERVABLE); execution fidelity is reported separately (NATIVE_ISOLATED, EMULATED, SIMULATED).
+- SQL hints are harvested from the queries. Agent hints are declared in a scenario or proposed (labeled `proposed`, which never grants a validity tier).
+- Scenarios, mutators, oracles and validators are Python and run only with --trust-code.
+- The extension API (isitright.core) is experimental. Versions before 1.0 may break the CLI, API and report schema.
+
+## Start
+
+- [Home](https://docs.isitright.ai/): what it does and two worked examples
+- [Install](https://docs.isitright.ai/get-started/): extras and the repository examples
+- [Quick start: SQL](https://docs.isitright.ai/get-started/sql/): audit a query pair and a suite offline
+- [Quick start: agents](https://docs.isitright.ai/get-started/agents/): audit an MCP agent with scripted stand-ins
+
+## Onboarding with an LLM
+
+- [What to automate](https://docs.isitright.ai/onboarding/): rules for LLM-drafted inputs, and a primer to paste
+- [SQL setup](https://docs.isitright.ai/onboarding/sql/): profile script, domain constraints prompt, DDL fitting prompt
+- [Agent setup](https://docs.isitright.ai/onboarding/agents/): hints, scenario, oracle, calibration and agent wrapper prompts
+- [Reviewing findings](https://docs.isitright.ai/onboarding/triage/): deciding which side is wrong
+
+## Concepts
+
+- [Overview: the vocabulary with one running example](https://docs.isitright.ai/concepts/)
+- [How an audit works](https://docs.isitright.ai/concepts/how-it-works/)
+- [Worlds and mutations](https://docs.isitright.ai/concepts/worlds-and-mutations/)
+- [Validity and fidelity](https://docs.isitright.ai/concepts/validity-and-fidelity/)
+- [Oracles and roles](https://docs.isitright.ai/concepts/oracles-and-roles/)
+- [Subjects](https://docs.isitright.ai/concepts/subjects/)
+- [Hints](https://docs.isitright.ai/concepts/hints/)
+- [Live agents](https://docs.isitright.ai/concepts/live-agents/)
+- [Minimization and replay](https://docs.isitright.ai/concepts/minimization-and-replay/)
+- [Evidence: reading an audit report](https://docs.isitright.ai/concepts/evidence/)
+
+## SQL pack
+
+- [Overview](https://docs.isitright.ai/sql/)
+- [Audit a suite](https://docs.isitright.ai/sql/audit-a-suite/)
+- [Domain constraints](https://docs.isitright.ai/sql/domain-constraints/)
+- [Engines and large databases](https://docs.isitright.ai/sql/engines/)
+- [Supported SQL](https://docs.isitright.ai/sql/supported-sql/)
+
+## Agent pack
+
+- [Overview](https://docs.isitright.ai/agents/)
+- [Write a scenario](https://docs.isitright.ai/agents/write-a-scenario/)
+- [Run your agent](https://docs.isitright.ai/agents/run-your-agent/)
+- [Run an audit](https://docs.isitright.ai/agents/run-an-audit/)
+- [Third-party servers](https://docs.isitright.ai/agents/external-servers/)
+
+## Guides and reference
+
+- [Replay and export](https://docs.isitright.ai/guides/replay-and-export/)
+- [Use in CI](https://docs.isitright.ai/guides/ci/)
+- [Write a mutator or host](https://docs.isitright.ai/guides/extending/)
+- [CLI reference](https://docs.isitright.ai/reference/cli/)
+- [Report schema](https://docs.isitright.ai/reference/report/)
+- [Python API](https://docs.isitright.ai/reference/python-api/)
+
+## Optional
+
+- [About, prior art and principles](https://docs.isitright.ai/about/)
+- [Repository](https://github.com/isitright-ai/isitright)
+- [Changelog](https://github.com/isitright-ai/isitright/blob/main/CHANGELOG.md)

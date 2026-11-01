@@ -1,0 +1,109 @@
+[project]
+site_name = "isitright"
+site_description = "Audit agent evals: find valid changes to the world under which a pass no longer holds."
+site_url = "https://docs.isitright.ai/"
+repo_url = "https://github.com/isitright-ai/isitright"
+repo_name = "isitright-ai/isitright"
+edit_uri = "edit/main/docs/"
+copyright = "MIT licensed. Documentation for isitright 0.5.1."
+nav = [
+  { "Home" = "index.md" },
+  { "Get started" = [
+    { "Install" = "get-started/index.md" },
+    { "Quick start: SQL" = "get-started/sql.md" },
+    { "Quick start: agents" = "get-started/agents.md" },
+  ] },
+  { "Onboarding with an LLM" = [
+    { "What to automate" = "onboarding/index.md" },
+    { "SQL setup" = "onboarding/sql.md" },
+    { "Agent setup" = "onboarding/agents.md" },
+    { "Reviewing findings" = "onboarding/triage.md" },
+  ] },
+  { "Concepts" = [
+    { "Overview" = "concepts/index.md" },
+    { "How an audit works" = "concepts/how-it-works.md" },
+    { "Worlds and mutations" = "concepts/worlds-and-mutations.md" },
+    { "Validity and fidelity" = "concepts/validity-and-fidelity.md" },
+    { "Subjects" = "concepts/subjects.md" },
+    { "Hints" = "concepts/hints.md" },
+    { "Oracles and roles" = "concepts/oracles-and-roles.md" },
+    { "Live agents" = "concepts/live-agents.md" },
+    { "Minimization and replay" = "concepts/minimization-and-replay.md" },
+    { "Evidence" = "concepts/evidence.md" },
+  ] },
+  { "SQL" = [
+    { "Overview" = "sql/index.md" },
+    { "Audit a suite" = "sql/audit-a-suite.md" },
+    { "Domain constraints" = "sql/domain-constraints.md" },
+    { "Engines and large databases" = "sql/engines.md" },
+    { "Supported SQL" = "sql/supported-sql.md" },
+  ] },
+  { "Agents" = [
+    { "Overview" = "agents/index.md" },
+    { "Write a scenario" = "agents/write-a-scenario.md" },
+    { "Run your agent" = "agents/run-your-agent.md" },
+    { "Run an audit" = "agents/run-an-audit.md" },
+    { "Third-party servers" = "agents/external-servers.md" },
+  ] },
+  { "Guides" = [
+    { "Replay and export" = "guides/replay-and-export.md" },
+    { "Use in CI" = "guides/ci.md" },
+    { "Write a mutator or host" = "guides/extending.md" },
+  ] },
+  { "Reference" = [
+    { "CLI" = "reference/cli.md" },
+    { "Report schema" = "reference/report.md" },
+    { "Python API" = "reference/python-api.md" },
+  ] },
+  { "About" = "about.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+def_list = {}
+md_in_html = {}
+toc.permalink = true
+pymdownx.betterem = {}
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tabbed.combine_header_slug = true
