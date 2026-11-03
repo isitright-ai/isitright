@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("pandas")
@@ -134,3 +136,25 @@ def _totals(case):
     from isitright.core.evidence import totals_of
 
     return totals_of([case])
+
+
+def test_a_money_budget_is_refused_for_an_agent_that_reports_no_cost(audit: DataAudit) -> None:
+    from isitright.packs.data.live import LiveInputError
+
+    agent = FixedProgramAgent(audit.host, CORRECT)  # reports tokens but no money
+    with pytest.raises(LiveInputError, match="report its cost"):
+        run_live(audit, agent, config=CONFIG, budget=Budget(money=1.0))
+
+
+def test_the_smolagents_adapter_reports_money_when_given_prices(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from isitright.packs.data.adapters import SmolagentsAgent
+    from tests.test_data_adapters import fake_smolagents
+
+    fake_smolagents(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    (tmp_path / "orders.csv").write_text("a\n1\n", encoding="utf-8")
+    priced = SmolagentsAgent(model="m", usd_per_million_tokens=(1.0, 4.0)).solve("q", tmp_path)
+    assert priced.money == pytest.approx((120 * 1.0 + 30 * 4.0) / 1_000_000)
+    assert SmolagentsAgent(model="m").solve("q", tmp_path).money is None

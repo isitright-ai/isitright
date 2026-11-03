@@ -44,6 +44,44 @@ Versions before 1.0 may break the API, the CLI and the report schema.
 - A baseline run that did not complete is skipped when pairing instead of ending the world's runs
   with the sequential test undecided.
 
+## 0.6.0.dev0 - The data-analysis pack
+
+0.6 adds a third domain on the same core: agents that write and run Python over data files. A new
+domain mostly reuses the core; `docs/data.md` describes what it adds.
+
+### Added
+
+- **Data-analysis pack** (`isitright.packs.data`, CLI `isitright data`, extra `data`). Tables are
+  collections and rows are entities. Recorded programs (the code an agent executed) are replayed on
+  generated worlds (**frozen**), and frozen candidates are confirmed with the agent itself
+  (**live**, under the 0.5 budgets, stopping rules and sequential test). Findings are minimized,
+  replayable and exportable as eval cases (dataset, question, gold program, expected answer).
+- **Host** that runs programs in a separate process with a scrubbed environment, a timeout and a
+  memory limit, behind `--trust-code`. It is not a sandbox; the documentation says what it does and
+  does not protect against.
+- **Comparators** with a recorded policy and tolerance basis: `NumericComparator` and
+  `TextComparator` in the core; named answers and frames in the pack.
+- **Adapters** for PandasAI and smolagents `CodeAgent` behind one method, tested against fakes, and
+  a subprocess boundary for agent code.
+- Constraints from a **pandera** schema (extra `data-schema`); Parquet input and output (extra
+  `parquet`).
+- **Core:** `column`, `literal` and `tolerance` hint kinds and `harvested:question` provenance;
+  `core/selection.py` (ranking, coverage order, stopping rules, now shared with the MCP pack).
+- **Report schema 0.6:** `findings[].mode` and `findings[].live` separate a frozen program's finding
+  from the agent's own runs; `fidelity.verified_on` can be `LIVE_AGENT`.
+- `docs/write-your-own-host.md` and `examples/hosts/table_cli/`: a host written outside the pack
+  using only core interfaces (experimental).
+
+### Changed (breaking)
+
+- Report schema `0.6` replaces `0.5` (`schemas/report-0.6.schema.json`). `0.4` and `0.5` reports still
+  load. The replay artifact version is `0.6` (older ones still load).
+- The `Comparator` protocol has a `describe()` method.
+- The SQL pack no longer registers the `column` and `literal` hint kinds; the core does.
+- `isitright.packs.mcp.screening` and `isitright.packs.mcp.generate` re-export the ranking and
+  stopping-rule code that now lives in `isitright.core.selection`.
+- Static typing is checked against Python 3.12 (numpy's stubs need it). The runtime floor is still 3.11.
+
 ## 0.5.0 - Evidence at scale
 
 0.5 makes live-agent audits affordable and their evidence defensible: it chooses which worlds to

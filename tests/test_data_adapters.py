@@ -186,3 +186,43 @@ def test_a_subprocess_agent_that_runs_too_long_is_stopped(
     run = slow.solve("q", directory)
     assert run.error and "timed out" in run.error
     assert isinstance(run, AgentRun)
+
+
+def _capture_module():
+    import importlib.util
+
+    path = ROOT / "examples" / "data" / "dabench" / "capture.py"
+    spec = importlib.util.spec_from_file_location("capture_script", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_capture_script_spends_nothing_without_confirm_and_records_programs_with_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_task(tmp_path / "tasks" / "orders")
+    capture = _capture_module()
+    base = [
+        "capture.py",
+        str(tmp_path / "tasks"),
+        "--agent",
+        "tests.data_agents:csv_agent",
+        "--output",
+        str(tmp_path / "programs.jsonl"),
+        "--pass-env",
+        "PYTHONPATH",
+    ]
+    monkeypatch.setattr(sys, "argv", base)
+    assert capture.main() == 0
+    assert "Not run" in capsys.readouterr().out and not (tmp_path / "programs.jsonl").exists()
+    monkeypatch.setenv("PYTHONPATH", str(ROOT))
+    monkeypatch.setattr(sys, "argv", [*base, "--confirm"])
+    assert capture.main() == 0
+    out = capsys.readouterr().out
+    assert "MATCHES_GOLD" in out and "isitright data check" in out
+    recorded = load_programs(tmp_path / "programs.jsonl")
+    assert [(p.task_id, p.program_id, p.source.kind) for p in recorded] == [
+        ("orders", "run-1", "agent")
+    ]

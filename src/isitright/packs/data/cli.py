@@ -65,6 +65,7 @@ def check_command(
     """Frozen audit: replay recorded programs on generated worlds; compare with the gold."""
     _load_audit_deps()
     from isitright.packs.data.audit import AuditConfig, AuditInputError, DataAudit
+    from isitright.packs.data.host import UntrustedCodeError
     from isitright.packs.data.programs import load_programs
     from isitright.packs.data.reports import build_report, write_report
     from isitright.packs.data.task import TaskError, load_task
@@ -108,7 +109,19 @@ def check_command(
                 continue
             with audit:
                 for program in todo:
-                    cases.append(audit.check_frozen(program))
+                    try:
+                        cases.append(audit.check_frozen(program))
+                    except UntrustedCodeError:
+                        raise
+                    except Exception as error:  # one program must not end the whole audit
+                        cases.append(
+                            _unsupported(
+                                task.id,
+                                program,
+                                f"{type(error).__name__}: {error}",
+                                "INTERNAL_ERROR",
+                            )
+                        )
                     typer.echo(f"{cases[-1].case_id}: {cases[-1].divergence_status.value}")
                 artifacts.update(audit.artifacts)
     except (TaskError, ValueError, OSError) as error:
@@ -122,7 +135,7 @@ def check_command(
     )
 
 
-def _unsupported(task_id: str, program: Any, reason: str) -> Any:
+def _unsupported(task_id: str, program: Any, reason: str, code: str = "UNSUPPORTED_DATA") -> Any:
     from isitright.core.evidence import CaseReport, FidelityRecord, SearchRecord, ValidityRecord
 
     return CaseReport(
@@ -134,7 +147,7 @@ def _unsupported(task_id: str, program: Any, reason: str) -> Any:
         execution_fidelity=FidelityRecord(found_on="NATIVE_ISOLATED"),
         oracles=[],
         search=SearchRecord(seed=0, attempts=0, valid_candidates=0, executed=0),
-        errors=[{"code": "UNSUPPORTED_DATA", "message": reason, "phase": "input"}],
+        errors=[{"code": code, "message": reason, "phase": "input"}],
         headline=f"Unsupported: {reason[:200]}",
         elapsed_seconds=0.0,
     )

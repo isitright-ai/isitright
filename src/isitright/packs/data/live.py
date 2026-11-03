@@ -167,6 +167,19 @@ def generate_worlds(
     return found, result
 
 
+class LiveInputError(ValueError):
+    """The live audit cannot honor what was asked."""
+
+
+def _check_cost_reported(budget: Budget, run: AgentRun) -> None:
+    """A money budget cannot be enforced on an agent that reports no cost: refuse, do not guess."""
+    if budget.money is not None and run.money is None and not run.error:
+        raise LiveInputError(
+            "a money budget needs the agent to report its cost; this agent reported none "
+            "(pass usd_per_million_tokens to the adapter, or budget by runs)"
+        )
+
+
 def _outcome(audit: DataAudit, gold_answer: Any, run: AgentRun) -> RunOutcome:
     cost = Cost(run.input_tokens, run.output_tokens, run.money or 0.0)
     if run.error:
@@ -229,6 +242,7 @@ def run_live(
 
     def trial(target: WorldRuns, number: int) -> RunOutcome:
         run = _solve(audit, agent, target.world.world.state)
+        _check_cost_reported(budget, run)
         outcome = _outcome(audit, target.world.gold_answer, run)
         budget.record_run(outcome.cost)
         target.runs.append(run)
@@ -346,6 +360,7 @@ def _verify_minimized(
         if not budget.can_run():
             break
         run = _solve(audit, agent, world.state)
+        _check_cost_reported(budget, run)
         outcome = _outcome(audit, gold, run)
         budget.record_run(outcome.cost)
         target.runs.append(run)

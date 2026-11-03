@@ -4,6 +4,7 @@
 isitright --version
 isitright sql    check | suite | replay | export | slice
 isitright agents run | replay | export | order | hints propose | hints confirm
+isitright data   check | audit | replay | export
 ```
 
 Run any command with `--help` for the options as your installed version defines them.
@@ -121,6 +122,30 @@ model.
 `[--accept NAME ...] [--scenario REF --trust-code]`. Mark proposed hints confirmed; they are then
 used as declared. `--scenario` re-checks each hint against the scenario first. With no `--accept`,
 every proposed hint is confirmed.
+
+## `isitright data check TASKS`
+
+`--programs FILE.jsonl --output DIR --trust-code [--attempts N] [--seed N] [--depth N] [--findings N]
+[--timeout S] [--memory-mb N] [--reuse N] [--only TASK_ID ...]`. Frozen audit of recorded programs on
+a task directory or a directory of them. `--reuse N` keeps a host process for N runs (faster, less
+isolated). See [Data analysis agents](../data.md).
+
+## `isitright data audit TASK`
+
+`--agent module:callable --output DIR --trust-code [--programs FILE] [--pass-env NAME ...]
+[--baseline-runs N] [--max-trials N] [--max-worlds N] [--ranking diverse|screening|coverage|random]
+[--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]`. Live
+audit: the agent is run on ranked worlds, paired with its own baseline runs, in a separate process
+that sees only the variables named by `--pass-env`.
+
+## `isitright data replay REPORT`
+
+`--trust-code [--finding N]`. Rerun a finding from its concrete minimized world.
+
+## `isitright data export REPORT --output DIR`
+
+Write each finding as an eval case: the dataset (CSV), the question, the gold program, the expected
+answer, and an index `cases.jsonl`.
 
 ## Exit codes
 

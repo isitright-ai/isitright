@@ -10,6 +10,7 @@ from pathlib import Path
 
 from isitright.packs.data.adapters import AgentRun
 from isitright.packs.data.host import DataHost
+from tests.data_factories import CORRECT
 
 
 class FixedProgramAgent:
@@ -78,7 +79,7 @@ class CsvAgent:
             ]
         mean = sum(values) / len(values) if values else float("nan")
         return AgentRun(
-            code="# csv agent", answer=f"@north_mean[{mean:.2f}]", input_tokens=5, output_tokens=5
+            code=CORRECT, answer=f"@north_mean[{mean:.2f}]", input_tokens=5, output_tokens=5
         )
 
 

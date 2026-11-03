@@ -69,7 +69,7 @@ class PandasAIAgent:
 
     def __init__(self, model: str = "", llm: Any = None) -> None:
         self.model = model
-        self._llm = llm
+        self._llm = llm  # PandasAI does not report token counts, so it reports no cost
 
     def solve(self, question: str, directory: Path) -> AgentRun:
         import pandasai as pai
@@ -99,10 +99,17 @@ class SmolagentsAgent:
     name = "smolagents"
 
     def __init__(
-        self, model: str = "", model_object: Any = None, imports: tuple[str, ...] = ()
+        self,
+        model: str = "",
+        model_object: Any = None,
+        imports: tuple[str, ...] = (),
+        usd_per_million_tokens: tuple[float, float] | list[float] | None = None,
     ) -> None:
+        """``usd_per_million_tokens`` is (input, output); with it the run reports its cost, which a
+        money budget needs."""
         self.model = model
         self._model_object = model_object
+        self._prices = tuple(usd_per_million_tokens) if usd_per_million_tokens else None
         self._imports = imports or ("pandas", "numpy", "scipy", "statistics", "math")
 
     def solve(self, question: str, directory: Path) -> AgentRun:
@@ -122,11 +129,15 @@ class SmolagentsAgent:
             if isinstance(step, ActionStep) and step.code_action
         )
         monitor = getattr(agent, "monitor", None)
+        tokens_in = int(getattr(monitor, "total_input_token_count", 0) or 0)
+        tokens_out = int(getattr(monitor, "total_output_token_count", 0) or 0)
+        money = (
+            (tokens_in * self._prices[0] + tokens_out * self._prices[1]) / 1_000_000
+            if self._prices
+            else None
+        )
         return AgentRun(
-            code=code,
-            answer=answer,
-            input_tokens=int(getattr(monitor, "total_input_token_count", 0) or 0),
-            output_tokens=int(getattr(monitor, "total_output_token_count", 0) or 0),
+            code=code, answer=answer, input_tokens=tokens_in, output_tokens=tokens_out, money=money
         )
 
     def _default_model(self) -> Any:

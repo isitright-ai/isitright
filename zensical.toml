@@ -5,7 +5,7 @@ site_url = "https://docs.isitright.ai/"
 repo_url = "https://github.com/isitright-ai/isitright"
 repo_name = "isitright-ai/isitright"
 edit_uri = "edit/main/docs/"
-copyright = "MIT licensed. Documentation for isitright 0.5.1."
+copyright = "MIT licensed. Documentation for isitright 0.6.0.dev0."
 nav = [
   { "Home" = "index.md" },
   { "Get started" = [
@@ -45,10 +45,12 @@ nav = [
     { "Run an audit" = "agents/run-an-audit.md" },
     { "Third-party servers" = "agents/external-servers.md" },
   ] },
+  { "Data analysis" = "data.md" },
   { "Guides" = [
     { "Replay and export" = "guides/replay-and-export.md" },
     { "Use in CI" = "guides/ci.md" },
     { "Write a mutator or host" = "guides/extending.md" },
+    { "Write your own host (experimental)" = "write-your-own-host.md" },
   ] },
   { "Reference" = [
     { "CLI" = "reference/cli.md" },
