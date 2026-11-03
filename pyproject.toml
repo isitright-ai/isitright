@@ -34,11 +34,17 @@ postgres = [
 ]
 duckdb = ["duckdb>=1.5,<2"]
 mcp = ["mcp>=2.3,<3"]
+data = ["pandas>=2.2,<4"]
+data-schema = ["pandas>=2.2,<4", "pandera>=0.20,<1"]
+parquet = ["pandas>=2.2,<4", "pyarrow>=15"]
 all = [
   "embedded-postgres>=18.6.3,<19",
   "psycopg[binary]>=3.2,<4",
   "duckdb>=1.5,<2",
   "mcp>=2.3,<3",
+  "pandas>=2.2,<4",
+  "pandera>=0.20,<1",
+  "pyarrow>=15",
 ]
 dev = [
   "build>=1.2.2,<2",
@@ -46,10 +52,14 @@ dev = [
   "embedded-postgres>=18.6.3,<19",
   "mcp>=2.3,<3",
   "mypy>=1.14,<2",
+  "pandas>=2.2,<4",
+  "pandera>=0.20,<1",
+  "pyarrow>=15",
   "pytest>=8.3,<9",
   "pytest-cov>=6,<8",
   "psycopg[binary]>=3.2,<4",
   "ruff>=0.9,<1",
+  "scipy>=1.11,<2",
   "twine>=6.1,<7",
 ]
 
@@ -116,9 +126,18 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 "examples/agents/shop/oracle.py" = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 "examples/agents/shop/shop_agent.py" = ["E", "SIM", "RUF", "B", "UP", "I"]
 "examples/agents/shop/shop_service.py" = ["E501"]
+# Gold and stand-in programs are source text in strings; their lines follow the program, not the file.
+"examples/data/dabench/gold.py" = ["E501"]
+"examples/data/dabench/programs.py" = ["E501"]
 
 [tool.mypy]
-python_version = "3.11"
+# numpy's type stubs use Python 3.12 syntax, so mypy checks against 3.12 even though the runtime
+# floor is 3.11 (CI still runs the tests on 3.11, 3.12 and 3.13).
+python_version = "3.12"
 strict = true
 packages = ["isitright"]
+
+[[tool.mypy.overrides]]
+module = ["pandas.*", "pandera.*", "pyarrow.*", "scipy.*", "pandasai.*", "smolagents.*"]
+ignore_missing_imports = true
 

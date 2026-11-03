@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: unemployement_industry.Mar․2019
+  min: 0
+- kind: range
+  path: unemployement_industry.Mar․2020
+  min: 0

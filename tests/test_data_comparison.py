@@ -1,0 +1,103 @@
+"""Comparison policies for data answers: tolerance and its basis, named answers, frames, text."""
+
+from __future__ import annotations
+
+import pytest
+
+pytest.importorskip("pandas")
+
+from isitright.packs.data.comparison import (
+    AnswerPolicy,
+    CannotJudge,
+    DataComparator,
+    FramePolicy,
+    decimals_in,
+    named_answers,
+    normalize_answer,
+    undefined_answer,
+)
+
+
+def frame(
+    columns: list[str], data: list[list[object]], dtypes: list[str], index: list[int]
+) -> dict:
+    return {"__frame__": {"columns": columns, "dtypes": dtypes, "index": index, "data": data}}
+
+
+def test_the_decimals_a_question_asks_for_set_the_tolerance_and_its_basis() -> None:
+    assert decimals_in("Round to two decimal places.") == 2
+    assert decimals_in("rounded to 4 decimal places and also to 2 decimal places") == 2
+    assert decimals_in("no rounding mentioned") is None
+    policy = AnswerPolicy.for_question("Round your answer to 2 decimal places.")
+    assert policy.abs_tol == pytest.approx(0.01) and "2 decimal places" in policy.basis
+    default = AnswerPolicy.for_question("How many?")
+    assert default.abs_tol == 1e-9 and "floating-point noise" in default.basis
+
+
+def test_the_policy_goes_into_the_report_with_its_basis() -> None:
+    described = DataComparator(AnswerPolicy.for_question("2 decimal places")).describe()
+    assert described["numbers"]["basis"].startswith("question asks for 2")
+    assert described["text"] == "normalized"
+
+
+def test_named_answers_in_the_benchmark_format_are_parsed() -> None:
+    assert named_answers("@a[1.50] @Mean Fare[2]") == {"a": 1.5, "meanfare": 2.0}
+    assert named_answers("no pairs here") is None
+    assert normalize_answer("@yes[ Yes ]") == {"yes": "Yes"}
+    assert normalize_answer({"type": "number", "value": 3}) == 3.0
+
+
+def test_numbers_match_within_the_tolerance_and_text_after_normalization() -> None:
+    cmp = DataComparator(AnswerPolicy.for_question("2 decimal places"))
+    assert cmp.compare({"m": 1.234}, "@m[1.24]").matches
+    miss = cmp.compare({"m": 1.0}, "@m[1.5]")
+    assert not miss.matches and "answer[m]" in (miss.difference or "")
+    assert cmp.compare({"s": "Yes"}, "@s[yes]").matches
+    assert not cmp.compare({"a": 1.0}, "@b[1]").matches
+    assert not cmp.compare({"a": 1.0}, "narrative text").matches
+
+
+def test_a_list_answer_matches_a_comma_separated_string() -> None:
+    cmp = DataComparator()
+    assert cmp.compare({"c": ["Kuwait", "Saudi Arabia"]}, "@c[Kuwait, Saudi Arabia]").matches
+    assert cmp.compare({"c": []}, "@c[]").matches
+    assert not cmp.compare({"c": ["Kuwait"]}, "@c[Kuwait, Oman]").matches
+
+
+def test_an_answer_that_is_not_data_cannot_be_judged() -> None:
+    result = DataComparator().compare({"a": 1}, {"a": {"__other__": "Foo: <obj>"}})
+    assert result.inconclusive and not result.matches
+    with pytest.raises(CannotJudge):
+        normalize_answer({"__other__": "x"})
+
+
+def test_an_undefined_reference_answer_is_not_compared() -> None:
+    assert undefined_answer({"m": {"__float__": "nan"}})
+    assert undefined_answer("@m[nan]")
+    assert not undefined_answer({"m": 1.0})
+    assert DataComparator().compare({"m": float("nan")}, "@m[nan]").matches
+
+
+def test_frames_compare_by_column_dtype_kind_and_values() -> None:
+    left = frame(["a", "b"], [[1, 2.0], [3, 4.0]], ["int64", "float64"], [0, 1])
+    same = frame(["a", "b"], [[1, 2.0], [3, 4.0]], ["int64", "float64"], [5, 6])
+    assert DataComparator().compare(left, same).matches  # the index is ignored by default
+    strict = DataComparator(AnswerPolicy(frame=FramePolicy(index="strict")))
+    assert not strict.compare(left, same).matches
+    other_dtype = frame(["a", "b"], [[1, 2.0], [3, 4.0]], ["Int64", "float32"], [0, 1])
+    assert DataComparator().compare(left, other_dtype).matches  # same kind
+    text_dtype = frame(["a", "b"], [["1", 2.0], ["3", 4.0]], ["object", "float64"], [0, 1])
+    assert "dtype" in (DataComparator().compare(left, text_dtype).difference or "")
+    exact = DataComparator(AnswerPolicy(frame=FramePolicy(dtype="strict")))
+    assert not exact.compare(left, other_dtype).matches
+    swapped = frame(["b", "a"], [[2.0, 1], [4.0, 3]], ["float64", "int64"], [0, 1])
+    assert not DataComparator().compare(left, swapped).matches
+    free = DataComparator(AnswerPolicy(frame=FramePolicy(column_order="ignore")))
+    assert free.compare(left, swapped).matches
+    reordered = frame(["a", "b"], [[3, 4.0], [1, 2.0]], ["int64", "float64"], [0, 1])
+    assert not DataComparator().compare(left, reordered).matches
+    rows_free = DataComparator(AnswerPolicy(frame=FramePolicy(row_order="ignore")))
+    assert rows_free.compare(left, reordered).matches
+    short = frame(["a", "b"], [[1, 2.0]], ["int64", "float64"], [0])
+    assert "row count" in (DataComparator().compare(left, short).difference or "")
+    assert "table" in (DataComparator().compare(left, 3.0).difference or "")

@@ -1,0 +1,17 @@
+# Proposed fixture: pending owner review
+- kind: one_of
+  path: test_x.IsAlone
+  values:
+  - 0
+  - 1
+- kind: one_of
+  path: test_x.Pclass
+  values:
+  - 1
+  - 2
+  - 3
+- kind: one_of
+  path: test_x.Sex
+  values:
+  - 0
+  - 1

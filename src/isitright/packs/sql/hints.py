@@ -9,24 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from isitright.core.entities import EntitySchema, ModelError
-from isitright.core.hints import Hint, HintKind, Hints, Provenance, register_hint_kind
+from isitright.core.entities import ModelError
+from isitright.core.hints import Hint, Hints, Provenance
 from isitright.packs.sql.analysis import QueryGuidance
 from isitright.packs.sql.mapping import SqlModel
 
 _NUMERIC = {"int", "float", "decimal"}
-
-
-def _check_column(schema: EntitySchema, hint: Hint) -> None:
-    schema.collection(hint.args["collection"]).field(hint.args["field"])
-
-
-def _check_literal(schema: EntitySchema, hint: Hint) -> None:
-    schema.resolve(hint.args["path"])
-
-
-register_hint_kind(HintKind("column", _check_column))
-register_hint_kind(HintKind("literal", _check_literal))
 
 
 def hints_from_guidance(model: SqlModel, guidance: QueryGuidance) -> Hints:

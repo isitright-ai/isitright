@@ -1,0 +1,15 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: baseball_data.batting_average
+  min: 0
+  max: 1
+- kind: range
+  path: baseball_data.on_base_percentage
+  min: 0
+  max: 1
+- kind: range
+  path: baseball_data.salary_in_thousands_of_dollars
+  min: 0
+- kind: range
+  path: baseball_data.number_of_hits
+  min: 0

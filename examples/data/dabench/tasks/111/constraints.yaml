@@ -1,0 +1,29 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: test_Y3wMUE5_7gLdaTN.ApplicantIncome
+  min: 0
+- kind: range
+  path: test_Y3wMUE5_7gLdaTN.CoapplicantIncome
+  min: 0
+- kind: range
+  path: test_Y3wMUE5_7gLdaTN.LoanAmount
+  min: 0
+- kind: one_of
+  path: test_Y3wMUE5_7gLdaTN.Education
+  values:
+  - Graduate
+  - Not Graduate
+- kind: one_of
+  path: test_Y3wMUE5_7gLdaTN.Self_Employed
+  values:
+  - 'Yes'
+  - 'No'
+- kind: one_of
+  path: test_Y3wMUE5_7gLdaTN.Credit_History
+  values:
+  - 0
+  - 1
+- kind: unique
+  collection: test_Y3wMUE5_7gLdaTN
+  fields:
+  - Loan_ID

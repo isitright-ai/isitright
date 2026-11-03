@@ -1,0 +1,4 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: t_2014_q4.Trips over the past 24-hours (midnight to 11:59pm)
+  min: 0

@@ -7,7 +7,6 @@ role from the reference procedure, and the mutation path with the hints behind i
 from __future__ import annotations
 
 import hashlib
-import heapq
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -20,6 +19,11 @@ from isitright.core.hints import Hint, Provenance, lookup_matches
 from isitright.core.mutations import Candidate, EditError, Mutation, SetField, World
 from isitright.core.oracles import Role
 from isitright.core.search import Evaluation, Progress, SearchResult, Verdict, search
+from isitright.core.selection import Feature as Feature
+from isitright.core.selection import coverage_order as coverage_order
+from isitright.core.selection import features_of as features_of
+from isitright.core.selection import greedy_cover as _greedy
+from isitright.core.selection import interleave as _interleave
 from isitright.core.stochastic import Budget
 from isitright.packs.mcp.model import McpScenario
 from isitright.packs.mcp.oracle import Reference, reference_outcome
@@ -238,37 +242,6 @@ def generate_worlds(
     return found, result
 
 
-Feature = tuple[str, str, str]
-
-
-def features_of(w: GeneratedWorld) -> frozenset[Feature]:
-    """What a world exercises: per mutation, family and touched field, hints, atoms and edit kinds,
-    each in the world's role. The greedy coverage order and the stopping rule both read this."""
-    found: set[Feature] = set()
-    for m in w.world.path:
-        role = w.role.value
-        for touched in m.touches or [""]:
-            found.add((m.family, touched, role))
-        found.add((m.family, "hints:" + "+".join(sorted(m.hints)), role))
-        for collection, key in m.atoms:
-            found.add((m.family, f"atom:{collection}:{key}", role))
-        found.add((m.family, "edits:" + "+".join(sorted({e.op for e in m.edits})), role))
-    return frozenset(found)
-
-
-def coverage_order(worlds: list[GeneratedWorld], limit: int | None = None) -> list[GeneratedWorld]:
-    """Worlds in the 0.4 coverage order: greedy on uncovered features (three single mutations to
-    one composition), earlier visiting order breaking ties. ``limit`` caps the length."""
-    keyed = [(w, features_of(w)) for w in worlds]
-    cap = len(keyed) if limit is None else min(limit, len(keyed))
-    composed_cap = cap // 4 if limit is not None else cap
-    single = [(w, f) for w, f in keyed if len(w.world.path) <= 1]
-    composed = [(w, f) for w, f in keyed if len(w.world.path) > 1]
-    chosen_single, _ = _greedy(single, cap - min(composed_cap, len(composed)))
-    chosen_composed, _ = _greedy(composed, cap - len(chosen_single))
-    return _interleave(chosen_single, chosen_composed)
-
-
 def select_worlds(
     worlds: list[GeneratedWorld], limit: int | None
 ) -> tuple[list[GeneratedWorld], dict[str, Any]]:
@@ -312,55 +285,8 @@ def select_worlds(
     return ordered, totals
 
 
-def _interleave(
-    singles: list[GeneratedWorld], composed: list[GeneratedWorld]
-) -> list[GeneratedWorld]:
-    """Priority order: three single mutations, then one composition, so a run stopped early by a
-    budget has still seen both kinds."""
-    out: list[GeneratedWorld] = []
-    s, c = iter(singles), iter(composed)
-    while len(out) < len(singles) + len(composed):
-        out.extend(w for _, w in zip(range(3), s, strict=False))
-        out.extend(w for _, w in zip(range(1), c, strict=False))
-    return out
-
-
 def _count(items: Iterable[str]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for item in items:
         counts[item] = counts.get(item, 0) + 1
     return dict(sorted(counts.items()))
-
-
-def _greedy(
-    keyed: list[tuple[GeneratedWorld, frozenset[Feature]]], cap: int
-) -> tuple[list[GeneratedWorld], set[Feature]]:
-    """Greedy cover, lazily: a world's gain only shrinks, so a stale gain on the heap is an upper
-    bound and a world is taken when its refreshed gain still leads. Same picks as scanning every
-    world each step, in O(n log n) for the usual case."""
-    chosen: list[GeneratedWorld] = []
-    covered: set[Feature] = set()
-    ever: set[Feature] = set()
-    cap = min(cap, len(keyed))
-    heap = [(-len(f), i) for i, (_, f) in enumerate(keyed)]
-    heapq.heapify(heap)
-    cleared = False
-    while len(chosen) < cap and heap:
-        negative, index = heapq.heappop(heap)
-        world, features = keyed[index]
-        gain = len(features - covered)
-        if gain != -negative:
-            heapq.heappush(heap, (-gain, index))
-            continue
-        if gain == 0 and not cleared:
-            # everything left adds nothing: start another round with the covered set cleared
-            covered.clear()
-            cleared = True
-            heap = [(-len(keyed[i][1]), i) for _, i in [*heap, (negative, index)]]
-            heapq.heapify(heap)
-            continue
-        cleared = False
-        chosen.append(world)
-        covered |= features
-        ever |= features
-    return chosen, ever

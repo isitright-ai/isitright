@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: gapminder_gdp_asia.gdpPercap_1982
+  min: 0
+- kind: range
+  path: gapminder_gdp_asia.gdpPercap_2007
+  min: 0

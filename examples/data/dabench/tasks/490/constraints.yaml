@@ -1,0 +1,9 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: percent_bachelors_degrees_women_usa.Engineering
+  min: 0
+  max: 100
+- kind: range
+  path: percent_bachelors_degrees_women_usa.Year
+  min: 1900
+  max: 2030
