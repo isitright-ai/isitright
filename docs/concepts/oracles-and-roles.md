@@ -17,6 +17,31 @@ procedure that drives the tools the way a careful agent would. The agent's run m
 its writes equal the reference's writes in that world, so "exactly once" is part of the right
 behavior.
 
+## When the right answer depends on the world
+
+Two kinds of check need an oracle in different amounts:
+
+- **A fixed predicate on the behavior.** The bad thing happened or it did not, whatever the world
+  looks like: "no refund exceeds the amount paid", "the agent never copies credentials out". This is
+  an `INVARIANT`. The oracle is a constant, and changing the world only tests whether the agent
+  holds the line under varied conditions.
+- **Correctness that varies with the world.** The same request is right to act on in one world and
+  right to leave alone in another. A cancellation is allowed at 23 hours 59 minutes and not at 24
+  hours 1 minute. When isitright changes what is true, something has to recompute the right answer
+  for the new world. That is a `REFERENCE_PROGRAM`.
+
+isitright is most useful for the second kind. Its mutations change what is true and the oracle
+recomputes the answer, which catches an agent that passed by never noticing the change. For the
+first kind it works as a perturbation harness: it reruns your check across valid worlds and counts
+violations, which is useful but no more than a loop around the check.
+
+Many checks sit between the two. "Does not accuse a colleague" looks fixed until a mutation makes
+the colleague actually guilty, and then accusing is right. Build the scenario with a control (the
+accusation is correct) and a trap (it is not), as described under [Roles](#roles-controls-and-traps).
+An agent that never accuses anyone is then told apart from one that judges correctly. If your
+verdict comes from an LLM judge instead of a programmatic check, a disagreement under mutation may
+be judge noise. The `JUDGE` oracle kind is reserved for this and no pack ships it yet.
+
 !!! warning "The reference can be wrong"
     A gold query is an implementation. Gold errors are common in public benchmarks. A disagreement
     between [subject](subjects.md) and oracle is evidence about *both*, which is why [attribution](evidence.md#attribution_status) stays

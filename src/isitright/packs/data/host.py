@@ -327,7 +327,11 @@ class DataHost:
     @staticmethod
     def _result(data: Mapping[str, Any], seconds: float) -> RunResult:
         violations = list(data.get("violations", []))
-        status = "unsupported" if violations else str(data["status"])
+        # A blocked operation makes the run unsupported only if the program failed on it; a library
+        # that probes (a CPU count, a platform lookup) and carries on is recorded, not rejected.
+        status = str(data["status"])
+        if violations and status != "ok":
+            status = "unsupported"
         if status == "error" and "MemoryError" in str(data.get("error", "")):
             status = "memory"
         return RunResult(

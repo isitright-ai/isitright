@@ -190,6 +190,11 @@ class DataComparator:
                 right = [to_value(item) for item in right.split(",") if item.strip()]
             if not isinstance(right, list) or len(left) != len(right):
                 return f"{where}: expected {len(left)} items, got {_shape(right)}"
+            if all(isinstance(item, str) for item in left + right):
+                # a list of names (outlier countries) has no stated order: compare as multisets
+                if sorted(x.casefold() for x in left) != sorted(x.casefold() for x in right):
+                    return f"{where}: expected {sorted(left)}, got {sorted(right)}"
+                return None
             for position, (a, b) in enumerate(zip(left, right, strict=True)):
                 inner = self._differs(a, b, f"{where}[{position}]")
                 if inner:

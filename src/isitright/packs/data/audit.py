@@ -73,6 +73,9 @@ class AuditConfig:
     trust_code: bool = False
     max_rows: int | None = None
     reuse: int = 1
+    parallel: bool = True
+    """Run the gold and the program of a world in two processes at once (False: one at a time,
+    for a machine short of memory)."""
     """Runs per host process (1: a new process per run)."""
 
 
@@ -133,7 +136,7 @@ class DataAudit:
         )
         self._gold_cache: dict[str, RunResult] = {}
         self.artifacts: dict[str, ReplayArtifact] = {}
-        self._pool = ThreadPoolExecutor(max_workers=2)
+        self._pool = ThreadPoolExecutor(max_workers=2 if self.config.parallel else 1)
 
     def close(self) -> None:
         self._pool.shutdown(wait=True)
@@ -245,11 +248,12 @@ class DataAudit:
             )
         base_pair = self.run_pair(program.code, p.base)
         again = self.host.run(program.code, p.base)
+        blocked = dict.fromkeys([*base_pair.program.violations, *base_pair.gold.violations])
+        scan.flags.extend(f"blocked and survived: {v}" for v in blocked)
         for label, run in (("gold program", base_pair.gold), ("program", base_pair.program)):
             if run.status != "ok":
-                reason = (
-                    f"the {label} does not run on the original data ({run.status}): {run.error}"
-                )
+                why = run.error or "; ".join(run.violations[:3]) or run.stderr[-200:]
+                reason = f"the {label} does not run on the original data ({run.status}): {why}"
                 status = (
                     DivergenceStatus.UNSUPPORTED
                     if label == "program" or run.status != "ok"

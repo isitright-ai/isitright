@@ -101,3 +101,10 @@ def test_frames_compare_by_column_dtype_kind_and_values() -> None:
     short = frame(["a", "b"], [[1, 2.0]], ["int64", "float64"], [0])
     assert "row count" in (DataComparator().compare(left, short).difference or "")
     assert "table" in (DataComparator().compare(left, 3.0).difference or "")
+
+
+def test_a_list_of_names_has_no_order_but_the_same_names() -> None:
+    cmp = DataComparator()
+    assert cmp.compare({"c": ["Kuwait", "Saudi Arabia"]}, "@c[Saudi Arabia, Kuwait]").matches
+    assert not cmp.compare({"c": ["Kuwait", "Oman"]}, "@c[Saudi Arabia, Kuwait]").matches
+    assert not cmp.compare({"c": [1.0, 2.0]}, "@c[2, 1]").matches  # numbers keep their order

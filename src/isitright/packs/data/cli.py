@@ -54,6 +54,9 @@ def check_command(
     timeout: Annotated[float, typer.Option(min=0.1, help="Seconds per program run.")] = 30.0,
     memory_mb: Annotated[int, typer.Option(min=64, help="Memory limit per run (MiB).")] = 2048,
     only: Annotated[list[str], typer.Option(help="Audit only these task ids.")] = [],  # noqa: B006
+    serial: Annotated[
+        bool, typer.Option(help="Run the gold and the program one at a time (less memory).")
+    ] = False,
     reuse: Annotated[
         int,
         typer.Option(
@@ -93,6 +96,7 @@ def check_command(
             memory_mb=memory_mb,
             trust_code=True,
             reuse=reuse,
+            parallel=not serial,
         )
         for directory in _tasks(tasks):
             task = load_task(directory)

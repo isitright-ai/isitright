@@ -33,6 +33,7 @@ BLOCKED_EVENTS = {
     "os.posix_spawn": "starting a process",
     "os.fork": "starting a process",
 }
+DEVNULLS = {os.path.normcase(os.devnull), "nul", "/dev/null"}
 CHANGES_A_PATH = {"os.remove", "os.rename", "os.rmdir", "shutil.rmtree"}
 WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | getattr(os, "O_TRUNC", 0)
 
@@ -81,6 +82,8 @@ class Guard:
             if isinstance(target, int) or target is None:
                 return
             path = _real(os.fsdecode(target))
+            if os.path.normcase(os.fsdecode(target)) in DEVNULLS:
+                return  # libraries open the null device to discard output
             writing = bool(flags & WRITE_FLAGS) or any(c in (mode or "") for c in "wax+")
             if writing and not _inside(path, [self.work]):
                 self.refuse(f"writing {os.fsdecode(target)!r} outside the working directory")

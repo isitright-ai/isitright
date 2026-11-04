@@ -221,3 +221,28 @@ def test_the_static_scan_flags_what_the_host_cannot_decide(tmp_path: Path) -> No
     assert scan_program("import time\ntime.time()", files).flags
     assert scan_program("pd.read_csv(name)", files).flags
     assert scan_program("def (:", files).syntax_error
+
+
+def test_opening_the_null_device_is_not_a_violation(world: tuple[Any, Any]) -> None:
+    host = make_host(world)
+    try:
+        run = host.run("import os\nopen(os.devnull, 'w').write('x')\nresult = 1", world[1])
+        assert run.status == "ok" and run.violations == []
+    finally:
+        host.close()
+
+
+def test_a_blocked_operation_that_the_program_survives_is_recorded_not_rejected(
+    world: tuple[Any, Any],
+) -> None:
+    host = make_host(world)
+    try:
+        code = (
+            "import subprocess\n"
+            "try:\n    subprocess.run(['python', '-c', '1'])\nexcept PermissionError:\n    pass\n"
+            "result = 5"
+        )
+        run = host.run(code, world[1])
+        assert run.status == "ok" and run.answer()[0] == 5 and "process" in run.violations[0]
+    finally:
+        host.close()
