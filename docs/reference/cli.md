@@ -126,9 +126,11 @@ every proposed hint is confirmed.
 ## `isitright data check TASKS`
 
 `--programs FILE.jsonl --output DIR --trust-code [--attempts N] [--seed N] [--depth N] [--findings N]
-[--timeout S] [--memory-mb N] [--reuse N] [--only TASK_ID ...]`. Frozen audit of recorded programs on
-a task directory or a directory of them. `--reuse N` keeps a host process for N runs (faster, less
-isolated). See [Data analysis agents](../data.md).
+[--timeout S] [--memory-mb N] [--reuse N] [--serial] [--cache DIR] [--resume] [--only TASK_ID ...]`.
+Frozen audit of recorded programs on a task directory or a directory of them. `--reuse N` keeps a host
+process for N runs (faster, less isolated). `--cache DIR` keeps finished runs on disk and `--resume`
+continues an interrupted audit in an existing `--output` with the same settings; neither changes the
+result. See [Data analysis agents](../data.md#long-audits-resume-and-the-run-cache).
 
 ## `isitright data audit TASK`
 

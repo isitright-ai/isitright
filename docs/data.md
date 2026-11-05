@@ -126,10 +126,29 @@ isitright data export out/report.json --output cases
 ```
 
 - `check` is the frozen audit. `--attempts` (default 300) bounds the worlds tried per program.
-- `check --cache DIR --resume` keeps long audits from losing work. Every finished program is saved as soon as it completes, and `--cache` also keeps each finished run (the hash of the code, the world's fingerprint, the answers). After a crash or a restart, rerun the same command with `--resume` on the same `--output`: finished programs are kept as they were, and the unfinished one repeats only the runs the cache does not hold, because the search asks for the same worlds in the same order. A cache can make an audit faster but never changes its result: a miss just runs the program again. Cache files are tied to the host settings and the installed packages and are started afresh when either changes; runs that ended in a timeout or the memory limit are never stored, since they depend on how loaded the machine was. The settings (`--attempts`, `--seed`, `--depth`, `--findings`, `--timeout`, `--memory-mb`, `--reuse`, and the programs file) must match the interrupted run, or `--resume` refuses. Cache files and the saved programs are removed when a program's result is saved and when the report is written. Programs that ended with an environment problem (`BASELINE_RUN`, `INTERNAL_ERROR`) are not kept, so a resumed audit tries them again. There is no wall-time limit on `check`.
+- `check` also takes `--cache DIR` and `--resume` for audits that may be interrupted (next section).
 - `audit` is the live audit. `--agent module:callable` builds a `DataAgent` (see `isitright.packs.data.adapters`) in a separate process that receives only the variables named by `--pass-env`. `--max-runs`, `--max-money` and `--max-seconds` are budgets; `--max-worlds` is a safety rail; `--stratum-patience` and `--run-patience` are the stopping rules. A world the agent was not run on is listed as `NOT_RUN` with the reason. A money budget needs the agent to report its cost.
 - `replay` reruns a finding from its concrete minimized world.
 - `export` writes each finding as an eval case: the dataset as CSV, the question, the gold program and the expected answer.
+
+## Long audits: resume and the run cache
+
+A frozen audit of a large table can run for hours. Two flags on `check` keep a crash or a restart from losing it:
+
+```console
+isitright data check tasks/177 --programs programs.jsonl --output out/177 --trust-code \
+    --attempts 500 --cache cache/
+# interrupted? rerun the same command with --resume:
+isitright data check tasks/177 --programs programs.jsonl --output out/177 --trust-code \
+    --attempts 500 --cache cache/ --resume
+```
+
+- **Finished programs are saved** under `out/177/.resume` as each one completes. `--resume` keeps them as they were and audits only the rest. This works without `--cache`.
+- **`--cache DIR`** also keeps each finished host run, keyed by the hash of the code and the fingerprint of the world. The search is deterministic for a seed and a budget, so a resumed program asks for the same worlds in the same order and takes finished runs from the cache instead of running them again. Only the check that two runs on the original data agree is made again, on purpose.
+- **Results never depend on the cache.** A hit is a run already made on that exact world; a miss runs the program as usual. A cache file is tied to the host settings (timeout, memory limit, `--reuse`) and the installed packages, and starts afresh when either changes. Runs that ended in a timeout or the memory limit are not stored, because they depend on how loaded the machine was.
+- **`--resume` needs the settings of the interrupted run**: `--seed`, `--attempts`, `--depth`, `--findings`, `--timeout`, `--memory-mb`, `--reuse` and the programs file. It refuses otherwise, and refuses a finished audit. To audit with another seed, use a new `--output` without `--resume`. The cache itself is keyed by code and world, not by seed, so a different seed may share a `--cache` directory: worlds both seeds generate come from the cache and the rest run normally. Files are removed as soon as results are saved (a program's runs when its result is saved, the gold runs when the task is done, `.resume` when the report is written), so a completed audit leaves nothing to reuse.
+- Programs that ended with an environment problem (`BASELINE_RUN`, `INTERNAL_ERROR`) are not kept, so a resumed audit tries them again. `check` has no wall-time limit.
+- The world order is the same in a new process only if the audit's generation does not depend on Python's hash seed. Tested on the synthetic task, not on every task; set `PYTHONHASHSEED=0` for long audits to be safe. If the order differed, the cache would only miss.
 
 ## Agent adapters
 
