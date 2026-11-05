@@ -270,7 +270,13 @@ def _check_task(
 
 
 def _unsupported(task_id: str, program: Any, reason: str, code: str = "UNSUPPORTED_DATA") -> Any:
-    from isitright.core.evidence import CaseReport, FidelityRecord, SearchRecord, ValidityRecord
+    from isitright.core.evidence import (
+        CaseReport,
+        FidelityRecord,
+        SearchRecord,
+        ValidityRecord,
+        safe_detail,
+    )
 
     return CaseReport(
         case_id=f"{task_id}:{program.program_id}",
@@ -282,7 +288,7 @@ def _unsupported(task_id: str, program: Any, reason: str, code: str = "UNSUPPORT
         oracles=[],
         search=SearchRecord(seed=0, attempts=0, valid_candidates=0, executed=0),
         errors=[{"code": code, "message": reason, "phase": "input"}],
-        headline=f"Unsupported: {reason[:200]}",
+        headline=f"Unsupported: {safe_detail(reason[:200])}",  # error text may say "failed"
         elapsed_seconds=0.0,
     )
 

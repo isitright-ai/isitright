@@ -19,6 +19,7 @@ import os
 import sys
 import sysconfig
 import traceback
+import warnings
 from typing import Any
 
 BLOCKED_EVENTS = {
@@ -151,7 +152,8 @@ def _reset_libraries() -> None:
     """Undo what one program may have changed in a library the next program also uses."""
     pandas = sys.modules.get("pandas")
     if pandas is not None:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception), warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # pandas 3 warns about options it has deprecated
             pandas.reset_option("all")
     numpy = sys.modules.get("numpy")
     if numpy is not None:
