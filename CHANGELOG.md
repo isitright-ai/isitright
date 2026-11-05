@@ -71,6 +71,8 @@ domain mostly reuses the core; `docs/data.md` describes what it adds.
   from the agent's own runs; `fidelity.verified_on` can be `LIVE_AGENT`.
 - `docs/write-your-own-host.md` and `examples/hosts/table_cli/`: a host written outside the pack
   using only core interfaces (experimental).
+- `isitright data check --resume` and `--cache DIR`: finished programs are saved as they complete
+  and finished host runs are kept on disk, so an interrupted audit continues without repeating them.
 
 ### Changed (breaking)
 

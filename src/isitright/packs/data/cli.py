@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import shutil
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -64,11 +68,25 @@ def check_command(
             help="Runs per host process (1: new process each; more is faster, less isolated).",
         ),
     ] = 1,
+    cache: Annotated[
+        Path | None,
+        typer.Option(
+            help="Directory that keeps finished runs, so an interrupted audit can resume without "
+            "repeating them. Files are removed once a program's result is saved."
+        ),
+    ] = None,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            help="Continue an interrupted audit in an existing --output directory: programs "
+            "that finished are kept, the rest start again (from --cache when it was used). "
+            "The settings must match the interrupted run."
+        ),
+    ] = False,
 ) -> None:
     """Frozen audit: replay recorded programs on generated worlds; compare with the gold."""
     _load_audit_deps()
-    from isitright.packs.data.audit import AuditConfig, AuditInputError, DataAudit
-    from isitright.packs.data.host import UntrustedCodeError
+    from isitright.packs.data.audit import AuditConfig
     from isitright.packs.data.programs import load_programs
     from isitright.packs.data.reports import build_report, write_report
     from isitright.packs.data.task import TaskError, load_task
@@ -76,8 +94,15 @@ def check_command(
     if not trust_code:
         typer.echo("This runs recorded programs: pass --trust-code (see --help).", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT)
-    if output.exists():
-        typer.echo("The output directory already exists; choose a new one.", err=True)
+    if output.exists() and not resume:
+        typer.echo(
+            "The output directory already exists; choose a new one (or --resume an "
+            "interrupted audit).",
+            err=True,
+        )
+        raise typer.Exit(EXIT_INVALID_INPUT)
+    if (output / "report.json").exists():
+        typer.echo(f"The audit in {output} has finished; there is nothing to resume.", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT)
     started = time.monotonic()
     try:
@@ -85,7 +110,7 @@ def check_command(
         by_task: dict[str, list[Any]] = {}
         for program in recorded:
             by_task.setdefault(program.task_id, []).append(program)
-        cases = []
+        cases: list[Any] = []
         artifacts: dict[str, Any] = {}
         config = AuditConfig(
             seed=seed,
@@ -97,46 +122,151 @@ def check_command(
             trust_code=True,
             reuse=reuse,
             parallel=not serial,
+            cache_dir=cache,
+        )
+        state = _start_state(
+            output,
+            {
+                "seed": seed,
+                "attempts": attempts,
+                "depth": depth,
+                "findings": findings,
+                "timeout": timeout,
+                "memory_mb": memory_mb,
+                "reuse": reuse,
+                "programs": _digest(programs),
+            },
         )
         for directory in _tasks(tasks):
             task = load_task(directory)
             if only and task.id not in only:
                 continue
             todo = by_task.get(task.id, [])
-            if not todo:
-                continue
-            try:
-                audit = DataAudit(task, config)
-            except AuditInputError as error:
-                for program in todo:
-                    cases.append(_unsupported(task.id, program, str(error)))
-                continue
-            with audit:
-                for program in todo:
-                    try:
-                        cases.append(audit.check_frozen(program))
-                    except UntrustedCodeError:
-                        raise
-                    except Exception as error:  # one program must not end the whole audit
-                        cases.append(
-                            _unsupported(
-                                task.id,
-                                program,
-                                f"{type(error).__name__}: {error}",
-                                "INTERNAL_ERROR",
-                            )
-                        )
-                    typer.echo(f"{cases[-1].case_id}: {cases[-1].divergence_status.value}")
-                artifacts.update(audit.artifacts)
+            if todo:
+                task_cases, task_artifacts = _check_task(task, todo, config, state)
+                cases.extend(task_cases)
+                artifacts.update(task_artifacts)
     except (TaskError, ValueError, OSError) as error:
         typer.echo(f"Input error: {error}", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
     report = build_report(cases, time.monotonic() - started)
     write_report(report, output, artifacts)
+    shutil.rmtree(state, ignore_errors=True)
+    if cache is not None:
+        with suppress(OSError):
+            cache.rmdir()
     found = sum(c.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND for c in cases)
     typer.echo(
         f"{len(cases)} program(s) checked, {found} with a minimized disagreement. Report: {output}"
     )
+
+
+RESUME_DIR = ".resume"
+RETRY_CODES = {"INTERNAL_ERROR", "BASELINE_RUN"}
+
+
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+def _start_state(output: Path, settings: dict[str, Any]) -> Path:
+    """The directory that holds finished programs; a resumed run must use the same settings."""
+    state = output / RESUME_DIR
+    marker = state / "run.json"
+    if marker.is_file():
+        earlier = json.loads(marker.read_text(encoding="utf-8"))
+        changed = sorted(
+            k for k in settings.keys() | earlier.keys() if earlier.get(k) != settings.get(k)
+        )
+        if changed:
+            typer.echo(
+                "--resume needs the settings of the interrupted run; different: "
+                + ", ".join(changed),
+                err=True,
+            )
+            raise typer.Exit(EXIT_INVALID_INPUT)
+    (state / "units").mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps(settings, sort_keys=True), encoding="utf-8")
+    return state
+
+
+def _unit(state: Path, case_id: str) -> Path:
+    from isitright.packs.data.reports import safe_id
+
+    return state / "units" / f"{safe_id(case_id)}.json"
+
+
+def _save_unit(state: Path, case: Any, artifacts: dict[str, Any]) -> None:
+    """Keep a finished program's result (written whole, so a crash never leaves half of one)."""
+    if any(e.get("code") in RETRY_CODES for e in case.errors):
+        return  # an environment problem: a resumed run tries the program again
+    mine = {
+        k: v.model_dump(mode="json")
+        for k, v in artifacts.items()
+        if k.startswith(case.case_id + ":")
+    }
+    path = _unit(state, case.case_id)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps({"case": case.model_dump(mode="json"), "artifacts": mine}), encoding="utf-8"
+    )
+    os.replace(temporary, path)
+
+
+def _load_unit(state: Path, case_id: str) -> tuple[Any, dict[str, Any]] | None:
+    from isitright.core.evidence import CaseReport
+    from isitright.core.replay import ReplayArtifact
+
+    try:
+        payload = json.loads(_unit(state, case_id).read_text(encoding="utf-8"))
+        return (
+            CaseReport.model_validate(payload["case"]),
+            {k: ReplayArtifact.model_validate(v) for k, v in payload["artifacts"].items()},
+        )
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _check_task(
+    task: Any, todo: list[Any], config: Any, state: Path
+) -> tuple[list[Any], dict[str, Any]]:
+    """The cases of one task, in program order: finished ones come from ``state``."""
+    from isitright.packs.data.audit import AuditInputError, DataAudit
+    from isitright.packs.data.host import UntrustedCodeError
+
+    cases: dict[str, Any] = {}
+    artifacts: dict[str, Any] = {}
+    for program in todo:
+        unit = _load_unit(state, f"{task.id}:{program.program_id}")
+        if unit is not None:
+            cases[program.program_id] = unit[0]
+            artifacts.update(unit[1])
+            typer.echo(f"{unit[0].case_id}: {unit[0].divergence_status.value} (kept from before)")
+    pending = [p for p in todo if p.program_id not in cases]
+    if pending:
+        try:
+            audit = DataAudit(task, config)
+        except AuditInputError as error:
+            for program in pending:
+                cases[program.program_id] = _unsupported(task.id, program, str(error))
+        else:
+            with audit:
+                for program in pending:
+                    try:
+                        case = audit.check_frozen(program)
+                    except UntrustedCodeError:
+                        raise
+                    except Exception as error:  # one program must not end the whole audit
+                        case = _unsupported(
+                            task.id, program, f"{type(error).__name__}: {error}", "INTERNAL_ERROR"
+                        )
+                    cases[program.program_id] = case
+                    _save_unit(state, case, audit.artifacts)
+                    audit.discard_cache(program)
+                    typer.echo(f"{case.case_id}: {case.divergence_status.value}")
+                artifacts.update(audit.artifacts)
+                audit.discard_cache()
+    return [cases[p.program_id] for p in todo], artifacts
 
 
 def _unsupported(task_id: str, program: Any, reason: str, code: str = "UNSUPPORTED_DATA") -> Any:

@@ -38,6 +38,7 @@ from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import Budget
 from isitright.core.subjects import SubjectKind
 from isitright.core.world import State, diff_states, sha256_text
+from isitright.packs.data.cache import RunCache, discard_file, host_key, run_key
 from isitright.packs.data.comparison import DataComparator, undefined_answer
 from isitright.packs.data.hints import harvest_program_hints
 from isitright.packs.data.host import DataHost, RunResult
@@ -51,6 +52,7 @@ from isitright.packs.data.mapping import (
     state_from_frames,
 )
 from isitright.packs.data.programs import RecordedProgram, scan_program
+from isitright.packs.data.reports import safe_id
 from isitright.packs.data.task import DataTask
 
 PACK = "data"
@@ -76,6 +78,9 @@ class AuditConfig:
     parallel: bool = True
     """Run the gold and the program of a world in two processes at once (False: one at a time,
     for a machine short of memory)."""
+    cache_dir: Path | None = None
+    """Keep finished runs here so an interrupted audit resumes without repeating them (see
+    ``cache.py``). ``None`` keeps nothing on disk."""
     """Runs per host process (1: a new process per run)."""
 
 
@@ -137,6 +142,25 @@ class DataAudit:
         self._gold_cache: dict[str, RunResult] = {}
         self.artifacts: dict[str, ReplayArtifact] = {}
         self._pool = ThreadPoolExecutor(max_workers=2 if self.config.parallel else 1)
+        self._host_key = host_key(self.host) if self.config.cache_dir else ""
+        self._gold_store = self._open_store("gold")
+        self._program_store: RunCache | None = None
+
+    def _open_store(self, name: str) -> RunCache | None:
+        if self.config.cache_dir is None:
+            return None
+        directory = self.config.cache_dir / safe_id(self.task.id)
+        return RunCache(directory / f"{safe_id(name)}.jsonl", self._host_key)
+
+    def discard_cache(self, program: RecordedProgram | None = None) -> None:
+        """Delete the stored runs of one program, or (no argument) the task's gold runs.
+
+        Call it once the results are saved elsewhere; nothing reads these files afterwards.
+        """
+        if self.config.cache_dir is None:
+            return
+        name = "gold" if program is None else program.program_id
+        discard_file(self.config.cache_dir / safe_id(self.task.id) / f"{safe_id(name)}.jsonl")
 
     def close(self) -> None:
         self._pool.shutdown(wait=True)
@@ -183,15 +207,37 @@ class DataAudit:
     # --- running ------------------------------------------------------------------------------
 
     def run_pair(self, program_code: str, state: State) -> Pair:
+        """Both programs on one world; a run already made (here or before a restart) is reused."""
         key = state.fingerprint()
-        cached = self._gold_cache.get(key)
-        if cached is None:
+        gold_key, program_key = run_key(self.task.gold, key), run_key(program_code, key)
+        gold = self._gold_cache.get(key)
+        if gold is None and self._gold_store is not None:
+            gold = self._gold_store.get(gold_key)
+        program = self._program_store.get(program_key) if self._program_store else None
+        if gold is None and program is None:
             gold_future = self._pool.submit(self.host.run, self.task.gold, state)
             program_future = self._pool.submit(self.host.run, program_code, state)
             gold, program = gold_future.result(), program_future.result()
-            self._gold_cache[key] = gold
-            return Pair(gold, program)
-        return Pair(cached, self.host.run(program_code, state))
+            self._remember(gold_key, key, gold)
+            self._remember_program(program_key, program)
+        elif gold is None:
+            gold = self.host.run(self.task.gold, state)
+            self._remember(gold_key, key, gold)
+        elif program is None:
+            program = self.host.run(program_code, state)
+            self._remember_program(program_key, program)
+        assert gold is not None and program is not None
+        self._gold_cache[key] = gold
+        return Pair(gold, program)
+
+    def _remember(self, key: str, fingerprint: str, gold: RunResult) -> None:
+        self._gold_cache[fingerprint] = gold
+        if self._gold_store is not None:
+            self._gold_store.put(key, gold)
+
+    def _remember_program(self, key: str, program: RunResult) -> None:
+        if self._program_store is not None:
+            self._program_store.put(key, program)
 
     def judge(self, pair: Pair) -> tuple[Verdict, str, dict[str, Any]]:
         """Verdict for one world: AGREE, DISAGREE, or why the world cannot be judged."""
@@ -228,6 +274,15 @@ class DataAudit:
 
     def check_frozen(
         self, program: RecordedProgram, progress: Callable[[str], None] | None = None
+    ) -> CaseReport:
+        self._program_store = self._open_store(program.program_id)
+        try:
+            return self._check_frozen(program, progress)
+        finally:
+            self._program_store = None
+
+    def _check_frozen(
+        self, program: RecordedProgram, progress: Callable[[str], None] | None
     ) -> CaseReport:
         started = time.monotonic()
         config, task, p = self.config, self.task, self.prepared
