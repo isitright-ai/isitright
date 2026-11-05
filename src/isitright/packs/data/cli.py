@@ -329,11 +329,20 @@ def audit_command(
     max_seconds: Annotated[float | None, typer.Option(min=1.0)] = None,
     seed: Annotated[int, typer.Option()] = 0,
     agent_timeout: Annotated[float, typer.Option(min=1.0)] = 600.0,
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="Dotenv-style file to read the --pass-env variables from (the environment "
+            "wins). Nothing else in it is used and no value is printed.",
+        ),
+    ] = None,
 ) -> None:
     """Live audit: confirm frozen candidates with the agent itself (costly; needs --trust-code)."""
     _load_audit_deps()
     from isitright.core.stochastic import Budget
-    from isitright.packs.data.adapters import SubprocessAgent
+    from isitright.packs.data.adapters import SubprocessAgent, load_env_file, unset_names
     from isitright.packs.data.audit import AuditConfig, DataAudit
     from isitright.packs.data.live import LiveConfig, run_live
     from isitright.packs.data.programs import load_programs
@@ -342,6 +351,12 @@ def audit_command(
 
     if not trust_code:
         typer.echo("This runs an agent and its code: pass --trust-code (see --help).", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT)
+    if env_file is not None:
+        load_env_file(env_file, pass_env)
+    missing = unset_names(pass_env)
+    if missing:
+        typer.echo("Not set (environment or --env-file): " + ", ".join(missing), err=True)
         raise typer.Exit(EXIT_INVALID_INPUT)
     if max_money is not None:
         typer.echo(

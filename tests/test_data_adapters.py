@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from pathlib import Path
@@ -226,3 +227,84 @@ def test_the_capture_script_spends_nothing_without_confirm_and_records_programs_
     assert [(p.task_id, p.program_id, p.source.kind) for p in recorded] == [
         ("orders", "run-1", "agent")
     ]
+
+
+def _capture_args(tmp_path: Path, *extra: str) -> list[str]:
+    return [
+        "capture.py",
+        str(tmp_path / "tasks"),
+        "--agent",
+        "tests.data_agents:priced_agent",
+        "--output",
+        str(tmp_path / "programs.jsonl"),
+        "--pass-env",
+        "PYTHONPATH",
+        "--confirm",
+        *extra,
+    ]
+
+
+def test_the_capture_script_stops_at_the_money_cap_and_keeps_what_it_captured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_task(tmp_path / "tasks" / "orders")
+    capture = _capture_module()
+    monkeypatch.setenv("PYTHONPATH", str(ROOT))
+    prices = '{"usd_per_million_tokens": [3.0, 0.0]}'  # 100,000 input tokens: 0.30 USD per run
+    argv = _capture_args(tmp_path, "--runs", "5", "--max-money", "0.5", "--agent-kwargs", prices)
+    monkeypatch.setattr(sys, "argv", argv)
+    assert capture.main() == 0
+    out = capsys.readouterr().out
+    assert "Stopped early: cost cap reached" in out and "0.6000 USD" in out
+    recorded = load_programs(tmp_path / "programs.jsonl")
+    assert [p.program_id for p in recorded] == ["run-1", "run-2"]  # the cap came before run 3
+
+
+def test_a_money_cap_needs_prices_and_nothing_is_called_without_them(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_task(tmp_path / "tasks" / "orders")
+    capture = _capture_module()
+    monkeypatch.setenv("PYTHONPATH", str(ROOT))
+    monkeypatch.setattr(sys, "argv", _capture_args(tmp_path, "--max-money", "5"))
+    assert capture.main() == 2
+    assert "usd_per_million_tokens" in capsys.readouterr().err
+    assert not (tmp_path / "programs.jsonl").exists()
+
+
+def test_a_variable_that_is_not_set_stops_the_capture_before_any_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    make_task(tmp_path / "tasks" / "orders")
+    capture = _capture_module()
+    monkeypatch.setenv("PYTHONPATH", str(ROOT))
+    monkeypatch.delenv("ISITRIGHT_TEST_KEY", raising=False)
+    argv = _capture_args(tmp_path, "--pass-env", "ISITRIGHT_TEST_KEY")
+    monkeypatch.setattr(sys, "argv", argv)
+    assert capture.main() == 2
+    assert "ISITRIGHT_TEST_KEY" in capsys.readouterr().err
+    assert not (tmp_path / "programs.jsonl").exists()
+
+
+def test_the_env_file_supplies_only_the_named_variables_and_prints_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    capture = _capture_module()
+    for name in ("ISITRIGHT_TEST_A", "ISITRIGHT_TEST_B", "ISITRIGHT_TEST_C"):
+        monkeypatch.setenv(name, "")  # so the test leaves nothing behind
+    monkeypatch.setenv("ISITRIGHT_TEST_B", "from-the-environment")
+    env_file = tmp_path / "keys.env"
+    env_file.write_text(
+        "# a comment\n"
+        'ISITRIGHT_TEST_A="secret value"\n'
+        "export ISITRIGHT_TEST_B=from-the-file\n"
+        "ISITRIGHT_TEST_C=not-asked-for\n"
+        "not a variable line\n",
+        encoding="utf-8",
+    )
+    capture.load_env_file(env_file, ["ISITRIGHT_TEST_A", "ISITRIGHT_TEST_B"])
+    assert os.environ["ISITRIGHT_TEST_A"] == "secret value"  # quotes removed
+    assert os.environ["ISITRIGHT_TEST_B"] == "from-the-environment"  # the environment wins
+    assert os.environ["ISITRIGHT_TEST_C"] == ""  # not named, so not read
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == ""

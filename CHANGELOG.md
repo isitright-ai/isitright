@@ -74,6 +74,11 @@ domain mostly reuses the core; `docs/data.md` describes what it adds.
   using only core interfaces (experimental).
 - `isitright data check --resume` and `--cache DIR`: finished programs are saved as they complete
   and finished host runs are kept on disk, so an interrupted audit continues without repeating them.
+- `isitright data audit --env-file FILE` reads the `--pass-env` variables (an API key) from a
+  dotenv-style file; both paid commands refuse to start when a named variable is not set. The
+  capture script takes the same option plus `--max-money`, which stops before the next run once the
+  cost the agent reports reaches the cap, and writes its recordings after every run. `.gitignore`
+  now covers `.env`, `.env.*` and `*.env`.
 
 ### Changed (breaking)
 

@@ -6,6 +6,7 @@ would, and answer with its output. Used offline, with no model and no network.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from isitright.packs.data.adapters import AgentRun
@@ -85,3 +86,19 @@ class CsvAgent:
 
 def csv_agent() -> CsvAgent:
     return CsvAgent()
+
+
+class PricedAgent(CsvAgent):
+    """The same agent, reporting a cost: 100,000 input tokens per run at the given USD per 1M."""
+
+    def __init__(self, usd_per_million_tokens: tuple[float, float]) -> None:
+        self.prices = usd_per_million_tokens
+
+    def solve(self, question: str, directory: Path) -> AgentRun:
+        run = super().solve(question, directory)
+        return replace(run, input_tokens=100_000, money=100_000 * self.prices[0] / 1_000_000)
+
+
+def priced_agent(usd_per_million_tokens: list[float] | None = None) -> PricedAgent:
+    prices = usd_per_million_tokens or [3.0, 0.0]
+    return PricedAgent((prices[0], prices[1]))

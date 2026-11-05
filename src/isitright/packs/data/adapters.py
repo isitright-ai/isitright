@@ -29,6 +29,30 @@ from isitright.packs.data.programs import ProgramSource, RecordedProgram
 AGENT_RUNNER = Path(__file__).with_name("_agent_runner.py")
 
 
+def load_env_file(path: Path, names: list[str]) -> None:
+    """Set the named variables from a dotenv-style file unless the environment already has them.
+
+    Only the names asked for are read (the ones passed to the agent); other lines are ignored and
+    no value is ever printed. Quotes around a value and a leading ``export`` are removed.
+    """
+    for line in path.read_text(encoding="utf-8").splitlines():
+        text = line.strip().removeprefix("export ").strip()
+        if not text or text.startswith("#") or "=" not in text:
+            continue
+        key, _, value = text.partition("=")
+        key, value = key.strip(), value.strip()
+        if key in names and not os.environ.get(key):
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            if value:
+                os.environ[key] = value
+
+
+def unset_names(names: list[str]) -> list[str]:
+    """The variables among ``names`` that the environment does not have (or has empty)."""
+    return [name for name in names if not os.environ.get(name)]
+
+
 @dataclass(frozen=True)
 class AgentRun:
     """One attempt: the code executed (all steps joined, replayable), the answer and the cost."""

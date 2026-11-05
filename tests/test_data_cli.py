@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,35 @@ def test_check_refuses_to_run_code_without_the_flag_or_over_an_existing_output(
         ],
     )
     assert again.exit_code == 2 and "already exists" in again.output
+
+
+def test_audit_needs_the_passed_variables_and_can_read_them_from_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    task = make_task(tmp_path / "orders")
+    monkeypatch.setenv("ISITRIGHT_TEST_KEY", "")  # so the test leaves nothing behind
+    args = [
+        "data",
+        "audit",
+        str(task),
+        "--agent",
+        "tests.data_agents:csv_agent",
+        "--output",
+        str(tmp_path / "out"),
+        "--trust-code",
+        "--pass-env",
+        "ISITRIGHT_TEST_KEY",
+    ]
+    missing = runner.invoke(app, args)
+    assert missing.exit_code == 2 and "ISITRIGHT_TEST_KEY" in missing.output
+    assert not (tmp_path / "out").exists()
+    env_file = tmp_path / "keys.env"
+    env_file.write_text('ISITRIGHT_TEST_KEY="the-secret-value"\n', encoding="utf-8")
+    (tmp_path / "out").mkdir()  # the next check after the variables: the output must be new
+    found = runner.invoke(app, [*args, "--env-file", str(env_file)])
+    assert found.exit_code == 2 and "already exists" in found.output
+    assert os.environ["ISITRIGHT_TEST_KEY"] == "the-secret-value"
+    assert "the-secret-value" not in found.output  # a value is never printed
 
 
 def test_replay_reproduces_the_finding_and_export_writes_the_eval_case(
