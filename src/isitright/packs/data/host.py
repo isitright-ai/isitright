@@ -137,15 +137,18 @@ class _Worker:
         self.runs = 0
         self._stderr: IO[bytes] = open(self.home / "stderr.txt", "wb")  # noqa: SIM115
         popen: dict[str, Any] = {}
+        env = scrubbed_environment(self.home)
         if sys.platform == "win32":
             popen["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            if memory_bytes:  # the runner applies it to itself (see _runner._limit_memory)
+                env["ISITRIGHT_MEMORY_BYTES"] = str(memory_bytes)
         else:
             popen["preexec_fn"] = self.limits.preexec()
             popen["start_new_session"] = True
         self.process = subprocess.Popen(
             [sys.executable, "-s", "-B", str(RUNNER)],
             cwd=self.home,
-            env=scrubbed_environment(self.home),
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self._stderr,

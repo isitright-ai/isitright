@@ -69,6 +69,8 @@ A program is replayed only if it reads only the task's files, uses no network an
 
 Each run goes to a separate process with a fresh temporary directory, a scrubbed environment (no API keys or other variables are inherited), a wall-clock timeout and a memory limit (an address-space limit on POSIX, a Job Object on Windows). Nothing runs in the audit process, and nothing runs without `--trust-code` (`trust_code=True` in the API).
 
+The Windows limit caps the memory one process may commit. The runner puts itself in the Job Object before it runs any program, because a virtualenv's `python.exe` can be a launcher (for example when uv made the environment from a Microsoft Store Python) whose child, the process that runs your code, would not be in a job the audit process creates. If the limit cannot be set the runner exits and the run is reported as an error, never as an unlimited run. A program that exceeds the limit ends with the status `memory`.
+
 By default every run starts a new process (`--reuse 1`). `--reuse N` keeps a process for N runs. That is several times faster, but modules a program imported stay loaded, so one run can affect the next. The report records which was used.
 
 **This is not a sandbox.** An audit hook in the child blocks network connections, new processes, writes outside the working directory and reads of existing files outside it and the Python installation. The hook catches ordinary Python code. Native extensions and `ctypes` get around it. Nothing limits CPU use other than the timeout, disk use inside the directory, or what a program can learn from the machine. On Windows there is no file system or network namespace at all. Run audits of programs you do not trust in a container or a virtual machine with no network.
