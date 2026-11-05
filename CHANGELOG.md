@@ -58,7 +58,8 @@ domain mostly reuses the core; `docs/data.md` describes what it adds.
   replayable and exportable as eval cases (dataset, question, gold program, expected answer).
 - **Host** that runs programs in a separate process with a scrubbed environment, a timeout and a
   memory limit, behind `--trust-code`. It is not a sandbox; the documentation says what it does and
-  does not protect against.
+  does not protect against. On Windows the runner puts itself in a Job Object with the limit, so the
+  limit also reaches environments whose `python.exe` is a launcher.
 - **Comparators** with a recorded policy and tolerance basis: `NumericComparator` and
   `TextComparator` in the core; named answers and frames in the pack.
 - **Adapters** for PandasAI and smolagents `CodeAgent` behind one method, tested against fakes, and
