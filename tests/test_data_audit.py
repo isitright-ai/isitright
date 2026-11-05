@@ -100,7 +100,9 @@ def test_a_program_that_already_disagrees_on_the_original_data_is_inconclusive(
 
 
 def test_a_nondeterministic_program_is_inconclusive_not_scored(audit: DataAudit) -> None:
-    code = "import random\nprint(f'@north_mean[{random.random():.2f}]')"
+    # Two draws agree within the tolerance (0.01) about 2% of the time if the answer is in [0, 1),
+    # which made this test flaky; a draw over a billion values does not.
+    code = "import random\nprint(f'@north_mean[{random.randint(0, 10**9):.2f}]')"
     case = audit.check_frozen(program(code, "random"))
     assert case.divergence_status is DivergenceStatus.INCONCLUSIVE
     assert case.errors[0]["code"] == "NONDETERMINISTIC"
