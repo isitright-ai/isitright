@@ -148,7 +148,7 @@ isitright data check tasks/177 --programs programs.jsonl --output out/177 --trus
 - **Results never depend on the cache.** A hit is a run already made on that exact world; a miss runs the program as usual. A cache file is tied to the host settings (timeout, memory limit, `--reuse`) and the installed packages, and starts afresh when either changes. Runs that ended in a timeout or the memory limit are not stored, because they depend on how loaded the machine was.
 - **`--resume` needs the settings of the interrupted run**: `--seed`, `--attempts`, `--depth`, `--findings`, `--timeout`, `--memory-mb`, `--reuse` and the programs file. It refuses otherwise, and refuses a finished audit. To audit with another seed, use a new `--output` without `--resume`. The cache itself is keyed by code and world, not by seed, so a different seed may share a `--cache` directory: worlds both seeds generate come from the cache and the rest run normally. Files are removed as soon as results are saved (a program's runs when its result is saved, the gold runs when the task is done, `.resume` when the report is written), so a completed audit leaves nothing to reuse.
 - Programs that ended with an environment problem (`BASELINE_RUN`, `INTERNAL_ERROR`) are not kept, so a resumed audit tries them again. `check` has no wall-time limit.
-- The world order is the same in a new process only if the audit's generation does not depend on Python's hash seed. Tested on the synthetic task, not on every task; set `PYTHONHASHSEED=0` for long audits to be safe. If the order differed, the cache would only miss.
+- Set `PYTHONHASHSEED=0` for long audits, so that a new process generates worlds in the same order. If the order ever differed, the cache would only miss.
 
 ## Agent adapters
 
