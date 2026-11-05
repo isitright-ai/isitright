@@ -230,7 +230,9 @@ def _limit_memory() -> None:
     would silently not apply. A limit that was asked for and cannot be set ends the runner.
     """
     limit = os.environ.pop("ISITRIGHT_MEMORY_BYTES", "")
-    if not limit or os.name != "nt":
+    if sys.platform != "win32":
+        return
+    if not limit:
         return
     import ctypes
     from ctypes import wintypes

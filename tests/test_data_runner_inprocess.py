@@ -99,7 +99,7 @@ def test_a_declared_output_table_is_read_back(
 
 def guard_in(work: Path) -> Guard:
     guard = Guard()
-    guard.work, guard.violations, guard.active = str(work.resolve()).lower(), [], True
+    guard.work, guard.violations, guard.active = _runner._real(str(work)), [], True
     return guard
 
 
