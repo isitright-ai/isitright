@@ -35,6 +35,14 @@ from isitright.packs.sql.models import (
     FloatComparisonMode,
     OrderingPolicy,
 )
+from isitright.packs.sql.native import (
+    BigQueryHost,
+    ConnectionHost,
+    InlineHost,
+    TrinoHost,
+    load_connection,
+    load_env_file,
+)
 from isitright.packs.sql.reports import ReportFormat, write_case_report, write_suite_report
 from isitright.packs.sql.slicing import (
     DEFAULT_CAP as DEFAULT_SLICE_CAP,
@@ -86,6 +94,12 @@ class Dialect(StrEnum):
     BIGQUERY = "bigquery"
     PRESTO = "presto"
     TRINO = "trino"
+
+
+class Confirm(StrEnum):
+    BIGQUERY = "bigquery"
+    TRINO = "trino"
+    CONNECTION = "connection"
 
 
 class AgentsFailOn(StrEnum):
@@ -205,6 +219,34 @@ def _resolve(engine: Engine | None, dialect: Dialect | None) -> tuple[Engine, st
     return Engine(name), (chosen.name if dialect else None)
 
 
+def _confirm_host(
+    confirm: Confirm | None,
+    *,
+    connection: str | None,
+    trust_code: bool,
+    bq_project: str | None,
+    max_bytes_billed: int,
+    env_file: Path | None,
+    trino: tuple[str, int, str, str, str],
+) -> InlineHost | None:
+    """The native host named by --confirm, or None. No credential is read here: BigQuery's client
+    reads them from the environment when the first query is sent."""
+    if confirm is None:
+        return None
+    if confirm is Confirm.BIGQUERY:
+        if env_file is not None:
+            load_env_file(env_file, ["GOOGLE_APPLICATION_CREDENTIALS"])
+        return BigQueryHost(project=bq_project, max_bytes_billed=max_bytes_billed)
+    if confirm is Confirm.TRINO:
+        host, port, user, catalog, schema = trino
+        return TrinoHost(host=host, port=port, user=user, catalog=catalog, schema=schema)
+    if connection is None:
+        raise SqlInputError("--confirm connection needs --connection module:function")
+    if not trust_code:
+        raise SqlInputError("--connection runs your code: pass --trust-code to allow it")
+    return ConnectionHost(run=load_connection(connection))
+
+
 def _source(engine: Engine, database: Path | None, schema: Path | None) -> dict[str, Any]:
     if engine is Engine.SQLITE:
         if (database is None) == (schema is None):
@@ -264,6 +306,43 @@ def check_command(
     output_dir: Annotated[Path, typer.Option()] = Path("artifacts/check"),
     report_format: Annotated[ReportFormat, typer.Option("--format")] = ReportFormat.BOTH,
     fail_on: Annotated[FailOn, typer.Option()] = FailOn.NONE,
+    confirm: Annotated[
+        Confirm | None,
+        typer.Option(
+            help="Confirm findings of a warehouse dialect natively with the state inlined: "
+            "bigquery, trino, or connection (your own function: --connection, --trust-code)."
+        ),
+    ] = None,
+    connection: Annotated[
+        str | None,
+        typer.Option(
+            help="module:function, a callable run(sql) -> (columns, rows) for --confirm connection."
+        ),
+    ] = None,
+    trust_code: Annotated[
+        bool,
+        typer.Option("--trust-code", help="Allow loading and running the --connection function."),
+    ] = False,
+    bq_project: Annotated[
+        str | None, typer.Option(help="BigQuery project that runs the confirmation queries.")
+    ] = None,
+    max_bytes_billed: Annotated[
+        int, typer.Option(min=1, help="Cap on bytes BigQuery may bill for one confirmation query.")
+    ] = 100 * 1024 * 1024,
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="Dotenv-style file; only GOOGLE_APPLICATION_CREDENTIALS is read from it, and "
+            "never printed or written to a report.",
+        ),
+    ] = None,
+    trino_host: Annotated[str, typer.Option(help="Trino host for --confirm trino.")] = "localhost",
+    trino_port: Annotated[int, typer.Option()] = 8080,
+    trino_user: Annotated[str, typer.Option()] = "isitright",
+    trino_catalog: Annotated[str, typer.Option()] = "memory",
+    trino_schema: Annotated[str, typer.Option()] = "default",
     verify_native: Annotated[
         bool,
         typer.Option(
@@ -285,6 +364,15 @@ def check_command(
             engine=engine.value,
             dialect=dialect_name,
             params=parse_params(param or []),
+            confirm=_confirm_host(
+                confirm,
+                connection=connection,
+                trust_code=trust_code,
+                bq_project=bq_project,
+                max_bytes_billed=max_bytes_billed,
+                env_file=env_file,
+                trino=(trino_host, trino_port, trino_user, trino_catalog, trino_schema),
+            ),
             constraints_file=constraints,
             verify_native=None if verify_native else False,
             config=_config(
@@ -408,6 +496,43 @@ def suite_command(
     quiet: Annotated[
         bool, typer.Option("--quiet", "-q", help="Show only totals and the report directory.")
     ] = False,
+    confirm: Annotated[
+        Confirm | None,
+        typer.Option(
+            help="Confirm findings of a warehouse dialect natively with the state inlined: "
+            "bigquery, trino, or connection (your own function: --connection, --trust-code)."
+        ),
+    ] = None,
+    connection: Annotated[
+        str | None,
+        typer.Option(
+            help="module:function, a callable run(sql) -> (columns, rows) for --confirm connection."
+        ),
+    ] = None,
+    trust_code: Annotated[
+        bool,
+        typer.Option("--trust-code", help="Allow loading and running the --connection function."),
+    ] = False,
+    bq_project: Annotated[
+        str | None, typer.Option(help="BigQuery project that runs the confirmation queries.")
+    ] = None,
+    max_bytes_billed: Annotated[
+        int, typer.Option(min=1, help="Cap on bytes BigQuery may bill for one confirmation query.")
+    ] = 100 * 1024 * 1024,
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="Dotenv-style file; only GOOGLE_APPLICATION_CREDENTIALS is read from it, and "
+            "never printed or written to a report.",
+        ),
+    ] = None,
+    trino_host: Annotated[str, typer.Option(help="Trino host for --confirm trino.")] = "localhost",
+    trino_port: Annotated[int, typer.Option()] = 8080,
+    trino_user: Annotated[str, typer.Option()] = "isitright",
+    trino_catalog: Annotated[str, typer.Option()] = "memory",
+    trino_schema: Annotated[str, typer.Option()] = "default",
     verify_native: Annotated[
         bool,
         typer.Option(
@@ -431,6 +556,15 @@ def suite_command(
             engine=engine.value,
             dialect=dialect_name,
             params=parse_params(param or []),
+            confirm=_confirm_host(
+                confirm,
+                connection=connection,
+                trust_code=trust_code,
+                bq_project=bq_project,
+                max_bytes_billed=max_bytes_billed,
+                env_file=env_file,
+                trino=(trino_host, trino_port, trino_user, trino_catalog, trino_schema),
+            ),
             constraints_file=constraints,
             verify_native=None if verify_native else False,
             config=_config(
@@ -527,8 +661,12 @@ def _print_case_summary(result: CaseReport, output_dir: Path) -> None:
     tested = result.search.executed
     version = (result.execution_fidelity.engine or "").partition(" ")[2]
     suffix = f" {version}" if version else ""
+    dialect = str(result.extensions.get("sql", {}).get("target_dialect", "postgres"))
+    engine_label = {"postgres": "PostgreSQL", "bigquery": "BigQuery", "presto": "Presto"}.get(
+        dialect, dialect.capitalize()
+    )
     if result.execution_fidelity.found_on == "EMULATED":
-        engine = f"DuckDB{suffix} (emulating PostgreSQL)"
+        engine = f"DuckDB{suffix} (emulating {engine_label})"
     else:
         engine = f"native PostgreSQL{suffix}"
     typer.echo(
@@ -555,7 +693,15 @@ def _print_case_summary(result: CaseReport, output_dir: Path) -> None:
         )
         checker = "DuckDB" if result.execution_fidelity.found_on == "EMULATED" else "PostgreSQL"
         typer.echo(f"{checker} accepted the supported schema; {validity}.")
-        if result.execution_fidelity.found_on == "EMULATED":
+        verification = finding.fidelity.verification
+        if verification is not None and verification.status == "VERIFIED" and dialect != "postgres":
+            typer.echo(f"Confirmed on {verification.engine} with the state inlined.")
+        elif result.execution_fidelity.found_on == "EMULATED" and dialect != "postgres":
+            typer.echo(
+                "DuckDB is an approximation; this difference has not been confirmed on "
+                f"{engine_label} (use --confirm)."
+            )
+        elif result.execution_fidelity.found_on == "EMULATED":
             typer.echo(
                 "DuckDB is an approximation; this difference has not been checked on PostgreSQL."
             )
@@ -565,7 +711,9 @@ def _print_case_summary(result: CaseReport, output_dir: Path) -> None:
         if result.search.budget.get("stopped_by") == "attempts":
             typer.echo("The search stopped at the configured state limit.")
         if result.execution_fidelity.found_on == "EMULATED":
-            typer.echo("DuckDB is an approximation; these results were not checked on PostgreSQL.")
+            typer.echo(
+                f"DuckDB is an approximation; these results were not checked on {engine_label}."
+            )
     else:
         typer.echo("The comparison did not complete; no conclusion can be drawn.")
         message = result.errors[0]["message"] if result.errors else "the result was inconclusive"

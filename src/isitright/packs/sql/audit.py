@@ -1092,7 +1092,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             fixture = "counterexample.sql"
         elif self.dialect.warehouse:
             reproducer = warehouse_reproducer(p.model.db, data, *self._executed)
-            fixture = "counterexample.duckdb.sql"
+            fixture = "counterexample.sql"
         else:
             assert p.pg is not None
             reproducer = postgres_reproducer(
