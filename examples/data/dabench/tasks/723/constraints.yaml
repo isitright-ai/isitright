@@ -1,0 +1,20 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: auto_mpg.mpg
+  min: 0
+  max: 100
+- kind: one_of
+  path: auto_mpg.cylinders
+  values:
+  - 3
+  - 4
+  - 5
+  - 6
+  - 8
+- kind: range
+  path: auto_mpg.displacement
+  min: 0
+- kind: range
+  path: auto_mpg.modelyear
+  min: 70
+  max: 82

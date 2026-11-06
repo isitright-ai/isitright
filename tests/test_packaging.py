@@ -17,7 +17,7 @@ def test_package_metadata_and_runtime_contract() -> None:
     assert "/src" in sdist_includes
     assert "/tests" in sdist_includes
     assert all(not item.startswith("/.release-") for item in sdist_includes)
-    assert isitright.__version__ == "0.5.1"
+    assert isitright.__version__ == "0.6.0.dev0"
     assert any(item.startswith("hypothesis") for item in project["dependencies"])
     extras = project["optional-dependencies"]
     assert not any(
@@ -28,6 +28,12 @@ def test_package_metadata_and_runtime_contract() -> None:
     assert not any(item.startswith("duckdb") for item in extras["postgres"])
     assert extras["duckdb"] == ["duckdb>=1.5,<2"]
     assert extras["mcp"] == ["mcp>=2.3,<3"]
+    assert extras["data"] == ["pandas>=2.2,<4"]
     assert set(extras["all"]) == (
-        set(extras["postgres"]) | set(extras["duckdb"]) | set(extras["mcp"])
+        set(extras["postgres"])
+        | set(extras["duckdb"])
+        | set(extras["mcp"])
+        | set(extras["data"])
+        | set(extras["data-schema"])
+        | set(extras["parquet"])
     )

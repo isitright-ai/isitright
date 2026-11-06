@@ -1,0 +1,8 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: oecd_education_spending.Value
+  min: 0
+- kind: range
+  path: oecd_education_spending.TIME
+  min: 1990
+  max: 2030

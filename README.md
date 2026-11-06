@@ -26,12 +26,13 @@ days ago: the right behavior is to decline, and the agent does. An agent that de
 passes too. isitright reruns the case in a world where the booking is 23 hours 59 minutes old, where
 the right answer is to cancel, and reports the runs in which your agent did not.
 
-Two packs ship on one shared core:
+Three packs ship on one shared core:
 
 | You have | Use | World | Where it runs |
 |---|---|---|---|
 | A tool-using agent that talks MCP | `isitright agents run` | An entity state behind MCP tools | An MCP server per run (`SIMULATED`) |
 | Text-to-SQL output (reference and candidate queries) | `isitright sql check` / `suite` | A database | SQLite or PostgreSQL (`NATIVE_ISOLATED`), DuckDB (`EMULATED`) |
+| A data-analysis agent that writes Python over data files | `isitright data check` (recorded programs), `data audit` (the agent) | Tables, one row per entity | A limited child process (`NATIVE_ISOLATED`), not a sandbox |
 
 **What a finding means.** isitright runs your subject (the agent or the generated query) and an
 *oracle*, a reference that recomputes what is right for the changed world, and reports the worlds
@@ -51,6 +52,7 @@ python -m pip install isitright                 # SQLite and the core
 python -m pip install "isitright[mcp]"          # + MCP agent pack
 python -m pip install "isitright[postgres]"     # + native PostgreSQL (disposable local server)
 python -m pip install "isitright[duckdb]"       # + DuckDB emulation
+python -m pip install "isitright[data]"         # + data-analysis pack (pandas)
 python -m pip install "isitright[all]"
 ```
 
@@ -173,7 +175,7 @@ The tool never modifies your data or systems: perturbed worlds live in disposabl
 in-process engines or isitright-hosted fakes. SQL is a single read-only statement under an
 authorizer, `query_only` and time and row limits. Each MCP run is a fresh server process with a
 process-tree kill on timeout. Credentials are runtime-only and never written to reports. A live agent
-runs with your permissions and network; isitright does not sandbox it. Scenarios, mutators, oracles
+runs with your permissions and network; isitright does not sandbox it. The data pack runs recorded programs in a separate, limited process that is not a security boundary: use a container for code you do not trust ([Data analysis agents](https://docs.isitright.ai/data/)). Scenarios, mutators, oracles
 and validators are Python and load only with `--trust-code`.
 
 ## Development

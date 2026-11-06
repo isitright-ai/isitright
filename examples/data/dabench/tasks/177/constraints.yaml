@@ -1,0 +1,34 @@
+# Proposed fixture: pending owner review
+- kind: one_of
+  path: titanic.Survived
+  values:
+  - 0
+  - 1
+- kind: one_of
+  path: titanic.Pclass
+  values:
+  - 1
+  - 2
+  - 3
+- kind: one_of
+  path: titanic.Sex
+  values:
+  - male
+  - female
+- kind: range
+  path: titanic.Age
+  min: 0
+  max: 120
+- kind: range
+  path: titanic.Fare
+  min: 0
+- kind: range
+  path: titanic.SibSp
+  min: 0
+- kind: range
+  path: titanic.Parch
+  min: 0
+- kind: unique
+  collection: titanic
+  fields:
+  - PassengerId

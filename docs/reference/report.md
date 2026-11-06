@@ -1,6 +1,6 @@
 # Report schema
 
-One versioned JSON schema covers both packs: [`schemas/report-0.5.schema.json`](https://github.com/isitright-ai/isitright/blob/main/schemas/report-0.5.schema.json),
+One versioned JSON schema covers all packs: [`schemas/report-0.6.schema.json`](https://github.com/isitright-ai/isitright/blob/main/schemas/report-0.6.schema.json),
 exported from `isitright.core.evidence.AuditReport` by `tools/export_schemas.py`. Pack-specific
 detail lives under `extensions` and is not part of the common contract.
 
@@ -9,15 +9,16 @@ between pre-1.0 releases.
 
 ## Compatibility
 
-Schema `0.5` replaces `0.4`. Reports written as `0.4` still load: `replay` and `export` read them,
-because every field added in 0.5 is optional. Older schemas are removed.
+Schema `0.6` replaces `0.5`. Reports written as `0.4` or `0.5` still load: `replay` and `export` read
+them, because every field added since is optional. Older schemas are removed. 0.6 adds `findings[].mode`
+(`frozen_program` or `live_agent`) and `findings[].live` (see below).
 
 ## AuditReport
 
 | Field | Contents |
 |---|---|
-| `schema_version` | `"0.5"` (`"0.4"` when read from an older report) |
-| `pack` | `sql` or `mcp` |
+| `schema_version` | `"0.6"` (`"0.4"` or `"0.5"` when read from an older report) |
+| `pack` | `sql`, `mcp` or `data` |
 | `kind` | `case` (one SQL pair), `suite`, or `scenario` (one agent scenario) |
 | `cases` | A list of `CaseReport` |
 | `totals` | Counts per status |
@@ -43,7 +44,7 @@ Each field answers one question and is never merged with another.
 | `findings` | Per finding: world, validity, [oracle](../concepts/oracles-and-roles.md) results, stability, world diff, mutation path (family, target, description, hints, atoms), pack-specific `divergence`, fidelity, replay, minimization |
 | `worlds`, `controls` | Every world run and the best-ranked worlds not run, with role, counts, screening class and rank, `run_status` (`RUN` or `NOT_RUN` with the reason) and validity `notes`. `controls`: `DISCRIMINATING`, `NOT_DISCRIMINATING` or `NOT_APPLICABLE` |
 | `headline` | One line derived from the above. It never says pass, fail, correct or wrong; the model rejects it |
-| `extensions` | `sql`, `mcp`: pack-specific fields, not part of the common contract |
+| `extensions` | `sql`, `mcp`, `data`: pack-specific fields, not part of the common contract |
 
 ### Invariants the model enforces
 
@@ -55,6 +56,22 @@ Each field answers one question and is never merged with another.
 - A world that screening or a stopping rule did not run is `NOT_RUN`, never a pass.
 - An observed failure is never presented as a rate change, and an emulated finding is never
   presented as native: `verified_on` says whether PostgreSQL confirmed it.
+
+### Frozen and live findings (0.6)
+
+A finding found by replaying a recorded program has `mode: "frozen_program"` and is scoped to that
+program. A finding from the agent's own runs has `mode: "live_agent"` and a `live` record:
+
+| Field | Contents |
+|---|---|
+| `status` | `CONFIRMED`, `NOT_CONFIRMED`, `INCONCLUSIVE` |
+| `runs`, `baseline_runs`, `not_met` | The agent runs made on this world and on the baseline, and the runs that disagreed with the reference |
+| `agent_runs_only` | Every run counted was made by the agent, not replayed from a recording |
+| `program_changed_runs` | Runs where the agent wrote code unlike its baseline code |
+| `found_by_frozen_replay` | The frozen program already disagreed on this world (the world was found there and verified live) |
+
+Fidelity records the same split: `found_on` is where the candidate was computed (`NATIVE_ISOLATED`,
+the replayed program) and `verified_on` is `LIVE_AGENT` once the agent itself ran on the world.
 
 ### Screening classes
 

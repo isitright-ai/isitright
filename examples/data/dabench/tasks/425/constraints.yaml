@@ -1,0 +1,4 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: cost_data_with_errors.max_sust_wind
+  min: 0

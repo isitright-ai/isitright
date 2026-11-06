@@ -1,0 +1,13 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: t_2015.Happiness Score
+  min: 0
+  max: 10
+- kind: unique
+  collection: t_2015
+  fields:
+  - Country
+- kind: range
+  path: t_2015.Happiness Rank
+  min: 1
+  max: 200

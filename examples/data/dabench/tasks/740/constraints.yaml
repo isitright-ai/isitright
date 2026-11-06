@@ -1,0 +1,14 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: Credit.Balance
+  min: 0
+- kind: range
+  path: Credit.Income
+  min: 0
+- kind: range
+  path: Credit.Age
+  min: 18
+  max: 100
+- kind: range
+  path: Credit.Limit
+  min: 0

@@ -1,0 +1,33 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: insurance.age
+  min: 18
+  max: 100
+- kind: range
+  path: insurance.bmi
+  min: 10
+  max: 80
+- kind: range
+  path: insurance.children
+  min: 0
+  max: 10
+- kind: range
+  path: insurance.charges
+  min: 0
+- kind: one_of
+  path: insurance.sex
+  values:
+  - female
+  - male
+- kind: one_of
+  path: insurance.smoker
+  values:
+  - 'no'
+  - 'yes'
+- kind: one_of
+  path: insurance.region
+  values:
+  - northeast
+  - northwest
+  - southeast
+  - southwest

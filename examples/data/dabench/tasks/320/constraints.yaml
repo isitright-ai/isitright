@@ -1,0 +1,8 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: t_0020200722.PERIOD
+  min: 1
+  max: 10
+- kind: range
+  path: t_0020200722.EVENTNUM
+  min: 0
