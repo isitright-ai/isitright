@@ -13,7 +13,7 @@ JSON family, from the `json_path` hints this module's hint helper also emits.
 from __future__ import annotations
 
 import copy
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from itertools import islice
 from typing import Any
 
@@ -159,3 +159,98 @@ def _with(items: list[Any], index: int, new: Any) -> list[Any]:
     out = list(items)
     out[index] = new
     return out
+
+
+# --- minimization inside nested values ------------------------------------------------------------
+
+
+def nested_trees(db: Any) -> dict[tuple[str, str], TypeNode]:
+    """``(table, column) -> type tree`` for every nested column of a schema."""
+    return {
+        (t.name, c.name): c.type_tree
+        for t in db.tables
+        for c in t.columns
+        if c.type_tree is not None and c.type_tree.nested
+    }
+
+
+def count_elements(node: TypeNode, value: Any) -> int:
+    """How many array elements and map entries a nested value holds, at every depth."""
+    if value is None:
+        return 0
+    if node.kind == "ARRAY" and node.element is not None:
+        return len(value) + sum(count_elements(node.element, v) for v in value)
+    if node.kind == "MAP":
+        return len(value)
+    if node.kind == "STRUCT":
+        return sum(count_elements(t, value.get(n)) for n, t, _ in node.fields)
+    return 0
+
+
+def _smaller(node: TypeNode, value: Any) -> Iterator[Any]:
+    """Copies of ``value`` with one array element or map entry fewer, at any depth."""
+    if value is None:
+        return
+    if node.kind == "ARRAY" and node.element is not None:
+        if len(value) > 1:
+            for i in range(len(value)):
+                yield value[:i] + value[i + 1 :]
+        for i, element in enumerate(value):
+            for inner in _smaller(node.element, element):
+                yield _with(value, i, inner)
+    elif node.kind == "MAP" and len(value) > 1:
+        for i in range(len(value)):
+            yield value[:i] + value[i + 1 :]
+    elif node.kind == "STRUCT":
+        for name, inner_type, _ in node.fields:
+            for inner in _smaller(inner_type, value.get(name)):
+                yield {**value, name: inner}
+
+
+def shrink_nested(
+    spec: WorldSpec,
+    world: World,
+    trees: dict[tuple[str, str], TypeNode],
+    reproduces: Callable[[World], bool],
+) -> tuple[World, int, int]:
+    """Remove array elements while the world stays valid and the divergence stays.
+
+    The core minimizer shrinks rows; this pass shrinks inside them. Returns the smaller world and
+    the element counts before and after. Greedy to a fixpoint, so every remaining element is needed.
+    """
+    from dataclasses import replace
+
+    from isitright.core.constraints import ValidityStatus
+    from isitright.core.mutations import apply_edits
+
+    def total(w: World) -> int:
+        return sum(
+            count_elements(tree, entity.get(column))
+            for (table, column), tree in trees.items()
+            for entity in w.state.entities(table)
+        )
+
+    before = total(world)
+    current = world
+    changed = True
+    while changed:
+        changed = False
+        for (table, column), tree in trees.items():
+            key_name = spec.schema.collection(table).key
+            for entity in list(current.state.entities(table)):
+                for smaller in _smaller(tree, entity.get(column)):
+                    edit = SetField(
+                        collection=table, key=entity[key_name], path=[column], value=smaller
+                    )
+                    state = apply_edits(current.state, [edit])
+                    if spec.validate(state).status is not ValidityStatus.VALID:
+                        continue
+                    candidate = replace(current, state=state)
+                    if reproduces(candidate):
+                        current, changed = candidate, True
+                        break
+                if changed:
+                    break
+            if changed:
+                break
+    return current, before, total(current)

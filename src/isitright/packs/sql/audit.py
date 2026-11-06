@@ -84,7 +84,7 @@ from isitright.packs.sql.models import (
     SuiteCase,
 )
 from isitright.packs.sql.native import InlineHost, NativeHostError
-from isitright.packs.sql.nested import NestedEdit, nested_hints
+from isitright.packs.sql.nested import NestedEdit, nested_hints, nested_trees, shrink_nested
 from isitright.packs.sql.postgres_ddl import (
     Schema,
     _validate_domain_schema,
@@ -1081,7 +1081,13 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             referenced=referenced or None,
             max_attempts=config.minimization_max_attempts,
         )
-        final_state = minimized.world.state
+        final_world, nested_before, nested_after = minimized.world, 0, 0
+        trees = nested_trees(p.model.db) if self.dialect.warehouse else {}
+        if trees:
+            final_world, nested_before, nested_after = shrink_nested(
+                p.spec, minimized.world, trees, reproduces
+            )
+        final_state = final_world.state
         differs, left, right, difference = disagrees(final_state)
         final_validity = p.spec.validate(final_state)
         data = to_database_state(p.model, final_state)
@@ -1158,6 +1164,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 "rows_before": before,
                 "rows_after": minimized.atoms_after,
                 "changed_atoms": minimized.changed_atoms,
+                **(
+                    {"nested_elements_before": nested_before, "nested_elements_after": nested_after}
+                    if trees
+                    else {}
+                ),
             },
             headline=(
                 "Original-data mismatch: queries return different results"
