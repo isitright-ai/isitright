@@ -64,6 +64,8 @@ def get_dialect(name: str) -> Dialect:
 def resolve_dialect_and_engine(engine: str | None, dialect: str | None) -> tuple[Dialect, str]:
     """The dialect and the engine for the two (optional) names, or `SqlInputError`."""
     if dialect is None:
+        if engine is not None and engine not in _LEGACY_DIALECT:
+            raise SqlInputError("engine must be sqlite, postgres or duckdb")
         chosen = get_dialect(_LEGACY_DIALECT.get(engine or "sqlite", engine or "sqlite"))
         return chosen, engine or chosen.default_engine
     chosen = get_dialect(dialect)
