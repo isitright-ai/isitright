@@ -223,6 +223,21 @@ def test_the_static_scan_flags_what_the_host_cannot_decide(tmp_path: Path) -> No
     assert scan_program("def (:", files).syntax_error
 
 
+def test_a_final_answer_typed_as_a_literal_cannot_be_replayed(tmp_path: Path) -> None:
+    files = {"t.csv"}
+    read = 'import pandas as pd\nm = pd.read_csv("t.csv")["a"].mean()\n'
+    typed = scan_program(read + 'final_answer("@m[2.00]")', files)
+    assert any("literal the agent typed" in reason for reason in typed.unsupported)
+    assert scan_program(read + 'final_answer(f"@m[2.00]")', files).unsupported
+    assert scan_program(read + 'final_answer("@m[" + "2.00" + "]")', files).unsupported
+    assert not scan_program(read + 'final_answer(f"@m[{m:.2f}]")', files).unsupported
+    assert not scan_program(read + 'final_answer("@m[" + str(m) + "]")', files).unsupported
+    assert not scan_program(read + "final_answer(m)", files).unsupported
+    assert not scan_program(read + "print(m)", files).unsupported  # no final_answer at all
+    mixed = scan_program(read + 'final_answer("@m[2.00]")\nfinal_answer(m)', files)
+    assert not mixed.unsupported  # one call depends on the data
+
+
 def test_opening_the_null_device_is_not_a_violation(world: tuple[Any, Any]) -> None:
     host = make_host(world)
     try:

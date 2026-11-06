@@ -162,6 +162,27 @@ def scan_program(code: str, task_files: set[str]) -> Scan:
                         scan.unsupported.append(f"{name}({path!r}) reads a file the task lacks")
             elif not writing and name != "open":
                 scan.flags.append(f"{name}() with a computed file name")
+    answers = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "final_answer"
+    ]
+    if answers and all(not c.keywords and all(_constant(a) for a in c.args) for c in answers):
+        scan.unsupported.append(
+            "the final answer is a literal the agent typed, not computed from the data: a replay "
+            "on another world would print it again, so it cannot be tested frozen (confirm it live)"
+        )
     if seeded:
         scan.flags = [f for f in scan.flags if "without random_state" not in f]
     return scan
+
+
+def _constant(node: ast.expr) -> bool:
+    """An expression that does not depend on the data: literals, constant f-strings, their sums."""
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.JoinedStr):
+        return all(isinstance(v, ast.Constant) for v in node.values)
+    if isinstance(node, ast.BinOp):
+        return _constant(node.left) and _constant(node.right)
+    return False

@@ -65,6 +65,8 @@ One JSON object per line (`isitright-recorded-program`, version 0.6):
 
 A program is replayed only if it reads only the task's files, uses no network and starts no processes (a static scan with `ast`, then an audit hook), gives the same answer twice on the original data, and agrees with the gold program on the original data. Otherwise the case is `UNSUPPORTED` or `INCONCLUSIVE`, with the reason. A narrative answer is `CANNOT_JUDGE`.
 
+**A final answer the agent typed is not replayable.** A code agent often computes a value in one step, reads it from the output, and then types it into `final_answer("@mean[4.61]")` in the next. The recorded program (all steps joined) then ends with a constant, and a replay on any other world would print that same constant, so every change to the data would look like a disagreement with the gold program. That is a property of how the answer was recorded, not a finding. A program whose every `final_answer(...)` call has only constant arguments (literals, constant f-strings, and sums of them) is therefore `UNSUPPORTED` with that reason. Only the live mode can test such an agent, because it runs the agent again on the new world. The check is static and direct: an answer that goes through a variable assigned a constant is not detected.
+
 ## The host and what it does not protect
 
 Each run goes to a separate process with a fresh temporary directory, a scrubbed environment (no API keys or other variables are inherited), a wall-clock timeout and a memory limit (an address-space limit on POSIX, a Job Object on Windows). Nothing runs in the audit process, and nothing runs without `--trust-code` (`trust_code=True` in the API).

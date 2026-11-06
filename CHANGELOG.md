@@ -79,6 +79,9 @@ domain mostly reuses the core; `docs/data.md` describes what it adds.
   capture script takes the same option plus `--max-money`, which stops before the next run once the
   cost the agent reports reaches the cap, and writes its recordings after every run. `.gitignore`
   now covers `.env`, `.env.*` and `*.env`.
+- A recorded program whose final answer is a literal the agent typed (every `final_answer(...)` call
+  has only constant arguments) is `UNSUPPORTED` for frozen replay: it would print the same answer on
+  every world. Found with the first real agent's programs.
 
 ### Changed (breaking)
 
