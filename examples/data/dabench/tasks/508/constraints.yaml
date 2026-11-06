@@ -1,0 +1,12 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: hotel_data.star_rating
+  min: 0
+  max: 5
+- kind: range
+  path: hotel_data.review_count
+  min: 0
+- kind: range
+  path: hotel_data.bubble_score
+  min: 0
+  max: 50

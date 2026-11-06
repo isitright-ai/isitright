@@ -27,6 +27,7 @@ class Provenance(StrEnum):
     HARVESTED_PROGRAM = "harvested:program"
     HARVESTED_SCHEMA = "harvested:schema"
     HARVESTED_TRACE = "harvested:trace"
+    HARVESTED_QUESTION = "harvested:question"
     PROPOSED = "proposed"
     """Reserved for 0.5 (LLM-proposed, until confirmed)."""
 
@@ -126,6 +127,28 @@ def _check_threshold(schema: EntitySchema, hint: Hint) -> None:
                 raise ModelError(f"hint {hint.name!r}: holds must be above or below")
 
 
+def _check_column(schema: EntitySchema, hint: Hint) -> None:
+    """A field a program or a task reads: ``collection`` and ``field``."""
+    _need(hint, "collection", "field")
+    schema.collection(hint.args["collection"]).field(hint.args["field"])
+
+
+def _check_literal(schema: EntitySchema, hint: Hint) -> None:
+    """A constant a program compares a field with: ``path`` and ``value``."""
+    _need(hint, "path", "value")
+    schema.resolve(hint.args["path"])
+
+
+def _check_tolerance(schema: EntitySchema, hint: Hint) -> None:
+    """How exactly an answer must match: ``abs`` and/or ``rel``, with the ``basis`` for it. It
+    configures a comparator; no mutation family reads it."""
+    _need(hint, "basis")
+    if not ({"abs", "rel"} & set(hint.args)):
+        raise ModelError(f"hint {hint.name!r}: tolerance needs abs or rel")
+    if "path" in hint.args:
+        schema.resolve(hint.args["path"])
+
+
 def _check_json_path(schema: EntitySchema, hint: Hint) -> None:
     """A path inside a json field (``orders.items[*].price``), optionally with other fields of
     the same entity whose value a leaf may take (``same_as``)."""
@@ -148,6 +171,9 @@ for _kind, _check in (
     ("gate", _check_gate),
     ("scope", _check_scope),
     ("threshold", _check_threshold),
+    ("column", _check_column),
+    ("literal", _check_literal),
+    ("tolerance", _check_tolerance),
 ):
     register_hint_kind(HintKind(_kind, _check))
 

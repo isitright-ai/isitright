@@ -352,10 +352,37 @@
           "title": "Headline",
           "type": "string"
         },
+        "live": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LiveRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "minimization": {
           "additionalProperties": true,
           "title": "Minimization",
           "type": "object"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "frozen_program",
+                "live_agent"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
         },
         "mutation_path": {
           "items": {
@@ -443,6 +470,65 @@
         "provenance"
       ],
       "title": "HintUse",
+      "type": "object"
+    },
+    "LiveRecord": {
+      "additionalProperties": false,
+      "description": "What the agent itself did on a world, kept apart from the frozen program that found it.\n\nA frozen finding is scoped to a recorded program. A live record says the agent was run, how\nmany times, and whether its own code changed: the evidence about the agent.",
+      "properties": {
+        "agent_runs_only": {
+          "default": true,
+          "title": "Agent Runs Only",
+          "type": "boolean"
+        },
+        "baseline_runs": {
+          "minimum": 0,
+          "title": "Baseline Runs",
+          "type": "integer"
+        },
+        "found_by_frozen_replay": {
+          "default": false,
+          "title": "Found By Frozen Replay",
+          "type": "boolean"
+        },
+        "not_met": {
+          "minimum": 0,
+          "title": "Not Met",
+          "type": "integer"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "program_changed_runs": {
+          "minimum": 0,
+          "title": "Program Changed Runs",
+          "type": "integer"
+        },
+        "runs": {
+          "minimum": 0,
+          "title": "Runs",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "CONFIRMED",
+            "NOT_CONFIRMED",
+            "INCONCLUSIVE"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "runs",
+        "baseline_runs",
+        "not_met",
+        "program_changed_runs"
+      ],
+      "title": "LiveRecord",
       "type": "object"
     },
     "Look": {
@@ -1348,10 +1434,11 @@
       "type": "string"
     },
     "schema_version": {
-      "default": "0.5",
+      "default": "0.6",
       "enum": [
         "0.4",
-        "0.5"
+        "0.5",
+        "0.6"
       ],
       "title": "Schema Version",
       "type": "string"

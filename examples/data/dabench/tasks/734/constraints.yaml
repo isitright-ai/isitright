@@ -1,0 +1,15 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: gapminder_cleaned.year
+  min: 1952
+  max: 2007
+- kind: range
+  path: gapminder_cleaned.pop
+  min: 0
+- kind: range
+  path: gapminder_cleaned.lifeexp
+  min: 0
+  max: 100
+- kind: range
+  path: gapminder_cleaned.gdppercap
+  min: 0

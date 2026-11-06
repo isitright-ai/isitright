@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: t_20170413_000000_group_statistics.num․ calls answered
+  min: 0
+- kind: range
+  path: 't_20170413_000000_group_statistics.avg․ num․ agents talking '
+  min: 0

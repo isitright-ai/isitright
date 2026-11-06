@@ -29,7 +29,9 @@
           },
           "finding_id": "a:1",
           "headline": "Evidence recorded for review",
+          "live": null,
           "minimization": {},
+          "mode": null,
           "mutation_path": [],
           "oracles": [
             {
@@ -233,7 +235,7 @@
   "kind": "suite",
   "metadata": {},
   "pack": "sql",
-  "schema_version": "0.5",
+  "schema_version": "0.6",
   "totals": {
     "by_divergence_status": {
       "COUNTEREXAMPLE_FOUND": 1,

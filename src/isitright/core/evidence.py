@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from isitright.core.stochastic import Stability
 
-SCHEMA_VERSION: Literal["0.5"] = "0.5"
+SCHEMA_VERSION: Literal["0.6"] = "0.6"
 _BANNED = re.compile(r"\b(pass|passed|fail|failed|failure|correct|incorrect|wrong)\b", re.I)
 
 
@@ -158,6 +158,26 @@ class SearchRecord(Closed):
     hint_use: list[HintUse] = Field(default_factory=list)
 
 
+class LiveRecord(Closed):
+    """What the agent itself did on a world, kept apart from the frozen program that found it.
+
+    A frozen finding is scoped to a recorded program. A live record says the agent was run, how
+    many times, and whether its own code changed: the evidence about the agent.
+    """
+
+    status: Literal["CONFIRMED", "NOT_CONFIRMED", "INCONCLUSIVE"]
+    runs: int = Field(ge=0)
+    baseline_runs: int = Field(ge=0)
+    not_met: int = Field(ge=0)
+    agent_runs_only: bool = True
+    """Every run counted here was made by the agent under test, not replayed from a recording."""
+    program_changed_runs: int = Field(ge=0)
+    """Runs where the agent wrote code unlike its baseline code."""
+    found_by_frozen_replay: bool = False
+    """The frozen program already disagreed with the reference on this world (``found_on``)."""
+    note: str = ""
+
+
 class Finding(Closed):
     """One disagreement in one world; attribution is separate and undetermined by default."""
 
@@ -173,6 +193,10 @@ class Finding(Closed):
     replay: ReplayRecord = Field(default_factory=ReplayRecord)
     export: str | None = None
     minimization: dict[str, Any] = Field(default_factory=dict)
+    mode: Literal["frozen_program", "live_agent"] | None = None
+    """Added in 0.6. ``frozen_program``: a recorded program on a world. ``live_agent``: the agent's
+    own runs. ``None``: not stated (0.4 and 0.5 reports, and packs without the distinction)."""
+    live: LiveRecord | None = None
     headline: str
 
     @field_validator("headline")
@@ -257,8 +281,8 @@ class Totals(Closed):
 class AuditReport(Closed):
     """The report of one audit: a single check, a suite, or an agent scenario."""
 
-    schema_version: Literal["0.4", "0.5"] = SCHEMA_VERSION
-    """0.4 reports stay readable: every field added in 0.5 is optional."""
+    schema_version: Literal["0.4", "0.5", "0.6"] = SCHEMA_VERSION
+    """0.4 and 0.5 reports stay readable: every field added since is optional."""
     pack: str
     kind: Literal["case", "suite", "scenario"]
     cases: list[CaseReport]

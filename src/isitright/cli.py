@@ -18,6 +18,7 @@ from isitright.core.evidence import (
     FailOn,
     policy_triggered,
 )
+from isitright.packs.data.cli import data_app
 from isitright.packs.sql import (
     CheckConfig,
     InputError,
@@ -66,6 +67,7 @@ agents_app = typer.Typer(help="Audit tool-using agents against perturbed worlds 
 app.add_typer(agents_app, name="agents")
 hints_app = typer.Typer(help="Propose hints with a model, then confirm them (labeled proposed).")
 agents_app.add_typer(hints_app, name="hints")
+app.add_typer(data_app, name="data")
 
 
 class Engine(StrEnum):

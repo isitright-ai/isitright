@@ -1,0 +1,13 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: random_stock_data.Volume
+  min: 0
+- kind: range
+  path: random_stock_data.Open
+  min: 0
+- kind: range
+  path: random_stock_data.High
+  min: 0
+- kind: range
+  path: random_stock_data.Low
+  min: 0

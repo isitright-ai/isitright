@@ -1,0 +1,13 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: e5_aapl.Volume
+  min: 0
+- kind: range
+  path: e5_aapl.Open
+  min: 0
+- kind: range
+  path: e5_aapl.High
+  min: 0
+- kind: range
+  path: e5_aapl.Low
+  min: 0

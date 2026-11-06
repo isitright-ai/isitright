@@ -1,0 +1,4 @@
+# Proposed fixture: pending owner review
+- kind: range
+  path: imp_score_ldlr_metabolome.importance․score
+  min: 0
