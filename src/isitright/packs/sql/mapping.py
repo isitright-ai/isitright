@@ -367,7 +367,9 @@ def import_json_schema(model: SqlModel, schema: dict[str, Any]) -> list[Constrai
     if not isinstance(tables, dict):
         return out
     for table in model.db.tables:
-        items = (tables.get(table.name) or {}).get("items", {})
+        declared = tables.get(table.name) or {}
+        out.extend(_declared_unique(table, declared))
+        items = declared.get("items", {})
         columns = items.get("properties", {}) if isinstance(items, dict) else {}
         for column in table.columns:
             facts = columns.get(column.name) if isinstance(columns, dict) else None
@@ -391,6 +393,35 @@ def import_json_schema(model: SqlModel, schema: dict[str, Any]) -> list[Constrai
                 out.append(
                     Pattern(name=f"domain:{path}:pattern", path=path, regex=facts["pattern"])
                 )
+    return out
+
+
+def _declared_unique(table: TableSchema, declared: dict[str, Any]) -> list[Constraint]:
+    """``x-unique`` rules: column groups on the table (``x-unique: [[a], [b, c]]``) or ``x-unique:
+    true`` on a column. They are domain rules the user declares (a warehouse table with no key can
+    still have a column that is an identifier); without them the search may create duplicates the
+    domain forbids."""
+    groups: list[list[str]] = []
+    raw = declared.get("x-unique", [])
+    if isinstance(raw, list):
+        groups.extend([str(c) for c in g] for g in raw if isinstance(g, list))
+    items = declared.get("items", {})
+    columns = items.get("properties", {}) if isinstance(items, dict) else {}
+    for name, facts in columns.items() if isinstance(columns, dict) else []:
+        if isinstance(facts, dict) and facts.get("x-unique") is True:
+            groups.append([str(name)])
+    known = {c.name for c in table.columns}
+    out: list[Constraint] = []
+    for group in groups:
+        if not group or any(c not in known for c in group):
+            raise ValueError(f"x-unique on {table.name} names an unknown column: {group}")
+        out.append(
+            Unique(
+                name=f"declared-unique:{table.name}({', '.join(group)})",
+                collection=table.name,
+                fields=group,
+            )
+        )
     return out
 
 

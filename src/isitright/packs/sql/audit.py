@@ -66,6 +66,7 @@ from isitright.packs.sql.hints import hints_from_guidance
 from isitright.packs.sql.hosts import PostgresHost, SqlHost, SqliteHost
 from isitright.packs.sql.inline import RealTableReference, inline_sql
 from isitright.packs.sql.mapping import (
+    ROW_KEY,
     SqlModel,
     build_model,
     fallback_base_state,
@@ -1122,6 +1123,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             ]
             for t in data.tables
         }
+        validity_record = _validity_record(final_validity)
+        if self.dialect.warehouse:
+            validity_record.notes.extend(self._duplicate_notes(final_world, reproduces))
         before = minimized.atoms_before
         native_final = native(final_state)
         confirmation: list[dict[str, Any]] = []
@@ -1140,7 +1144,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         return Finding(
             finding_id=f"{case.case_id or 'case'}:1",
             world_id=generator or "baseline",
-            validity=_validity_record(final_validity),
+            validity=validity_record,
             oracles=[_oracle_record(NOT_MET)],
             world_diff=diff_states(base, final_state) if base is not None else {},
             mutation_path=path,
@@ -1176,6 +1180,67 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 else f"Queries diverge after a {path[-1].family if path else 'baseline'} mutation"
             ),
         )
+
+    def _duplicate_notes(self, world: World, reproduces: Callable[[World], bool]) -> list[str]:
+        """Say so when the divergence needs equal values in a column with no declared key or unique
+        rule. Warehouse tables rarely declare keys, so the search can build duplicates the domain
+        forbids; such a finding may be a validity gap rather than a query defect. The test is
+        direct: make the repeated values distinct and see whether the divergence survives."""
+        from collections import Counter
+        from dataclasses import replace
+
+        from isitright.core.constraints import Unique
+        from isitright.core.mutations import SetField, apply_edits
+
+        p = self.prepared
+        covered = {
+            (c.collection, c.fields[0])
+            for c in p.spec.constraints
+            if isinstance(c, Unique) and len(c.fields) == 1
+        }
+        notes: list[str] = []
+        for collection in p.model.schema.collections:
+            entities = world.state.entities(collection.name)
+            for field_spec in collection.fields:
+                name = field_spec.name
+                if (
+                    name in (collection.key, ROW_KEY)
+                    or field_spec.type == "json"
+                    or (collection.name, name) in covered
+                ):
+                    continue
+                values = [e.get(name) for e in entities if e.get(name) is not None]
+                if not any(n > 1 for n in Counter(repr(v) for v in values).values()):
+                    continue
+                taken = {repr(v) for v in values}
+                seen: set[str] = set()
+                edits = []
+                for entity in entities:
+                    value = entity.get(name)
+                    if value is None:
+                        continue
+                    if repr(value) in seen:
+                        fresh = _distinct_value(value, taken)
+                        taken.add(repr(fresh))
+                        edits.append(
+                            SetField(
+                                collection=collection.name,
+                                key=entity[collection.key],
+                                path=[name],
+                                value=fresh,
+                            )
+                        )
+                    seen.add(repr(value))
+                state = apply_edits(world.state, edits)
+                if p.spec.validate(state).status is not ValidityStatus.VALID:
+                    continue
+                if not reproduces(replace(world, state=state)):
+                    notes.append(
+                        f"the divergence needs equal values in {collection.name}.{name}, which has "
+                        "no declared key or unique rule: this may be a validity gap rather than "
+                        "a query defect"
+                    )
+        return notes
 
     def _unsupported(self, case: SqlCase, message: str, started: float) -> CaseReport:
         return self._report(
@@ -1368,6 +1433,26 @@ def _validity_record(validity: Validity) -> ValidityRecord:
         problems=list(validity.problems),
         notes=list(validity.notes),
     )
+
+
+def _distinct_value(value: Any, taken: set[str]) -> Any:
+    """A value of the same kind as ``value`` that no row holds yet."""
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        candidate: Any = value + 1
+        while repr(candidate) in taken:
+            candidate += 1
+        return candidate
+    if isinstance(value, float):
+        candidate = value + 1.0
+        while repr(candidate) in taken:
+            candidate += 1.0
+        return candidate
+    text, n = str(value), 1
+    while repr(f"{text}_{n}") in taken:
+        n += 1
+    return f"{text}_{n}"
 
 
 def _retained_tables(model: SqlModel, referenced: list[str], data: DatabaseState) -> set[str]:
