@@ -30,7 +30,8 @@ from tests.warehouse_fixtures import (
     Fixture,
 )
 
-COMPARED = ("agrees", "translated", "checked")\nSETUP = {"bigquery": (BQ_DDL, BQ_ROWS), "presto": (PRESTO_DDL, PRESTO_ROWS)}
+COMPARED = ("agrees", "translated", "checked")
+SETUP = {"bigquery": (BQ_DDL, BQ_ROWS), "presto": (PRESTO_DDL, PRESTO_ROWS)}
 
 
 def _plain(result: QueryResult) -> list[list[Any]]:
