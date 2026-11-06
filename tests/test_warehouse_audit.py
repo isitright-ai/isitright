@@ -153,3 +153,26 @@ def test_contained_columns_and_vectors_follow_a_benchmark_rule() -> None:
     assert lenient.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
     assert lenient.comparison_policy["columns"] == "contained"
     assert lenient.comparison_policy["null_as_zero"] is True
+
+
+def test_a_pseudo_column_is_matched_without_regard_to_case_when_the_query_defines_it() -> None:
+    # the benchmark rewrite defines `_TABLE_SUFFIX`; a query may spell it `_table_suffix`
+    query = (
+        "SELECT COUNT(*) FROM (SELECT t.*, SUBSTR(CONCAT('ev_', t.s), 4) AS _TABLE_SUFFIX "
+        "FROM d.t AS t) WHERE _table_suffix = 'x'"
+    )
+    report = check(
+        reference_sql=query,
+        candidate_sql=query,
+        dialect="bigquery",
+        ddl="CREATE TABLE d.t (s STRING)",
+        config=CheckConfig(max_attempts=10),
+    )
+    assert report.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    with pytest.raises(SqlInputError, match="pseudo column"):
+        check(
+            reference_sql="SELECT COUNT(*) FROM t WHERE _table_suffix = 'x'",
+            candidate_sql="SELECT 1 FROM t",
+            dialect="bigquery",
+            ddl="CREATE TABLE d.t (s STRING)",
+        )

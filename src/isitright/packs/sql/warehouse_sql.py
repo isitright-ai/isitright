@@ -95,9 +95,11 @@ def resolve_tables(tree: exp.Query, db: DatabaseSchema) -> exp.Query:
         table.set("catalog", None)
         if not alias:
             table.set("alias", exp.TableAlias(this=exp.to_identifier(written)))
-    defined = columns | {a.alias for a in out.find_all(exp.Alias)}
+    defined = {name.lower() for name in columns} | {
+        a.alias.lower() for a in out.find_all(exp.Alias)
+    }
     for column in out.find_all(exp.Column):
-        if column.name.lower() in _PSEUDO and column.name not in defined:
+        if column.name.lower() in _PSEUDO and column.name.lower() not in defined:
             raise SqlInputError(f"unsupported construct: pseudo column {column.name}")
     return out
 
