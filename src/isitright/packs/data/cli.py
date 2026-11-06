@@ -390,7 +390,9 @@ def audit_command(
         run_patience=run_patience or None,
         max_worlds=max_worlds,
     )
-    with DataAudit(loaded, AuditConfig(trust_code=True, seed=seed)) as audit:
+    # The frozen step that finds the minimized world gets the same --attempts as the live search:
+    # with the default of 300 it can miss a world that 500 attempts find.
+    with DataAudit(loaded, AuditConfig(trust_code=True, seed=seed, attempts=attempts)) as audit:
         frozen_finding = frozen_world = None
         if program is not None:
             frozen = audit.check_frozen(program)
