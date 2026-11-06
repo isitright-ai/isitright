@@ -34,6 +34,16 @@ def test_the_decimals_a_question_asks_for_set_the_tolerance_and_its_basis() -> N
     assert default.abs_tol == 1e-9 and "floating-point noise" in default.basis
 
 
+def test_one_unit_in_the_last_place_survives_float_noise_at_large_magnitudes() -> None:
+    cmp = DataComparator(AnswerPolicy.for_question("rounded to 2 decimal places"))
+    # a rounding that differs by one unit at a tie, on numbers of a few million
+    assert cmp.compare({"m": 2243963.3}, "@m[2243963.31]").matches
+    assert cmp.compare({"m": 2268418.13}, "@m[2268418.14]").matches
+    assert cmp.compare({"m": 2243963.31}, "@m[2243963.3]").matches
+    assert not cmp.compare({"m": 2243963.3}, "@m[2243963.32]").matches  # two units apart
+    assert not cmp.compare({"m": 1.0}, "@m[1.02]").matches
+
+
 def test_the_policy_goes_into_the_report_with_its_basis() -> None:
     described = DataComparator(AnswerPolicy.for_question("2 decimal places")).describe()
     assert described["numbers"]["basis"].startswith("question asks for 2")

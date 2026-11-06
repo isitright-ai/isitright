@@ -134,9 +134,13 @@ class AnswerPolicy:
         digits = decimals_in(text)
         if digits is None:
             return AnswerPolicy()
+        # One unit in the last place. The relative term is floating-point noise: near 2e6 the
+        # difference of two numbers one unit (0.01) apart is off by a few 1e-10, more than a margin
+        # relative to the tolerance alone gives, so a rounding that differs by one unit at a tie
+        # (2243963.30 against 2243963.31) would otherwise count as a disagreement.
         return AnswerPolicy(
             abs_tol=10.0**-digits * (1 + 1e-9),
-            rel_tol=0.0,
+            rel_tol=1e-15,
             basis=f"question asks for {digits} decimal places: one unit in the last place",
         )
 
