@@ -106,11 +106,17 @@ MAX_QUESTION_HINTS = 60
 def question_literals(question: str) -> list[Any]:
     """Numbers, quoted strings and ISO dates the question names, in order of appearance."""
     found: list[tuple[int, Any]] = []
+    covered: list[tuple[int, int]] = []  # spans of quoted strings and dates: no numbers inside
     for match in _QUOTED.finditer(question):
         found.append((match.start(), match.group(1) or match.group(2)))
+        covered.append(match.span())
     for match in _ISO_DATE.finditer(question):
-        found.append((match.start(), match.group(0)))
+        if not any(a <= match.start() < b for a, b in covered):
+            found.append((match.start(), match.group(0)))
+            covered.append(match.span())
     for match in _NUMBER.finditer(question):
+        if any(a <= match.start() < b for a, b in covered):
+            continue
         text = match.group(0)
         found.append((match.start(), float(text) if "." in text else int(text)))
     values = [value for _, value in sorted(found, key=lambda item: item[0])]
