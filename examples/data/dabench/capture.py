@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -48,6 +49,15 @@ from isitright.packs.data.mapping import (
 )
 from isitright.packs.data.programs import write_programs
 from isitright.packs.data.task import load_task
+
+
+def redacted(text: str, names: list[str]) -> str:
+    """The text with the value of every passed variable masked, so an error never shows a key."""
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            text = text.replace(value, "***")
+    return text[:600]
 
 
 def main() -> int:
@@ -102,7 +112,7 @@ def main() -> int:
         model=kwargs.get("model", ""),
     )
     recordings, summary = [], []
-    spent, tokens_in, tokens_out, stopped = 0.0, 0, 0, ""
+    spent, tokens_in, tokens_out, stopped, failures = 0.0, 0, 0, "", 0
     for task in tasks:
         if stopped:
             break
@@ -127,8 +137,16 @@ def main() -> int:
                 stopped = "the agent reported no cost, so the cap cannot be enforced; stopped"
                 break
             if run.error or not run.code:
-                summary.append((task.id, number, "ERROR", run.error or "no code"))
+                summary.append(
+                    (task.id, number, "ERROR", redacted(run.error or "no code", args.pass_env))
+                )
+                print(summary[-1], flush=True)
+                failures += 1
+                if failures >= 3:
+                    stopped = "3 runs in a row failed; stopped so a systematic problem cannot spend"
+                    break
                 continue
+            failures = 0
             replay = host.run(run.code, state)
             matches = (
                 replay.status == "ok"

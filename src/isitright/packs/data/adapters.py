@@ -167,9 +167,19 @@ class SmolagentsAgent:
     def _default_model(self) -> Any:
         from smolagents import OpenAIServerModel
 
+        extra: dict[str, Any] = {}
+        try:
+            # Newer OpenAI models reject the `stop` parameter that CodeAgent sends; smolagents
+            # drops it when told to and cuts the reply at the stop sequences itself.
+            from smolagents.models import REMOVE_PARAMETER
+
+            extra["stop"] = REMOVE_PARAMETER
+        except ImportError:  # a smolagents without it (or a test double): send the default
+            pass
         return OpenAIServerModel(
             model_id=self.model or os.environ["ISITRIGHT_MODEL"],
             api_key=os.environ["OPENAI_API_KEY"],
+            **extra,
         )
 
 
