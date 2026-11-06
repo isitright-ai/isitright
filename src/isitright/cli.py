@@ -194,6 +194,8 @@ def _config(
     float_atol: float,
     null_as_zero: bool = False,
     column_vectors: bool = False,
+    reference_columns: str | None = None,
+    wall_time: float | None = None,
 ) -> CheckConfig:
     return CheckConfig(
         seed=seed,
@@ -208,7 +210,18 @@ def _config(
         float_absolute_tolerance=float_atol,
         null_as_zero=null_as_zero,
         column_vectors=column_vectors,
+        reference_columns=_columns(reference_columns),
+        wall_time_seconds=wall_time,
     )
+
+
+def _columns(text: str | None) -> list[int] | None:
+    if text is None:
+        return None
+    try:
+        return [int(part) for part in text.split(",") if part.strip()]
+    except ValueError as error:
+        raise typer.BadParameter("--reference-columns must be integers like 0,2") from error
 
 
 def _resolve(engine: Engine | None, dialect: Dialect | None) -> tuple[Engine, str | None]:
@@ -282,6 +295,13 @@ def check_command(
     column_vectors: Annotated[
         bool, typer.Option(help="Compare columns as independent sorted vectors when unordered.")
     ] = False,
+    reference_columns: Annotated[
+        str | None,
+        typer.Option(help="Compare only these reference columns (0-based, comma separated)."),
+    ] = None,
+    wall_time: Annotated[
+        float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
+    ] = None,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -388,6 +408,8 @@ def check_command(
                 float_atol,
                 null_as_zero,
                 column_vectors,
+                reference_columns,
+                wall_time,
             ),
             _progress=lambda event: progress.update("Candidate states", event),
             **source,
@@ -466,6 +488,13 @@ def suite_command(
     column_vectors: Annotated[
         bool, typer.Option(help="Compare columns as independent sorted vectors when unordered.")
     ] = False,
+    reference_columns: Annotated[
+        str | None,
+        typer.Option(help="Compare only these reference columns (0-based, comma separated)."),
+    ] = None,
+    wall_time: Annotated[
+        float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
+    ] = None,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -580,6 +609,8 @@ def suite_command(
                 float_atol,
                 null_as_zero,
                 column_vectors,
+                reference_columns,
+                wall_time,
             ),
             _progress=progress.update if not quiet else None,
             **source,

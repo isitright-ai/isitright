@@ -40,7 +40,11 @@ def compare_results(
     """Compare two query results, retaining type and duplicate semantics."""
     if policy.null_as_zero:
         reference, candidate = _zero_nulls(reference), _zero_nulls(candidate)
-    if policy.columns is ColumnComparisonPolicy.CONTAINED or policy.column_vectors:
+    if (
+        policy.columns is ColumnComparisonPolicy.CONTAINED
+        or policy.column_vectors
+        or policy.reference_columns is not None
+    ):
         return _compare_vectors(reference, candidate, policy, reference_has_order_by)
     reference_rows, candidate_rows, column_difference = _align_columns(
         reference, candidate, policy.columns
@@ -262,8 +266,20 @@ def _compare_vectors(
         EffectiveOrdering.ORDERED
     )
     wanted, got = _columns_of(reference), _columns_of(candidate)
+    if policy.reference_columns is not None:
+        if any(not 0 <= i < len(wanted) for i in policy.reference_columns):
+            raise ComparisonError(
+                f"reference_columns {policy.reference_columns} do not fit the reference's "
+                f"{len(wanted)} columns"
+            )
+        wanted = [wanted[i] for i in policy.reference_columns]
+        names = [reference.columns[i].name for i in policy.reference_columns]
+    else:
+        names = [column.name for column in reference.columns]
     tolerance = policy.float_absolute_tolerance
-    contained = policy.columns is ColumnComparisonPolicy.CONTAINED
+    contained = (
+        policy.columns is ColumnComparisonPolicy.CONTAINED or policy.reference_columns is not None
+    )
     if not contained and len(wanted) != len(got):
         return ComparisonOutcome(
             False,
@@ -281,10 +297,9 @@ def _compare_vectors(
         if not any(
             _vectors_match(vector, other, ordered=ordered, tolerance=tolerance) for other in pool
         ):
-            name = reference.columns[index].name
             return ComparisonOutcome(
                 False,
-                f"reference column {index} ({name}) has no matching candidate column",
+                f"reference column {names[index]} has no matching candidate column",
                 ordered,
             )
     return ComparisonOutcome(True, None, ordered)

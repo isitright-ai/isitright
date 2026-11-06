@@ -62,7 +62,7 @@ from isitright.packs.sql.dialects import resolve_dialect_and_engine
 from isitright.packs.sql.domain_validation import domain_errors
 from isitright.packs.sql.engines import get_engine
 from isitright.packs.sql.errors import SqlInputError, StateRejected
-from isitright.packs.sql.hints import hints_from_guidance
+from isitright.packs.sql.hints import hints_from_guidance, hints_from_question
 from isitright.packs.sql.hosts import PostgresHost, SqlHost, SqliteHost
 from isitright.packs.sql.inline import RealTableReference, inline_sql
 from isitright.packs.sql.mapping import (
@@ -431,6 +431,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             float_absolute_tolerance=config.float_absolute_tolerance,
             column_vectors=config.column_vectors,
             null_as_zero=config.null_as_zero,
+            reference_columns=config.reference_columns,
         ).model_copy(
             update={
                 "effective_ordering": resolve_ordering(
@@ -441,6 +442,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         )
         guidance = harvest_query_guidance(reference_statement, candidate_statement)
         hints = hints_from_guidance(p.model, guidance)
+        if case.question:
+            hints = Hints([*hints, *hints_from_question(p.model, guidance, case.question)])
         base_state = p.base
         mutators = default_mutators(insert_variants=True) if guidance.tables else []
         if self.dialect.warehouse:
@@ -741,7 +744,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 return Evaluation(Verdict.DISAGREE, detail=(left, right, difference))
             return Evaluation(Verdict.AGREE)
 
-        budget = Budget(attempts=config.max_attempts)
+        budget = Budget(attempts=config.max_attempts, seconds=config.wall_time_seconds)
         try:
             if not guidance.tables and p.seeded:
                 result = SearchResult(seed=config.seed, budget=budget)
@@ -875,6 +878,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 headline += (
                     f"; {len(self.emulation_artifacts)} divergence(s) seen only on DuckDB were "
                     "excluded as emulation artifacts"
+                )
+            if result.accounting()["budget"].get("stopped_by") == "seconds":
+                headline = (
+                    f"No disagreement found in {result.executed} admitted generated states; "
+                    "the search was stopped by the time cap; this is not evidence of equivalence"
                 )
             if p.seeded and original.get("outputs_match"):
                 headline = (

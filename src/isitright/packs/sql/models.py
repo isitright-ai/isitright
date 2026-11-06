@@ -72,6 +72,10 @@ class CheckConfig(ContractModel):
     correlation between columns of a row is not checked (a benchmark rule)."""
     null_as_zero: bool = False
     """Count NULL as the number 0 before comparing (a benchmark rule)."""
+    reference_columns: list[int] | None = None
+    """Compare only these reference columns (0-based), as the benchmark's ``condition_cols``."""
+    wall_time_seconds: float | None = Field(default=None, gt=0)
+    """Stop the search after this long; the report says it was stopped by the time cap."""
 
 
 class SuiteCase(ContractModel):
@@ -108,6 +112,7 @@ class ComparisonPolicy(ContractModel):
     float_absolute_tolerance: float = Field(default=1e-12, ge=0)
     column_vectors: bool = False
     null_as_zero: bool = False
+    reference_columns: list[int] | None = None
     unordered_rows_are_multiset: Literal[True] = True
 
 
