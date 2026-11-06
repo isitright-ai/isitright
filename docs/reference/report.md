@@ -81,6 +81,27 @@ the replayed program) and `verified_on` is `LIVE_AGENT` once the agent itself ra
 
 `RATE_INCREASE`, `NO_INCREASE_AT_EFFECT`, `UNDECIDED`, `NO_DISCORDANCE`.
 
+## Warehouse reports (0.7)
+
+0.7 adds no field to the report schema; the schema stays 0.6. Warehouse data is in
+`extensions.sql`:
+
+| Key | Content |
+|---|---|
+| `target_dialect` | `sqlite`, `postgres`, `bigquery`, `presto` or `trino` |
+| `rewrites` | How often each exact translation fired (for example `unnest_with_offset`) |
+| `template` | The `--param` values, which were used, and the original query texts |
+| `native_verification` | `NATIVE_VERIFIED`, `ARTIFACTS_EXCLUDED` or `NATIVE_UNVERIFIED` |
+| `emulation_artifacts` | Divergences that did not reproduce natively, with the confirmation attempts |
+
+`comparison_policy` records `columns`, `column_vectors`, `null_as_zero`, `reference_columns` and
+the tolerances. A finding's `fidelity.verified_on` is `NATIVE_INLINE` once a native host has run
+both queries on the inlined state. `divergence.native_confirmation` lists each world tried
+(`minimized`, then `unminimized divergent`) and its result. A finding's `validity.notes` says
+when it needs equal values in a column with no declared key or unique rule. A case whose only
+divergence did not reproduce natively is `INCONCLUSIVE` with no finding, and the divergence is
+listed under `emulation_artifacts`.
+
 ## SQL pack output
 
 `isitright sql check` writes `case_report.json`, `case_report.md`, `counterexample.sql` and

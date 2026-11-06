@@ -31,7 +31,7 @@ Three packs ship on one shared core:
 | You have | Use | World | Where it runs |
 |---|---|---|---|
 | A tool-using agent that talks MCP | `isitright agents run` | An entity state behind MCP tools | An MCP server per run (`SIMULATED`) |
-| Text-to-SQL output (reference and candidate queries) | `isitright sql check` / `suite` | A database | SQLite or PostgreSQL (`NATIVE_ISOLATED`), DuckDB (`EMULATED`) |
+| Text-to-SQL output (reference and candidate queries) | `isitright sql check` / `suite` | A database, or DDL for a warehouse | SQLite or PostgreSQL (`NATIVE_ISOLATED`), DuckDB (`EMULATED`); BigQuery and Presto/Trino searched on DuckDB and confirmed on your engine with the state inlined (`NATIVE_INLINE`) |
 | A data-analysis agent that writes Python over data files | `isitright data check` (recorded programs), `data audit` (the agent) | Tables, one row per entity | A limited child process (`NATIVE_ISOLATED`), not a sandbox |
 
 **What a finding means.** isitright runs your subject (the agent or the generated query) and an

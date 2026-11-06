@@ -111,6 +111,25 @@ on rejected candidates (see `search.rejected`). If it raises an exception, or re
 `INDETERMINATE`, every candidate is rejected and the case reports that no generated state satisfied
 the rules. The Python API is for validators; the CLI takes only a constraints file.
 
+## Uniqueness without a key
+
+A warehouse table often has no primary key, but a column can still be an identifier. Declare it with
+`x-unique`, a list of column groups on the table or `true` on a column. Without it the search may build
+two rows with the same value, which the domain may forbid (see
+[BigQuery and Presto/Trino](warehouses.md#why-declaring-uniqueness-matters)).
+
+```yaml
+properties:
+  orders:
+    x-unique: [[order_id], [customer, day]]
+    items:
+      properties:
+        order_id: {x-unique: true}      # same as listing [order_id] above
+```
+
+A unique rule is a domain rule: it lifts a finding that needs duplicates out of the
+`STRUCTURAL` tier only when the rule holds in your data.
+
 ## Check your rules
 
 Run the audit and read the "Validation checks" and "Rules generation could not use" sections of

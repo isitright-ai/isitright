@@ -10,7 +10,7 @@ one amount is `NULL`.
 
 | Input | Form | Required |
 |---|---|---|
-| The database | A SQLite file (with or without rows), or DDL for PostgreSQL, DuckDB or SQLite | Yes |
+| The database | A SQLite file (with or without rows), or DDL for PostgreSQL, BigQuery, Presto/Trino or SQLite | Yes |
 | The query pairs | Two `.sql` files for `sql check`, or a JSONL suite for `sql suite` | Yes |
 | Domain rules | A JSON Schema file, see [Domain constraints](domain-constraints.md) | No, but without it findings stay [`STRUCTURAL`](../concepts/validity-and-fidelity.md#validity-tiers) |
 | Seed and budgets | `--seed`, `--max-attempts` | No |
@@ -32,14 +32,16 @@ All options are in the [CLI reference](../reference/cli.md).
 
 ## Engines
 
-`--engine` is where the perturbed worlds run. The dialect of your queries and the engine are the
-same choice for SQLite and PostgreSQL; DuckDB runs translated PostgreSQL SQL.
+`--dialect` is the SQL your queries are written in and `--engine` is where the perturbed worlds
+run. For SQLite and PostgreSQL they are the same choice (`--engine` alone keeps its old meaning);
+DuckDB runs translated PostgreSQL, BigQuery and Presto/Trino SQL.
 
 | `--engine` | Takes | [Fidelity](../concepts/validity-and-fidelity.md#execution-fidelity) |
 |---|---|---|
 | `sqlite` (default) | `--database FILE` or `--schema DDL` | `NATIVE_ISOLATED` |
 | `postgres` | `--schema DDL` | `NATIVE_ISOLATED`, on a disposable local server |
 | `duckdb` | `--schema DDL` (PostgreSQL) | `EMULATED`; re-executed on PostgreSQL when it is installed |
+| `duckdb` with `--dialect bigquery\|presto\|trino` | `--schema DDL` | `EMULATED`; confirmed with `--confirm` on `NATIVE_INLINE`, see [BigQuery and Presto/Trino](warehouses.md) |
 
 See [Engines and large databases](engines.md).
 

@@ -17,7 +17,18 @@ Compare one query pair on perturbed worlds of a database or schema.
 |---|---|---|
 | `--reference FILE` | required | Gold query, one read-only `SELECT` |
 | `--candidate FILE` | required | Generated query |
-| `--engine sqlite\|postgres\|duckdb` | `sqlite` | `postgres` is native; `duckdb` is emulated |
+| `--engine sqlite\|postgres\|duckdb` | by `--dialect` | Where states run. `postgres` is native; `duckdb` is emulated. Without `--dialect`: `sqlite` |
+| `--dialect sqlite\|postgres\|bigquery\|presto\|trino` | follows `--engine` | The SQL the queries are written in. `bigquery`, `presto` and `trino` run on `duckdb` |
+| `--param NAME=VALUE` | none | Fills `<NAME>` and `{{ NAME }}` placeholders in both queries (repeatable) |
+| `--column-policy positional\|by_name\|names_and_positions\|contained` | `positional` | `contained`: each reference column equals some candidate column, at any position |
+| `--reference-columns 0,2` | all | Compare only these reference columns (0-based) |
+| `--column-vectors` | off | Compare columns as independent sorted vectors when unordered |
+| `--null-as-zero` | off | Count NULL as 0 when comparing |
+| `--wall-time SECONDS` | none | Stop the search after this long; the report says it was stopped by the time cap |
+| `--confirm bigquery\|trino\|connection` | none | Re-run findings on a native host with the state inlined |
+| `--connection MODULE:FUNCTION`, `--trust-code` | none | The function for `--confirm connection`: `run(sql) -> (columns, rows)` |
+| `--bq-project`, `--max-bytes-billed`, `--env-file` | none, 100 MB | BigQuery project, cap on bytes billed per query, a file from which only `GOOGLE_APPLICATION_CREDENTIALS` is read |
+| `--trino-host`, `--trino-port`, `--trino-user`, `--trino-catalog`, `--trino-schema` | `localhost`, 8080, `isitright`, `memory`, `default` | Trino server for `--confirm trino` |
 | `--database FILE` | | SQLite file |
 | `--schema FILE` | | DDL file (SQLite DDL for sqlite; PostgreSQL DDL for postgres and duckdb) |
 | `--constraints FILE` | | JSON Schema domain rules, YAML or JSON |

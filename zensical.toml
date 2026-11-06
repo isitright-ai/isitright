@@ -36,6 +36,7 @@ nav = [
     { "Audit a suite" = "sql/audit-a-suite.md" },
     { "Domain constraints" = "sql/domain-constraints.md" },
     { "Engines and large databases" = "sql/engines.md" },
+    { "BigQuery and Presto/Trino" = "sql/warehouses.md" },
     { "Supported SQL" = "sql/supported-sql.md" },
   ] },
   { "Agents" = [

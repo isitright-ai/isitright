@@ -136,3 +136,32 @@ def test_existing_engine_invocations_keep_their_meaning(tmp_path: Path) -> None:
         0
     ]
     assert report["extensions"]["sql"]["target_dialect"] == "postgres"
+
+
+def test_the_bigquery_quick_start_in_examples_finds_an_empty_array(tmp_path: Path) -> None:
+    folder = Path(__file__).parents[1] / "examples" / "sql" / "bigquery"
+    out = tmp_path / "out"
+    result = runner.invoke(
+        app,
+        [
+            "sql",
+            "check",
+            "--dialect",
+            "bigquery",
+            "--schema",
+            str(folder / "schema.sql"),
+            "--reference",
+            str(folder / "reference.sql"),
+            "--candidate",
+            str(folder / "candidate.sql"),
+            "--output-dir",
+            str(out),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    report = json.loads((out / "case_report.json").read_text(encoding="utf-8"))["cases"][0]
+    assert report["divergence_status"] == "COUNTEREXAMPLE_FOUND"
+    state = report["findings"][0]["divergence"]["candidate_state"]["orders"]
+    assert len(state) <= 2 and any(row["items"] == [] for row in state)
+    replayed = runner.invoke(app, ["sql", "replay", str(out / "case_report.json")])
+    assert replayed.exit_code == 0, replayed.output
