@@ -231,3 +231,27 @@ def test_the_smoke_step_compares_every_bigquery_fixture_with_its_documented_outc
     assert len(report["fixtures"]) == len(wanted)
     assert report["counts"].get("DIFFERS", 0) == 0
     assert report["counts"]["confirmed"] == sum(1 for f in wanted if f.native is not None)
+
+
+def test_a_dry_run_only_baseline_prints_estimates_and_reads_nothing(tmp_path: Path) -> None:
+    client = Client(estimate=700)
+    r = steps.Runner(
+        client,
+        config=lambda **kw: kw,
+        max_bytes_per_query=1000,
+        max_bytes_total=10_000,
+        dry_run_only=True,
+    )
+    result = steps.baseline(r, tmp_path / "s", demo=_mini_demo(tmp_path))
+    assert all(call[1].get("dry_run") for call in client.calls)
+    assert result["tasks"][0]["gold_estimate"] == 700
+    assert result["tasks"][0]["candidate_estimate"] == 700
+    assert result["estimated_bytes"] == 1400 and result["billed_bytes"] == 0
+
+
+def test_schema_check_records_a_dataset_it_cannot_read_and_goes_on(tmp_path: Path) -> None:
+    def denied(sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        raise PermissionError("Access Denied: dataset shop")
+
+    result = steps.schema_check(runner(Client(respond=denied)), demo=_mini_demo(tmp_path))
+    assert "Access Denied" in result["differences"][0]["error"]

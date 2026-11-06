@@ -51,8 +51,11 @@ class Runner:
         config: Callable[..., Any],
         max_bytes_per_query: int,
         max_bytes_total: int,
+        dry_run_only: bool = False,
     ) -> None:
         self.client, self.config = client, config
+        self.dry_run_only = dry_run_only
+        self.last_estimate = 0
         self.per_query, self.total_cap = max_bytes_per_query, max_bytes_total
         self.estimated_total = 0
         self.billed_total = 0
@@ -68,6 +71,11 @@ class Runner:
             )
         if self.estimated_total + estimate > self.total_cap:
             raise CapExceeded(f"the total would pass the cap {self.total_cap}")
+        self.last_estimate = estimate
+        if self.dry_run_only:  # print what it would cost; read nothing
+            self.estimated_total += estimate
+            self.log.append({"estimate": estimate, "billed": None, "dry_run_only": True})
+            return [], []
         job = self.client.query(
             sql, job_config=self.config(maximum_bytes_billed=self.per_query, **options)
         )
@@ -185,10 +193,23 @@ def schema_check(runner: Runner, demo: Path = HERE) -> dict[str, Any]:
                     if name in families
                     else f"table_name = '{name}'"
                 )
-                _, live = runner.run(
-                    "SELECT column_name, data_type FROM "
-                    f"`{project}.{dataset}`.INFORMATION_SCHEMA.COLUMNS WHERE {match}"
-                )
+                try:
+                    _, live = runner.run(
+                        "SELECT column_name, data_type FROM "
+                        f"`{project}.{dataset}`.INFORMATION_SCHEMA.COLUMNS WHERE {match}"
+                    )
+                except CapExceeded:
+                    raise
+                except Exception as error:  # e.g. no access to that dataset: report it
+                    findings.append(
+                        {
+                            "task": task["id"],
+                            "table": key,
+                            "error": f"{type(error).__name__}: {str(error)[:160]}",
+                        }
+                    )
+                    cache[key] = {}
+                    continue
                 cache[key] = {str(r[0]): str(r[1]) for r in live}
             live_columns = cache[key]
             spider_columns = {c.name for c in table.columns} - (
@@ -254,6 +275,18 @@ def baseline(
         if only and task["id"] not in only:
             continue
         entry: dict[str, Any] = {"id": task["id"]}
+        if runner.dry_run_only:
+            try:
+                runner.run((demo / "original" / "gold" / f"{task['id']}.sql").read_text("utf-8"))
+                entry["gold_estimate"] = runner.last_estimate
+                runner.run(
+                    (demo / "original" / "candidate" / f"{task['id']}.sql").read_text("utf-8")
+                )
+                entry["candidate_estimate"] = runner.last_estimate
+            except Exception as error:
+                entry["error"] = f"{type(error).__name__}: {str(error)[:160]}"
+            out.append(entry)
+            continue
         try:
             gold = runner.run((demo / "original" / "gold" / f"{task['id']}.sql").read_text("utf-8"))
             cand = runner.run(
@@ -439,6 +472,9 @@ def main(argv: list[str]) -> None:
     parser.add_argument("--spider2", type=Path, help="Spider2 checkout (baseline cross-check)")
     parser.add_argument("--results", type=Path, help="results directory of run_demo.py (confirm)")
     parser.add_argument("--only", help="comma-separated task ids (baseline)")
+    parser.add_argument(
+        "--dry-run-only", action="store_true", help="baseline: estimate, read nothing"
+    )
     parser.add_argument("--max-bytes-per-query", type=int, default=2 * 1024**3)
     parser.add_argument("--max-bytes-total", type=int, default=20 * 1024**3)
     args = parser.parse_args(argv)
@@ -457,6 +493,7 @@ def main(argv: list[str]) -> None:
             config=config,
             max_bytes_per_query=args.max_bytes_per_query,
             max_bytes_total=args.max_bytes_total,
+            dry_run_only=args.dry_run_only,
         )
         if args.step == "schema":
             result = schema_check(runner)
