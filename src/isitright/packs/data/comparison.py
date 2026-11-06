@@ -18,6 +18,8 @@ from isitright.core.compare import Comparison, NumericComparator, TextComparator
 _NAMED = re.compile(r"@\s*([A-Za-z0-9_\- ]+?)\s*\[(.*?)\]", re.S)
 _NUMBER = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$")
 _DECIMALS = re.compile(r"(?:to|by)\s+(?:the\s+)?(?:nearest\s+)?(\w+)\s+decimal", re.I)
+RECORDS = "__records__"
+"""Key of an answer that is a list of groups, such as one block of answers per continent."""
 _WORDS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
 
 
@@ -53,7 +55,7 @@ def to_value(raw: Any) -> Any:
             if _NUMBER.match(raw.strip().rstrip("%").replace(",", ""))
             else raw.strip()
         )
-        return float(text) if _NUMBER.match(text) else text
+        return float(text) if _NUMBER.match(text) else _unquote(text)
     if isinstance(raw, bool):
         return raw
     if isinstance(raw, int | float):
@@ -61,12 +63,35 @@ def to_value(raw: Any) -> Any:
     return raw
 
 
+def _unquote(text: str) -> str:
+    """The text without a pair of quotes around it (agents print ``'Kuwait'``).
+
+    Only a single quoted value is unwrapped: ``'a', 'b'`` is a list, not one value in quotes.
+    """
+    text = text.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"" and text[0] not in text[1:-1]:
+        return text[1:-1].strip()
+    return text
+
+
 def named_answers(text: str) -> dict[str, Any] | None:
-    """The ``@name[value]`` pairs of a text answer, or None if it has none."""
-    pairs = _NAMED.findall(text)
+    """The ``@name[value]`` pairs of a text answer, or None if it has none.
+
+    When the first name comes round again the answer is a list of groups (one block per continent,
+    say) and is returned as ``{RECORDS: [{name: value, ...}, ...]}``.
+    """
+    pairs = [(normal_name(name), to_value(value)) for name, value in _NAMED.findall(text)]
     if not pairs:
         return None
-    return {normal_name(name): to_value(value) for name, value in pairs}
+    first = pairs[0][0]
+    if [name for name, _ in pairs].count(first) < 2:
+        return dict(pairs)
+    records: list[dict[str, Any]] = []
+    for name, value in pairs:
+        if name == first:
+            records.append({})
+        records[-1][name] = value
+    return {RECORDS: records}
 
 
 def normalize_answer(raw: Any) -> Any:
@@ -85,7 +110,12 @@ def normalize_answer(raw: Any) -> Any:
             return normalize_answer(raw["value"])
         return {normal_name(str(k)): normalize_answer(v) for k, v in raw.items()}
     if isinstance(raw, list | tuple):
-        return [normalize_answer(v) for v in raw]
+        items = [normalize_answer(v) for v in raw]
+        if items and all(
+            isinstance(i, dict) and "__frame__" not in i and RECORDS not in i for i in items
+        ):
+            return {RECORDS: items}  # a list of groups, as the text form gives
+        return items
     return to_value(raw)
 
 
@@ -172,6 +202,14 @@ class DataComparator:
             if not (isinstance(right, dict) and "__frame__" in right):
                 return f"{where}: expected a table, got {_shape(right)}"
             return self._frames(left["__frame__"], right["__frame__"])
+        left_groups = isinstance(left, dict) and RECORDS in left
+        right_groups = isinstance(right, dict) and RECORDS in right
+        if left_groups or right_groups:
+            if not left_groups:
+                return f"{where}: expected a single answer, got groups of answers"
+            if not right_groups:
+                return f"{where}: expected groups of answers, got {_shape(right)}"
+            return self._groups(left[RECORDS], right[RECORDS], where)
         if isinstance(left, dict):
             if not isinstance(right, dict) and len(left) == 1:
                 # a bare value stands for a task with a single named answer
@@ -186,8 +224,9 @@ class DataComparator:
                     return inner
             return None
         if isinstance(left, list):
-            if isinstance(right, str):  # "a, b" for ["a", "b"]; "" for []
-                right = [to_value(item) for item in right.split(",") if item.strip()]
+            if isinstance(right, str):  # "a, b" or "['a', 'b']" for ["a", "b"]; "" for []
+                inside = right.strip().removeprefix("[").removesuffix("]")
+                right = [to_value(item) for item in inside.split(",") if item.strip()]
             if not isinstance(right, list) or len(left) != len(right):
                 return f"{where}: expected {len(left)} items, got {_shape(right)}"
             if all(isinstance(item, str) for item in left + right):
@@ -201,6 +240,35 @@ class DataComparator:
                     return inner
             return None
         return self._scalars(left, right, where)
+
+    def _groups(self, left: list[Any], right: list[Any], where: str) -> str | None:
+        """Groups of answers, matched by the value of their first answer, so their order is free."""
+        if len(left) != len(right):
+            return f"{where}: expected {len(left)} groups, got {len(right)}"
+        if not left:
+            return None
+        key = next(iter(left[0]))
+
+        def label(group: dict[str, Any]) -> str:
+            return str(group.get(key, "")).casefold()
+
+        if len({label(g) for g in left}) == len(left) and len({label(g) for g in right}) == len(
+            right
+        ):
+            by_label = {label(g): g for g in right}
+            matched = []
+            for group in left:
+                other = by_label.get(label(group))
+                if other is None:
+                    return f"{where}: the answer has no group {group.get(key)!r}"
+                matched.append((label(group), group, other))
+        else:  # the first answer does not tell the groups apart: compare in order
+            matched = [(str(i), a, b) for i, (a, b) in enumerate(zip(left, right, strict=True))]
+        for name, a, b in matched:
+            inner = self._differs(a, b, f"{where}[{name}]")
+            if inner:
+                return inner
+        return None
 
     def _scalars(self, left: Any, right: Any, where: str) -> str | None:
         if left is None or right is None:

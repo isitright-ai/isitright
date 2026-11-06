@@ -29,8 +29,11 @@ def label_answers(pairs: list[list[str]]) -> dict[str, list[object]]:
 
 
 def flatten(answer: object, out: dict[str, list[object]]) -> None:
-    """Gold answers may nest (per-continent): collect every named value, in order."""
-    if isinstance(answer, dict):
+    """Gold answers may nest or be a list of groups (per-continent): collect every named value."""
+    if isinstance(answer, list):
+        for item in answer:
+            flatten(item, out)
+    elif isinstance(answer, dict):
         for name, value in answer.items():
             if isinstance(value, dict):
                 flatten(value, out)

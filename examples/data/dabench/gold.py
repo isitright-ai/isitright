@@ -572,14 +572,17 @@ gold(
 import pandas as pd
 from scipy import stats
 df = pd.read_csv("gapminder_cleaned.csv")
-result = {}
+result = []  # one group per continent, as in the answer format (the groups are compared unordered)
 for continent, part in df.groupby("continent"):
     r, p = stats.pearsonr(part["lifeexp"], part["gdppercap"])
     kind = "significant" if p < 0.05 and abs(r) >= 0.5 else "non-significant"
-    result[f"{continent}"] = {
-        "correlation_coefficient": round(float(r), 2),
-        "p_value": round(float(p), 4),
-        "correlation_significance": kind,
-    }
+    result.append(
+        {
+            "continent_name": continent,
+            "correlation_coefficient": round(float(r), 2),
+            "p_value": round(float(p), 4),
+            "correlation_significance": kind,
+        }
+    )
 """,
 )

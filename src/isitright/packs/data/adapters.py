@@ -164,7 +164,18 @@ class SmolagentsAgent:
         self.model = model
         self._model_object = model_object
         self._prices = tuple(usd_per_million_tokens) if usd_per_million_tokens else None
-        self._imports = imports or ("pandas", "numpy", "scipy", "statistics", "math")
+        # smolagents checks an import part by part: "scipy" alone rejects `scipy.stats` and any
+        # submodule such as `numpy.random`, so each library also gets a "<name>.*" entry.
+        self._imports = imports or (
+            "pandas",
+            "pandas.*",
+            "numpy",
+            "numpy.*",
+            "scipy",
+            "scipy.*",
+            "statistics",
+            "math",
+        )
 
     def solve(self, question: str, directory: Path) -> AgentRun:
         from smolagents import CodeAgent

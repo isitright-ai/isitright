@@ -108,3 +108,61 @@ def test_a_list_of_names_has_no_order_but_the_same_names() -> None:
     assert cmp.compare({"c": ["Kuwait", "Saudi Arabia"]}, "@c[Saudi Arabia, Kuwait]").matches
     assert not cmp.compare({"c": ["Kuwait", "Oman"]}, "@c[Saudi Arabia, Kuwait]").matches
     assert not cmp.compare({"c": [1.0, 2.0]}, "@c[2, 1]").matches  # numbers keep their order
+
+
+def test_quote_characters_around_a_name_or_list_item_are_not_part_of_it() -> None:
+    cmp = DataComparator()
+    expected = {"c": ["Kuwait", "Saudi Arabia"]}
+    assert cmp.compare(expected, "@c['Kuwait', 'Saudi Arabia']").matches
+    assert cmp.compare(expected, '@c["Saudi Arabia", "Kuwait"]').matches
+    assert cmp.compare(expected, "@c[['Kuwait', 'Saudi Arabia']]").matches  # the brackets too
+    assert cmp.compare({"country": "Congo"}, "@country['Congo']").matches
+    assert not cmp.compare(expected, "@c['Kuwait', 'Oman']").matches
+
+
+BLOCKS = (
+    "@continent_name[africa]\n@r[0.43]\n@sig[non-significant]\n"
+    "@continent_name[asia]\n@r[0.38]\n@sig[non-significant]\n"
+    "@continent_name[europe]\n@r[0.78]\n@sig[significant]\n"
+)
+
+
+def groups(*rows: tuple[str, float, str]) -> list[dict[str, object]]:
+    return [{"continent_name": c, "r": r, "sig": s} for c, r, s in rows]
+
+
+def test_a_repeated_block_of_answers_is_a_list_of_groups_compared_without_order() -> None:
+    parsed = named_answers(BLOCKS)
+    assert parsed is not None and len(parsed["__records__"]) == 3
+    assert parsed["__records__"][1] == {
+        "continentname": "asia",
+        "r": 0.38,
+        "sig": "non-significant",
+    }
+    cmp = DataComparator(AnswerPolicy.for_question("rounded to two decimal places"))
+    ordered = groups(
+        ("africa", 0.43, "non-significant"),
+        ("asia", 0.38, "non-significant"),
+        ("europe", 0.78, "significant"),
+    )
+    assert cmp.compare(ordered, BLOCKS).matches
+    assert cmp.compare(list(reversed(ordered)), BLOCKS).matches  # the order of groups is free
+    wrong_value = groups(
+        ("africa", 0.43, "non-significant"),
+        ("asia", 0.99, "non-significant"),
+        ("europe", 0.78, "significant"),
+    )
+    miss = cmp.compare(wrong_value, BLOCKS)
+    assert not miss.matches and "asia" in (miss.difference or "")
+    missing_group = groups(("africa", 0.43, "non-significant"), ("asia", 0.38, "non-significant"))
+    assert "3 groups" in (cmp.compare(missing_group, BLOCKS).difference or "") or (
+        "2 groups" in (cmp.compare(missing_group, BLOCKS).difference or "")
+    )
+    renamed = groups(
+        ("africa", 0.43, "non-significant"),
+        ("asia", 0.38, "non-significant"),
+        ("oceania", 0.78, "significant"),
+    )
+    assert "no group" in (cmp.compare(renamed, BLOCKS).difference or "")
+    assert not cmp.compare(ordered, "@r[0.43]").matches  # groups against a single answer
+    assert not cmp.compare({"r": 0.43}, BLOCKS).matches  # a single answer against groups
