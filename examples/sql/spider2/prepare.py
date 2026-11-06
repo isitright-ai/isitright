@@ -53,7 +53,9 @@ def select(spider: Path, schemagate: Path) -> dict:
         rows = [r[0] for r in csv.reader(handle) if r]
     csv_ids = {re.sub(r"^sf_", "", i) for i in rows[1:]}
     text = (run / f"{MODEL}.eval.txt").read_text(encoding="utf-8-sig", errors="replace")
-    scores = next(ast.literal_eval(l) for l in text.splitlines() if l.startswith("{'bq001'"))
+    scores = next(
+        ast.literal_eval(line) for line in text.splitlines() if line.startswith("{'bq001'")
+    )
     assert csv_ids == {i for i, s in scores.items() if s == 1}
     gold_dir = spider / "spider2-lite" / "evaluation_suite" / "gold" / "sql"
     gold = {p.stem for p in gold_dir.glob("*.sql") if re.match(r"^(bq|ga)\d+$", p.stem)}
@@ -114,7 +116,11 @@ def family_name(prefix: str) -> str:
 def columns_of(ddl: str) -> str:
     """The column list of a CREATE TABLE, for comparing shards (names and types, not options)."""
     tree = sqlglot.parse_one(ddl, read="bigquery")
-    return ";".join(f"{c.name}:{c.args['kind'].sql('bigquery')}" for c in tree.find_all(exp.ColumnDef) if c.parent is tree.this)
+    return ";".join(
+        f"{c.name}:{c.args['kind'].sql('bigquery')}"
+        for c in tree.find_all(exp.ColumnDef)
+        if c.parent is tree.this
+    )
 
 
 def table_refs(sql: str) -> tuple[list[str], str | None]:
@@ -131,7 +137,15 @@ def main(spider: Path, schemagate: Path, out: Path) -> None:
     if out.exists() and any(out.iterdir()):
         raise SystemExit("the output directory must be new or empty")
     selection = select(spider, schemagate)
-    for sub in ("gold", "candidate", "original/gold", "original/candidate", "ddl", "external_knowledge", "licenses"):
+    for sub in (
+        "gold",
+        "candidate",
+        "original/gold",
+        "original/candidate",
+        "ddl",
+        "external_knowledge",
+        "licenses",
+    ):
         (out / sub).mkdir(parents=True, exist_ok=True)
     gold_src = spider / "spider2-lite" / "evaluation_suite" / "gold" / "sql"
     cand_src = schemagate / RUN / MODEL
@@ -164,27 +178,63 @@ def main(spider: Path, schemagate: Path, out: Path) -> None:
                 head, _, prefix_star = ref.rpartition(".")
                 wanted = prefix_star.rstrip("*")
                 dataset = head
-                shards = sorted(n for n in tables if n.startswith(dataset + ".") and n.rpartition(".")[2].startswith(wanted))
+                shards = sorted(
+                    n
+                    for n in tables
+                    if n.startswith(dataset + ".") and n.rpartition(".")[2].startswith(wanted)
+                )
                 if not shards:
                     unresolved.append(ref)
                     continue
                 short = [s.rpartition(".")[2] for s in shards]
-                shapes = {columns_of(tables[s]) for s in shards}
-                if len(shapes) > 1:
-                    unresolved.append(f"{ref} (shards have different columns)")
+                newest = shards[-1]
+                newest_names = {c.partition(":")[0] for c in columns_of(tables[newest]).split(";")}
+                older_extra = {
+                    c.partition(":")[0] for s in shards for c in columns_of(tables[s]).split(";")
+                } - newest_names
+                if older_extra:
+                    unresolved.append(
+                        f"{ref} (shards are not one table over time: {sorted(older_extra)[:3]} "
+                        "are missing from the newest shard)"
+                    )
                     continue
-                f = lcp(short).rstrip("0123456789") if len(short) > 1 else short[0].rstrip("0123456789")
+                drift = len({columns_of(tables[s]) for s in shards}) > 1
+                f = (
+                    lcp(short).rstrip("0123456789")
+                    if len(short) > 1
+                    else short[0].rstrip("0123456789")
+                )
                 fam = family_name(f)
                 full = f"{dataset}.{fam}"
-                suffixes = [s[len(f):] for s in short]
+                suffixes = [s[len(f) :] for s in short]
                 if full not in families:
-                    rep = tables[shards[0]]
-                    old_name = f"`{shards[0]}`"
-                    assert old_name in rep, (task_id, shards[0])
+                    rep = tables[newest]
+                    old_name = f"`{newest}`"
+                    assert old_name in rep, (task_id, newest)
                     text = rep.replace(old_name, f"`{full}`", 1)
-                    text = text.replace("(\n", "(\n  _shard STRING NOT NULL OPTIONS(description=\"suffix of the shard name after the family prefix\"),\n", 1)
-                    families[full] = {"family": fam, "prefix": f, "ddl": text, "shards": len(shards)}
-                rewrites.append({"wildcard": ref, "family_table": full, "family_prefix": f, "wildcard_prefix": wanted, "shards": len(shards), "example_suffix": suffixes[0]})
+                    text = text.replace(
+                        "(\n",
+                        '(\n  _shard STRING NOT NULL OPTIONS(description="suffix of the shard name after the family prefix"),\n',
+                        1,
+                    )
+                    families[full] = {
+                        "family": fam,
+                        "prefix": f,
+                        "ddl": text,
+                        "shards": len(shards),
+                        "drift": drift,
+                    }
+                rewrites.append(
+                    {
+                        "wildcard": ref,
+                        "family_table": full,
+                        "family_prefix": f,
+                        "wildcard_prefix": wanted,
+                        "shards": len(shards),
+                        "example_suffix": suffixes[0],
+                        "schema_drift": drift,
+                    }
+                )
             else:
                 matches = [n for n in tables if n == ref or n.endswith("." + ref)]
                 if len(matches) == 1:
@@ -211,7 +261,9 @@ def main(spider: Path, schemagate: Path, out: Path) -> None:
 
         (out / "gold" / f"{task_id}.sql").write_text(rewrite(gold), encoding="utf-8")
         (out / "candidate" / f"{task_id}.sql").write_text(rewrite(cand), encoding="utf-8")
-        (out / "ddl" / f"{task_id}.sql").write_text("\n\n".join(statements) + "\n", encoding="utf-8")
+        (out / "ddl" / f"{task_id}.sql").write_text(
+            "\n\n".join(statements) + "\n", encoding="utf-8"
+        )
         knowledge = entry.get("external_knowledge")
         if knowledge and (docs / knowledge).is_file():
             shutil.copyfile(docs / knowledge, out / "external_knowledge" / knowledge)

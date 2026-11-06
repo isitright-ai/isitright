@@ -113,6 +113,8 @@ def bigquery_literal(node: TypeNode, value: Any) -> str:
         return f"CAST({_bq_string(_text(Decimal(str(value))))} AS {typed})"
     if node.kind == "DATE":
         return f"DATE {_bq_string(_text(value))}"
+    if node.kind == "TIME":
+        return f"TIME {_bq_string(_text(value))}"
     if node.kind == "TIMESTAMP":
         return f"DATETIME {_bq_string(_text(value))}"
     if node.kind == "TIMESTAMPTZ":
@@ -146,6 +148,8 @@ def presto_literal(node: TypeNode, value: Any) -> str:
         return f"CAST({_pr_string(_text(Decimal(str(value))))} AS {typed})"
     if node.kind == "DATE":
         return f"DATE {_pr_string(_text(value))}"
+    if node.kind == "TIME":
+        return f"TIME {_pr_string(_text(value))}"
     if node.kind == "TIMESTAMP":
         return f"CAST({_pr_string(_text(value))} AS TIMESTAMP)"
     if node.kind == "TIMESTAMPTZ":

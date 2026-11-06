@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  midyear_population_agespecific:
+    items:
+      properties:
+        population:
+          minimum: 0

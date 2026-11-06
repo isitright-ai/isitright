@@ -14,7 +14,7 @@ import tempfile
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
@@ -63,6 +63,8 @@ def _result(cursor: Any, limit: int, *, dialect: Dialect | None = None) -> Query
             return CanonicalValue(kind=CanonicalValueKind.DECIMAL, value=str(value))
         if isinstance(value, datetime):
             return CanonicalValue(kind=CanonicalValueKind.DATETIME, value=value.isoformat())
+        if isinstance(value, time):
+            return CanonicalValue(kind=CanonicalValueKind.TIME, value=value.isoformat())
         if isinstance(value, date):
             return CanonicalValue(kind=CanonicalValueKind.DATE, value=value.isoformat())
         if isinstance(value, uuid.UUID):

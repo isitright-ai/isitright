@@ -80,8 +80,6 @@ def test_table_references_resolve_by_suffix_and_ambiguity_is_an_error() -> None:
 def test_unsupported_types_and_statements_are_rejected_naming_the_construct() -> None:
     with pytest.raises(SqlInputError, match="GEOGRAPHY"):
         parse_warehouse_schema("CREATE TABLE d.t (g GEOGRAPHY)", BQ)
-    with pytest.raises(SqlInputError, match="TIME"):
-        parse_warehouse_schema("CREATE TABLE d.t (g TIME)", BQ)
     with pytest.raises(SqlInputError, match="BIGNUMERIC"):
         parse_warehouse_schema("CREATE TABLE d.t (g BIGNUMERIC)", BQ)
     with pytest.raises(SqlInputError, match="VIEW"):

@@ -11,7 +11,7 @@ INTEGER_TYPES = frozenset({"INT", "INTEGER", "SMALLINT", "BIGINT", "TINYINT"})
 FLOAT_TYPES = frozenset({"REAL", "DOUBLE"})
 KEY_TYPES = INTEGER_TYPES | {"TEXT", "UUID"}
 SYNTHETIC_TYPES = (
-    KEY_TYPES | FLOAT_TYPES | {"DECIMAL", "BOOLEAN", "DATE", "TIMESTAMP", "TIMESTAMPTZ"}
+    KEY_TYPES | FLOAT_TYPES | {"DECIMAL", "BOOLEAN", "DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ"}
 )
 
 
@@ -40,6 +40,8 @@ def generated_value(column: ColumnSchema, ordinal: int, *, foreign_key: bool = F
         return False
     if kind == "DATE":
         return "2000-01-01"
+    if kind == "TIME":
+        return "00:00:00"
     if kind in {"TIMESTAMP", "TIMESTAMPTZ"}:
         return "2000-01-01 00:00:00" + ("+00" if kind == "TIMESTAMPTZ" else "")
     if kind == "UUID":

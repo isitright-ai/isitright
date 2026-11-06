@@ -35,6 +35,7 @@ _SCALARS: dict[exp.DataType.Type, str] = {
     exp.DataType.Type.TEXT: "TEXT",
     exp.DataType.Type.BOOLEAN: "BOOLEAN",
     exp.DataType.Type.DATE: "DATE",
+    exp.DataType.Type.TIME: "TIME",
     exp.DataType.Type.TIMESTAMP: "TIMESTAMP",
     exp.DataType.Type.TIMESTAMPTZ: "TIMESTAMPTZ",
     exp.DataType.Type.BINARY: "BYTES",
@@ -163,6 +164,7 @@ def bigquery_type(node: TypeNode) -> str:
         "TEXT": "STRING",
         "BOOLEAN": "BOOL",
         "DATE": "DATE",
+        "TIME": "TIME",
         "TIMESTAMP": "DATETIME",
         "TIMESTAMPTZ": "TIMESTAMP",
         "BYTES": "BYTES",
@@ -250,6 +252,8 @@ def leaf_value(node: TypeNode) -> Any:
         return False
     if node.kind == "DATE":
         return "2000-01-01"
+    if node.kind == "TIME":
+        return "00:00:00"
     if node.kind == "TIMESTAMP":
         return "2000-01-01 00:00:00"
     if node.kind == "TIMESTAMPTZ":
