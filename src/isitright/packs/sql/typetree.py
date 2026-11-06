@@ -150,9 +150,9 @@ def bigquery_type(node: TypeNode) -> str:
     if node.kind == "MAP":
         raise SqlInputError("unsupported column type: MAP in BigQuery")
     if node.kind == "DECIMAL":
-        return (
-            f"NUMERIC({node.precision or 38}, {node.scale or 0})" if node.precision else "NUMERIC"
-        )
+        if (node.precision, node.scale) in ((None, None), (38, 9)):
+            return "NUMERIC"
+        return f"NUMERIC({node.precision}, {node.scale or 0})"
     return {
         "TINYINT": "INT64",
         "SMALLINT": "INT64",

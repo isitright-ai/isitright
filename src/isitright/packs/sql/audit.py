@@ -64,6 +64,7 @@ from isitright.packs.sql.engines import get_engine
 from isitright.packs.sql.errors import SqlInputError, StateRejected
 from isitright.packs.sql.hints import hints_from_guidance
 from isitright.packs.sql.hosts import PostgresHost, SqlHost, SqliteHost
+from isitright.packs.sql.inline import RealTableReference, inline_sql
 from isitright.packs.sql.mapping import (
     SqlModel,
     build_model,
@@ -82,6 +83,7 @@ from isitright.packs.sql.models import (
     QueryResult,
     SuiteCase,
 )
+from isitright.packs.sql.native import InlineHost, NativeHostError
 from isitright.packs.sql.nested import NestedEdit, nested_hints
 from isitright.packs.sql.postgres_ddl import (
     Schema,
@@ -213,9 +215,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         validator: CandidateStateValidator | None = None,
         verify_native: bool | None = None,
         params: dict[str, str] | None = None,
+        confirm: InlineHost | None = None,
         _server: tuple[Any, str] | None = None,
     ) -> None:
         self._params = dict(params or {})
+        self._confirm_host = confirm
         self._template: FilledTemplate | None = None
         self.dialect, engine_name = resolve_dialect_and_engine(engine, dialect)
         spec = get_engine(engine_name)
@@ -322,7 +326,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             self.host.__enter__()
         if self.spec.confirm_with == "postgres" and self.dialect.name == "postgres":
             self._start_verifier()
-        elif self.spec.emulated:
+        elif self.spec.emulated and self._confirm_host is None:
             self._verifier_note = (
                 "no native host is configured: confirm warehouse findings with --confirm"
             )
@@ -518,6 +522,50 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     )
             return self._native_cache[key]
 
+        def confirm_native(state: State) -> tuple[str, Any, Any, Any]:
+            """Run both queries natively with the state inlined: ``differ``, ``agree`` or
+            ``unverified``. Called only on the worlds of a finding, never during the search."""
+            host = self._confirm_host
+            if host is None:
+                return "unverified", None, None, self._verifier_note or None
+            key = state.fingerprint()
+            if key not in self._native_cache:
+                data = to_database_state(p.model, state)
+                try:
+                    texts = [
+                        inline_sql(s.expression, self.dialect, p.model.db, data)
+                        for s in (reference_statement, candidate_statement)
+                    ]
+                    left, right = (
+                        host.run_inline(
+                            text,
+                            self.dialect,
+                            timeout_seconds=config.timeout_seconds,
+                            max_rows=config.max_result_rows,
+                        )
+                        for text in texts
+                    )
+                    outcome = compare_results(
+                        left, right, policy=policy, reference_has_order_by=ordered
+                    )
+                    verdict = "agree" if outcome.matches else "differ"
+                    self._native_cache[key] = (verdict, left, right, outcome.difference)
+                except RealTableReference as error:
+                    self._native_cache[key] = ("unverified", None, None, f"refused: {error}")
+                except (
+                    NativeHostError,
+                    QueryExecutionError,
+                    SqlInputError,
+                    ComparisonError,
+                ) as error:
+                    self._native_cache[key] = (
+                        "unverified",
+                        None,
+                        None,
+                        f"native run failed: {type(error).__name__}: {error}",
+                    )
+            return self._native_cache[key]
+
         def confirmed(state: State) -> tuple[bool, QueryResult, QueryResult, str | None]:
             """DuckDB's disagreement, confirmed on PostgreSQL when a verifier is running."""
             differs, left, right, difference = disagrees(state)
@@ -627,7 +675,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 referenced=referenced,
                 config=config,
                 disagrees=confirmed,
-                native=native_status,
+                native=confirm_native if self.dialect.warehouse else native_status,
                 generator="original_state",
                 description="No generated mutation; the original database diverged.",
                 base=None,
@@ -745,13 +793,44 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 referenced=referenced,
                 config=config,
                 disagrees=confirmed,
-                native=native_status,
+                native=confirm_native if self.dialect.warehouse else native_status,
                 generator=found.candidate.world.path[-1].family
                 if len(found.candidate.world.path) == 1
                 else "+".join(m.family for m in found.candidate.world.path),
                 description="; ".join(m.description for m in found.candidate.world.path),
                 base=base_state,
             )
+            verification = finding.fidelity.verification
+            if (
+                self.dialect.warehouse
+                and verification is not None
+                and verification.status == "EMULATION_ARTIFACT"
+            ):
+                self.emulation_artifacts.append(
+                    {
+                        "mutation_path": [m.description for m in found.candidate.world.path],
+                        "emulated_difference": finding.divergence.get("difference"),
+                        "note": "differs on DuckDB, agrees natively with the state inlined: an "
+                        "emulation artifact, not a counterexample",
+                        "native_confirmation": finding.divergence.get("native_confirmation"),
+                        "candidate_state": finding.divergence.get("candidate_state"),
+                        "reproducer_sql": finding.divergence.get("reproducer_sql"),
+                    }
+                )
+                return self._report(
+                    case,
+                    policy,
+                    started,
+                    config,
+                    status=DivergenceStatus.INCONCLUSIVE,
+                    validity=finding.validity,
+                    headline="The divergence seen on DuckDB did not reproduce natively: an "
+                    "emulation artifact",
+                    original=original,
+                    errors=errors,
+                    search_result=result,
+                    checked=list(found.validity.checked_rules),
+                )
             family = finding.mutation_path[-1].family if finding.mutation_path else "baseline"
             return self._report(
                 case,
@@ -863,7 +942,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
     def _fidelity(self, verification: VerificationRecord | None = None) -> FidelityRecord:
         return FidelityRecord(
             found_on=self.host.fidelity.value,
-            verified_on="NATIVE_ISOLATED"
+            verified_on=("NATIVE_INLINE" if self.dialect.warehouse else "NATIVE_ISOLATED")
             if verification is not None and verification.status == "VERIFIED"
             else None,
             engine=f"{self.host.engine} {self.host.version}"
@@ -932,6 +1011,26 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         if self.engine != "duckdb":
             return None
         status, _, _, note = native
+        if self.dialect.warehouse:
+            host = self._confirm_host
+            label = host.engine if host is not None else None
+            if status == "differ":
+                return VerificationRecord(
+                    status="VERIFIED",
+                    engine=label,
+                    note=f"re-executed on {label} with the state inlined; the results differ there",
+                )
+            if status == "agree":
+                return VerificationRecord(
+                    status="EMULATION_ARTIFACT",
+                    engine=label,
+                    note=f"the divergence seen on DuckDB did not reproduce on {label}",
+                )
+            return VerificationRecord(
+                status="NOT_VERIFIED",
+                engine=None,
+                note=str(note or self._verifier_note or "no native host is configured"),
+            )
         verifier = self._verifier
         engine = (
             f"postgres {verifier.version}"
@@ -1018,6 +1117,20 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             for t in data.tables
         }
         before = minimized.atoms_before
+        native_final = native(final_state)
+        confirmation: list[dict[str, Any]] = []
+        if self.dialect.warehouse:
+            confirmation.append(
+                {"world": "minimized", "result": native_final[0], "note": native_final[3]}
+            )
+            same_world = state.fingerprint() == final_state.fingerprint()
+            if native_final[0] == "agree" and not same_world:  # the world found before minimizing
+                second = native(state)
+                confirmation.append(
+                    {"world": "unminimized divergent", "result": second[0], "note": second[3]}
+                )
+                if second[0] == "differ":
+                    native_final = second
         return Finding(
             finding_id=f"{case.case_id or 'case'}:1",
             world_id=generator or "baseline",
@@ -1034,9 +1147,10 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 "original_injected_change": description,
                 "generator": generator,
                 "reproduces": differs,
-                **self._native_results(native(final_state)),
+                **self._native_results(native_final),
+                **({"native_confirmation": confirmation} if confirmation else {}),
             },
-            fidelity=self._fidelity(self._verification(native(final_state))),
+            fidelity=self._fidelity(self._verification(native_final)),
             replay=ReplayRecord(artifact=fixture),
             minimization={
                 "complete": minimized.complete,

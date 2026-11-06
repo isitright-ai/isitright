@@ -25,6 +25,7 @@ from isitright.packs.sql.models import (
     OrderingPolicy,
     SuiteCase,
 )
+from isitright.packs.sql.native import BigQueryHost, ConnectionHost, InlineHost, TrinoHost
 from isitright.packs.sql.replaying import (
     export_eval_cases,
     replay_artifact,
@@ -68,6 +69,7 @@ def check(
     validator: CandidateStateValidator | None = None,
     verify_native: bool | None = None,
     params: dict[str, str] | None = None,
+    confirm: InlineHost | None = None,
     _server: tuple[Any, str] | None = None,
     _progress: Any = None,
 ) -> CaseReport:
@@ -81,6 +83,7 @@ def check(
         validator=validator,
         verify_native=verify_native,
         params=params,
+        confirm=confirm,
         _server=_server,
     ) as audit:
         case = SqlCase(reference_sql, candidate_sql, case_id, question)
@@ -100,6 +103,7 @@ def check_suite(
     validator: CandidateStateValidator | None = None,
     verify_native: bool | None = None,
     params: dict[str, str] | None = None,
+    confirm: InlineHost | None = None,
     _progress: Any = None,
 ) -> AuditReport:
     """Analyze a JSONL suite (or a list of `SuiteCase`), isolating per-case failures."""
@@ -112,6 +116,7 @@ def check_suite(
         validator=validator,
         verify_native=verify_native,
         params=params,
+        confirm=confirm,
     )
     try:
         items = load_suite_cases(Path(cases)) if isinstance(cases, str | PathLike) else list(cases)
@@ -127,19 +132,23 @@ def check_suite(
 
 
 __all__ = [
+    "BigQueryHost",
     "CandidateStateValidator",
     "CandidateStateView",
     "CanonicalValue",
     "CanonicalValueKind",
     "CheckConfig",
     "ColumnComparisonPolicy",
+    "ConnectionHost",
     "EffectiveOrdering",
     "FloatComparisonMode",
+    "InlineHost",
     "InputError",
     "OrderingPolicy",
     "SqlAudit",
     "SqlInputError",
     "SuiteCase",
+    "TrinoHost",
     "ValidationFinding",
     "ValidatorResult",
     "ValidatorStatus",
