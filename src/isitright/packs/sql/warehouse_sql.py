@@ -138,9 +138,13 @@ def to_duckdb(tree: exp.Query, dialect: Dialect, db: DatabaseSchema) -> Translat
         _array_agg_ignore_nulls(work, notes)
         _unnest_offset(work, db, notes)
         _bigquery_subscripts(work, notes)
+        _guard_division(work, notes)
+        _extract_dayofweek(work, notes)
+        _date_trunc(work, dialect, db, notes)
     elif dialect.family == "presto":
         _presto_subscripts(work, db, notes)
         _truncate_integer_division(work, dialect, db, notes)
+        _date_trunc(work, dialect, db, notes)
     _reject_array_agg_limit(work)
     try:
         text = work.sql(dialect="duckdb", unsupported_level=ErrorLevel.RAISE)
@@ -268,30 +272,131 @@ def _bigquery_subscripts(tree: exp.Expression, notes: dict[str, int]) -> None:
         _bump(notes, "safe_subscript" if safe else "checked_subscript")
 
 
-def _array_columns(db: DatabaseSchema) -> set[str]:
+def _guard_division(tree: exp.Expression, notes: dict[str, int]) -> None:
+    """BigQuery raises an error on division by zero (``/``, ``DIV``, ``MOD``); DuckDB gives
+    infinity or NULL. ``SAFE_DIVIDE`` is a different node and keeps its NULL."""
+    for node in list(tree.find_all(exp.Div, exp.IntDiv, exp.Mod)):
+        divisor = node.expression
+        if isinstance(divisor, exp.Literal) and divisor.is_number and float(divisor.name) != 0:
+            continue
+        failure = exp.Anonymous(this="error", expressions=[exp.Literal.string("division by zero")])
+        zero = exp.EQ(this=divisor.copy(), expression=exp.Literal.number(0))
+        node.replace(exp.Case(ifs=[exp.If(this=zero, true=failure)], default=node.copy()))
+        _bump(notes, "checked_division")
+
+
+def _extract_dayofweek(tree: exp.Expression, notes: dict[str, int]) -> None:
+    """BigQuery's DAYOFWEEK is 1 to 7 from Sunday; DuckDB's is 0 to 6 from Sunday."""
+    for node in list(tree.find_all(exp.Extract)):
+        unit = node.this.name.upper() if isinstance(node.this, exp.Expression) else ""
+        if unit == "DAYOFWEEK":
+            shifted = exp.Add(this=node.copy(), expression=exp.Literal.number(1))
+            node.replace(exp.Paren(this=shifted))
+            _bump(notes, "dayofweek_shift")
+        elif unit == "WEEK":
+            raise SqlInputError("unsupported construct: EXTRACT(WEEK ...), a Sunday-based number")
+
+
+def _typed_copy(tree: exp.Expression, db: DatabaseSchema, read: str) -> exp.Expression | None:
+    from sqlglot.optimizer.annotate_types import annotate_types
+    from sqlglot.optimizer.qualify import qualify
+
+    schema = {
+        t.name: {
+            c.name: c.declared_type
+            for c in t.columns
+            if c.type_tree is not None and not c.type_tree.nested
+        }
+        for t in db.tables
+    }
+    try:
+        typed = qualify(
+            tree.copy(), schema=schema, dialect=read, validate_qualify_columns=False, identify=False
+        )
+        return annotate_types(typed, schema=schema, dialect=read)
+    except Exception:
+        return None
+
+
+_TRUNC_PARTS = {"DAY", "WEEK", "MONTH", "QUARTER", "YEAR", "HOUR", "MINUTE", "SECOND"}
+
+
+def _date_trunc(
+    tree: exp.Expression, dialect: Dialect, db: DatabaseSchema, notes: dict[str, int]
+) -> None:
+    """``DATE_TRUNC`` of a date is a DATE in BigQuery and Presto and a TIMESTAMP in DuckDB. A
+    BigQuery WEEK begins on Sunday where DuckDB's (and Presto's) begins on Monday."""
+    nodes = list(tree.find_all(exp.DateTrunc, exp.TimestampTrunc))
+    if not nodes:
+        return
+    typed = _typed_copy(tree, db, dialect.read)
+    seen_nodes = list(typed.find_all(exp.DateTrunc, exp.TimestampTrunc)) if typed else []
+    unknown = "unsupported construct: DATE_TRUNC on an expression of unknown type"
+    if len(seen_nodes) != len(nodes):
+        raise SqlInputError(unknown)
+    for node, seen in zip(nodes, seen_nodes, strict=True):
+        unit = node.args.get("unit")
+        part = unit.name.upper() if isinstance(unit, exp.Expression) else str(unit).upper()
+        if part not in _TRUNC_PARTS:
+            raise SqlInputError(f"unsupported construct: DATE_TRUNC part {part}")
+        argument = seen.this
+        is_date = argument.is_type(exp.DataType.Type.DATE)
+        if not is_date and not argument.is_type(
+            exp.DataType.Type.TIMESTAMP, exp.DataType.Type.TIMESTAMPTZ, exp.DataType.Type.DATETIME
+        ):
+            raise SqlInputError(unknown)
+        day = sqlglot.parse_one("INTERVAL 1 DAY", read="duckdb")
+        sunday_week = part == "WEEK" and dialect.name == "bigquery"
+        subject = node.this.copy()
+        if sunday_week:
+            subject = exp.Add(this=subject, expression=day.copy())
+        replacement: exp.Expression = exp.Anonymous(
+            this="date_trunc", expressions=[exp.Literal.string(part.lower()), subject]
+        )
+        if sunday_week:
+            replacement = exp.Sub(this=replacement, expression=day.copy())
+        if is_date:
+            replacement = exp.Cast(this=replacement, to=exp.DataType.build("DATE"))
+        node.replace(replacement)
+        _bump(notes, "date_trunc")
+
+
+def _columns_of_kind(db: DatabaseSchema, kind: str) -> set[str]:
     return {
         c.name
         for t in db.tables
         for c in t.columns
-        if c.type_tree is not None and c.type_tree.kind == "ARRAY"
+        if c.type_tree is not None and c.type_tree.kind == kind
     }
 
 
 def _presto_subscripts(tree: exp.Expression, db: DatabaseSchema, notes: dict[str, int]) -> None:
-    """Presto's ``arr[n]`` is 1-based and an error out of range (DuckDB: NULL). Only subscripts on
-    a column known to be an array are rewritten; the others are counted as uncertain."""
-    arrays = _array_columns(db)
+    """Presto's ``arr[n]`` is an error out of range and ``m[k]`` an error for a missing key;
+    DuckDB gives NULL for both. ``element_at`` is NULL in Presto too and is left alone. Only
+    subscripts on a column known to be an array or a map are rewritten; others are counted as
+    uncertain. SQLGlot hands subscripts over 0-based, except ``element_at``, which it flags."""
+    arrays, maps = _columns_of_kind(db, "ARRAY"), _columns_of_kind(db, "MAP")
     for bracket in list(tree.find_all(exp.Bracket)):
-        if len(bracket.expressions) != 1:
+        if len(bracket.expressions) != 1 or bracket.args.get("safe"):
             continue
-        target = bracket.this
-        if isinstance(target, exp.Column) and target.name in arrays:
-            one_based = bracket.expressions[0]
-            zero_based = exp.Sub(this=one_based.copy(), expression=exp.Literal.number(1))
-            bracket.replace(_guarded_subscript(target, zero_based, safe=False))
+        target, index = bracket.this, bracket.expressions[0]
+        name = target.name if isinstance(target, exp.Column) else None
+        if name in arrays:
+            bracket.replace(_guarded_subscript(target, index, safe=False))
             _bump(notes, "checked_subscript")
+        elif name in maps:
+            bracket.replace(_checked_map_subscript(target, index))
+            _bump(notes, "checked_map_subscript")
         else:
             _bump(notes, "subscript_uncertain")
+
+
+def _checked_map_subscript(target: exp.Expression, key: exp.Expression) -> exp.Expression:
+    missing = exp.Anonymous(this="error", expressions=[exp.Literal.string("key not present")])
+    present = exp.Anonymous(this="map_contains", expressions=[target.copy(), key.copy()])
+    picked = exp.Bracket(this=target.copy(), expressions=[key.copy()], offset=1)
+    null_map = exp.If(this=exp.Is(this=target.copy(), expression=exp.Null()), true=exp.Null())
+    return exp.Case(ifs=[null_map, exp.If(this=present, true=picked)], default=missing)
 
 
 def _truncate_integer_division(

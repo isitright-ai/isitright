@@ -18,6 +18,9 @@ class ColumnComparisonPolicy(StrEnum):
     POSITIONAL = "positional"
     BY_NAME = "by_name"
     NAMES_AND_POSITIONS = "names_and_positions"
+    CONTAINED = "contained"
+    """Every reference column equals some candidate column, at any position (a benchmark rule).
+    Columns are compared as vectors; extra candidate columns are allowed."""
 
 
 class OrderingPolicy(StrEnum):
@@ -64,6 +67,11 @@ class CheckConfig(ContractModel):
     float_mode: FloatComparisonMode = FloatComparisonMode.ISCLOSE
     float_relative_tolerance: float = Field(default=1e-9, ge=0)
     float_absolute_tolerance: float = Field(default=1e-12, ge=0)
+    column_vectors: bool = False
+    """When the ordering is unordered, compare each column as its own sorted vector, so the
+    correlation between columns of a row is not checked (a benchmark rule)."""
+    null_as_zero: bool = False
+    """Count NULL as the number 0 before comparing (a benchmark rule)."""
 
 
 class SuiteCase(ContractModel):
@@ -74,13 +82,14 @@ class SuiteCase(ContractModel):
     candidate_sql: str = Field(min_length=1)
     question: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
     def collect_extra_metadata(cls, value: Any) -> Any:
         if not isinstance(value, dict):
             return value
-        known = {"case_id", "reference_sql", "candidate_sql", "question", "metadata"}
+        known = {"case_id", "reference_sql", "candidate_sql", "question", "metadata", "params"}
         result = dict(value)
         metadata = dict(result.get("metadata") or {})
         for key in list(result):
@@ -97,6 +106,8 @@ class ComparisonPolicy(ContractModel):
     float_mode: FloatComparisonMode = FloatComparisonMode.ISCLOSE
     float_relative_tolerance: float = Field(default=1e-9, ge=0)
     float_absolute_tolerance: float = Field(default=1e-12, ge=0)
+    column_vectors: bool = False
+    null_as_zero: bool = False
     unordered_rows_are_multiset: Literal[True] = True
 
 

@@ -13,7 +13,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from os import PathLike
 from pathlib import Path
 from types import TracebackType
@@ -105,6 +105,7 @@ from isitright.packs.sql.sqlite_sandbox import (
 from isitright.packs.sql.sqlite_schema import introspect_schema
 from isitright.packs.sql.sqlite_state import snapshot_sqlite
 from isitright.packs.sql.state import DatabaseState
+from isitright.packs.sql.templates import FilledTemplate, fill_templates
 from isitright.packs.sql.validation import (
     CandidateStateValidator,
     ValidatorStatus,
@@ -142,6 +143,8 @@ class SqlCase:
     case_id: str | None = None
     question: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    params: dict[str, str] = field(default_factory=dict)
+    """Values for ``<NAME>`` and ``{{ NAME }}`` placeholders in this case's queries."""
 
 
 class StateView:
@@ -209,8 +212,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         domain_schema: dict[str, Any] | None = None,
         validator: CandidateStateValidator | None = None,
         verify_native: bool | None = None,
+        params: dict[str, str] | None = None,
         _server: tuple[Any, str] | None = None,
     ) -> None:
+        self._params = dict(params or {})
+        self._template: FilledTemplate | None = None
         self.dialect, engine_name = resolve_dialect_and_engine(engine, dialect)
         spec = get_engine(engine_name)
         if (database is None) == (ddl is None):
@@ -373,6 +379,12 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         started = time.monotonic()
         config = config or CheckConfig()
         _check_budgets(config)
+        filled = fill_templates(
+            case.reference_sql, case.candidate_sql, {**self._params, **case.params}
+        )
+        self._template = filled if filled.params else None
+        if self._template is not None:
+            case = replace(case, reference_sql=filled.reference, candidate_sql=filled.candidate)
         p = self.prepared
         self._native_cache = {}
         self.emulation_artifacts = []
@@ -412,6 +424,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             float_mode=config.float_mode,
             float_relative_tolerance=config.float_relative_tolerance,
             float_absolute_tolerance=config.float_absolute_tolerance,
+            column_vectors=config.column_vectors,
+            null_as_zero=config.null_as_zero,
         ).model_copy(
             update={
                 "effective_ordering": resolve_ordering(
@@ -1122,6 +1136,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             extensions={
                 "sql": {
                     "target_dialect": self.dialect.name,
+                    **({"template": self._template.record()} if self._template else {}),
                     "execution_engine": self.engine,
                     "native_verification": self._native_label(findings or []),
                     "emulation_artifacts": self.emulation_artifacts[:20],
@@ -1153,7 +1168,12 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         reports: list[CaseReport] = []
         for item in cases:
             sql_case = SqlCase(
-                item.reference_sql, item.candidate_sql, item.case_id, item.question, item.metadata
+                item.reference_sql,
+                item.candidate_sql,
+                item.case_id,
+                item.question,
+                item.metadata,
+                item.params,
             )
             callback = (
                 (lambda outcome, cid=item.case_id: progress(cid, outcome)) if progress else None

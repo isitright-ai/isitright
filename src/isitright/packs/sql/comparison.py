@@ -38,6 +38,10 @@ def compare_results(
     reference_has_order_by: bool = False,
 ) -> ComparisonOutcome:
     """Compare two query results, retaining type and duplicate semantics."""
+    if policy.null_as_zero:
+        reference, candidate = _zero_nulls(reference), _zero_nulls(candidate)
+    if policy.columns is ColumnComparisonPolicy.CONTAINED or policy.column_vectors:
+        return _compare_vectors(reference, candidate, policy, reference_has_order_by)
     reference_rows, candidate_rows, column_difference = _align_columns(
         reference, candidate, policy.columns
     )
@@ -193,3 +197,94 @@ def _values_equal(
         rel_tol=policy.float_relative_tolerance,
         abs_tol=policy.float_absolute_tolerance,
     )
+
+
+# --- benchmark-style comparison: columns as vectors ----------------------------------------------
+
+_NUMERIC = (CanonicalValueKind.INTEGER, CanonicalValueKind.FLOAT, CanonicalValueKind.DECIMAL)
+
+
+def _zero_nulls(result: QueryResult) -> QueryResult:
+    zero = CanonicalValue(kind=CanonicalValueKind.INTEGER, value=0)
+    rows = [
+        [zero if cell.kind is CanonicalValueKind.NULL else cell for cell in row]
+        for row in result.rows
+    ]
+    return QueryResult(columns=result.columns, rows=rows)
+
+
+def _number(value: CanonicalValue) -> float | None:
+    if value.kind not in _NUMERIC:
+        return None
+    return float(cast(str | int | float, value.value))
+
+
+def _sort_key(value: CanonicalValue) -> tuple[int, float, str]:
+    number = _number(value)
+    if number is not None:
+        return (0, number, "")
+    return (2 if value.kind is CanonicalValueKind.NULL else 1, 0.0, str(value.value))
+
+
+def _columns_of(result: QueryResult) -> list[list[CanonicalValue]]:
+    width = len(result.columns)
+    return [[row[i] for row in result.rows] for i in range(width)]
+
+
+def _vector_values_equal(left: CanonicalValue, right: CanonicalValue, tolerance: float) -> bool:
+    if left.kind is CanonicalValueKind.NULL and right.kind is CanonicalValueKind.NULL:
+        return True
+    a, b = _number(left), _number(right)
+    if a is not None and b is not None:
+        return math.isclose(a, b, rel_tol=0.0, abs_tol=tolerance)
+    return left.kind is right.kind and left.value == right.value
+
+
+def _vectors_match(
+    left: list[CanonicalValue], right: list[CanonicalValue], *, ordered: bool, tolerance: float
+) -> bool:
+    if len(left) != len(right):
+        return False
+    if not ordered:
+        left, right = sorted(left, key=_sort_key), sorted(right, key=_sort_key)
+    return all(_vector_values_equal(a, b, tolerance) for a, b in zip(left, right, strict=True))
+
+
+def _compare_vectors(
+    reference: QueryResult,
+    candidate: QueryResult,
+    policy: ComparisonPolicy,
+    reference_has_order_by: bool,
+) -> ComparisonOutcome:
+    """Each reference column must equal a candidate column (any position if ``contained``, the
+    same position otherwise); an unordered comparison sorts every column on its own."""
+    ordered = resolve_ordering(policy.ordering, reference_has_order_by=reference_has_order_by) is (
+        EffectiveOrdering.ORDERED
+    )
+    wanted, got = _columns_of(reference), _columns_of(candidate)
+    tolerance = policy.float_absolute_tolerance
+    contained = policy.columns is ColumnComparisonPolicy.CONTAINED
+    if not contained and len(wanted) != len(got):
+        return ComparisonOutcome(
+            False,
+            f"column count differs: reference={len(wanted)}, candidate={len(got)}",
+            ordered,
+        )
+    if len(reference.rows) != len(candidate.rows):
+        return ComparisonOutcome(
+            False,
+            f"row count differs: reference={len(reference.rows)}, candidate={len(candidate.rows)}",
+            ordered,
+        )
+    for index, vector in enumerate(wanted):
+        pool = got if contained else [got[index]]
+        if not any(
+            _vectors_match(vector, other, ordered=ordered, tolerance=tolerance) for other in pool
+        ):
+            name = reference.columns[index].name
+            return ComparisonOutcome(
+                False,
+                f"reference column {index} ({name}) has no matching candidate column",
+                ordered,
+            )
+    return ComparisonOutcome(True, None, ordered)

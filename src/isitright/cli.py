@@ -29,6 +29,7 @@ from isitright.packs.sql import (
     replay_report,
 )
 from isitright.packs.sql.constraints_file import ConstraintInputError
+from isitright.packs.sql.dialects import resolve_dialect_and_engine
 from isitright.packs.sql.models import (
     ColumnComparisonPolicy,
     FloatComparisonMode,
@@ -46,6 +47,7 @@ from isitright.packs.sql.slicing import (
     slice_database,
 )
 from isitright.packs.sql.suite import SuiteInputError
+from isitright.packs.sql.templates import parse_params
 
 EXIT_INTERNAL_ERROR = 1
 EXIT_INVALID_INPUT = 2
@@ -61,7 +63,9 @@ app = typer.Typer(
     help="Audit agent evals: find valid changes to the world under which a pass no longer holds.",
     no_args_is_help=True,
 )
-sql_app = typer.Typer(help="Audit text-to-SQL programs (SQLite, PostgreSQL, DuckDB).")
+sql_app = typer.Typer(
+    help="Audit text-to-SQL programs (SQLite, PostgreSQL, BigQuery, Presto, Trino)."
+)
 app.add_typer(sql_app, name="sql")
 agents_app = typer.Typer(help="Audit tool-using agents against perturbed worlds over MCP.")
 app.add_typer(agents_app, name="agents")
@@ -74,6 +78,14 @@ class Engine(StrEnum):
     SQLITE = "sqlite"
     POSTGRES = "postgres"
     DUCKDB = "duckdb"
+
+
+class Dialect(StrEnum):
+    SQLITE = "sqlite"
+    POSTGRES = "postgres"
+    BIGQUERY = "bigquery"
+    PRESTO = "presto"
+    TRINO = "trino"
 
 
 class AgentsFailOn(StrEnum):
@@ -166,6 +178,8 @@ def _config(
     float_mode: FloatComparisonMode,
     float_rtol: float,
     float_atol: float,
+    null_as_zero: bool = False,
+    column_vectors: bool = False,
 ) -> CheckConfig:
     return CheckConfig(
         seed=seed,
@@ -178,7 +192,17 @@ def _config(
         float_mode=float_mode,
         float_relative_tolerance=float_rtol,
         float_absolute_tolerance=float_atol,
+        null_as_zero=null_as_zero,
+        column_vectors=column_vectors,
     )
+
+
+def _resolve(engine: Engine | None, dialect: Dialect | None) -> tuple[Engine, str | None]:
+    """The engine to run on and the dialect name (None keeps the 0.6 meaning of --engine)."""
+    chosen, name = resolve_dialect_and_engine(
+        engine.value if engine else None, dialect.value if dialect else None
+    )
+    return Engine(name), (chosen.name if dialect else None)
 
 
 def _source(engine: Engine, database: Path | None, schema: Path | None) -> dict[str, Any]:
@@ -199,8 +223,23 @@ def check_command(
     reference_sql: Annotated[Path, typer.Option("--reference", exists=True, dir_okay=False)],
     candidate_sql: Annotated[Path, typer.Option("--candidate", exists=True, dir_okay=False)],
     engine: Annotated[
-        Engine, typer.Option(help="sqlite, postgres (native) or duckdb (emulated).")
-    ] = (Engine.SQLITE),
+        Engine | None,
+        typer.Option(help="Where states run: sqlite, postgres (native) or duckdb (emulated)."),
+    ] = None,
+    dialect: Annotated[
+        Dialect | None,
+        typer.Option(help="The SQL the queries are written in; by default it follows --engine."),
+    ] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", help="NAME=VALUE for a <NAME> or {{ NAME }} placeholder."),
+    ] = None,
+    null_as_zero: Annotated[
+        bool, typer.Option(help="Count NULL as 0 when comparing (a benchmark rule).")
+    ] = False,
+    column_vectors: Annotated[
+        bool, typer.Option(help="Compare columns as independent sorted vectors when unordered.")
+    ] = False,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -235,6 +274,7 @@ def check_command(
     """Compare one query pair on perturbed worlds of a database or schema."""
     progress = _CandidateProgress()
     try:
+        engine, dialect_name = _resolve(engine, dialect)
         if engine is not Engine.SQLITE and output_dir.exists():
             raise SqlInputError("output directory already exists; choose a new directory")
         source = _source(engine, database, schema)
@@ -243,6 +283,8 @@ def check_command(
             reference_sql=reference_sql.read_text(encoding="utf-8"),
             candidate_sql=candidate_sql.read_text(encoding="utf-8"),
             engine=engine.value,
+            dialect=dialect_name,
+            params=parse_params(param or []),
             constraints_file=constraints,
             verify_native=None if verify_native else False,
             config=_config(
@@ -256,6 +298,8 @@ def check_command(
                 float_mode,
                 float_rtol,
                 float_atol,
+                null_as_zero,
+                column_vectors,
             ),
             _progress=lambda event: progress.update("Candidate states", event),
             **source,
@@ -317,8 +361,23 @@ def slice_command(
 def suite_command(
     cases: Annotated[Path, typer.Option(exists=True, dir_okay=False, readable=True)],
     engine: Annotated[
-        Engine, typer.Option(help="sqlite, postgres (native) or duckdb (emulated).")
-    ] = (Engine.SQLITE),
+        Engine | None,
+        typer.Option(help="Where states run: sqlite, postgres (native) or duckdb (emulated)."),
+    ] = None,
+    dialect: Annotated[
+        Dialect | None,
+        typer.Option(help="The SQL the queries are written in; by default it follows --engine."),
+    ] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", help="NAME=VALUE for a <NAME> or {{ NAME }} placeholder."),
+    ] = None,
+    null_as_zero: Annotated[
+        bool, typer.Option(help="Count NULL as 0 when comparing (a benchmark rule).")
+    ] = False,
+    column_vectors: Annotated[
+        bool, typer.Option(help="Compare columns as independent sorted vectors when unordered.")
+    ] = False,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -361,6 +420,7 @@ def suite_command(
         raise typer.BadParameter("--verbose and --quiet cannot be used together")
     progress = _CandidateProgress()
     try:
+        engine, dialect_name = _resolve(engine, dialect)
         if engine is not Engine.SQLITE and output_dir.exists():
             raise SqlInputError("output directory already exists; choose a new directory")
         source = _source(engine, database, schema)
@@ -369,6 +429,8 @@ def suite_command(
         result = check_suite(
             cases=cases,
             engine=engine.value,
+            dialect=dialect_name,
+            params=parse_params(param or []),
             constraints_file=constraints,
             verify_native=None if verify_native else False,
             config=_config(
@@ -382,6 +444,8 @@ def suite_command(
                 float_mode,
                 float_rtol,
                 float_atol,
+                null_as_zero,
+                column_vectors,
             ),
             _progress=progress.update if not quiet else None,
             **source,

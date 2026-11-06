@@ -16,6 +16,7 @@ from isitright.core.replay import ReplayArtifact, ReplayResult, replay
 from isitright.core.world import State
 from isitright.packs.sql.analysis import validate_read_only_query
 from isitright.packs.sql.comparison import compare_results
+from isitright.packs.sql.dialects import Dialect, get_dialect
 from isitright.packs.sql.domain_validation import domain_errors
 from isitright.packs.sql.errors import SqlInputError
 from isitright.packs.sql.fixture_replay import _replay_fixture_authorizer
@@ -31,6 +32,11 @@ from isitright.packs.sql.postgres_ddl import (
 from isitright.packs.sql.schema import DatabaseSchema
 from isitright.packs.sql.sqlite_schema import introspect_schema
 from isitright.packs.sql.state import DatabaseState, TableState
+from isitright.packs.sql.warehouse_ddl import parse_warehouse_schema
+from isitright.packs.sql.warehouse_sql import (
+    parse_query as parse_warehouse_query,
+)
+from isitright.packs.sql.warehouse_sql import resolve_tables, to_duckdb
 
 REPLAY_TIMEOUT_SECONDS = 30.0
 REPLAY_MAX_RESULT_ROWS = 10_000
@@ -48,6 +54,7 @@ def artifact_from_report(report: CaseReport) -> ReplayArtifact:
         world={"rows": finding.divergence["candidate_state"]},
         host={
             "engine": sql.get("execution_engine"),
+            "dialect": sql.get("target_dialect"),
             "schema_ddl": sql.get("schema_ddl"),
             "engine_version": report.execution_fidelity.engine,
         },
@@ -110,6 +117,11 @@ def _rerun(
         raise SqlInputError("unsupported report engine or missing schema")
     reference = artifact.inputs["reference_sql"]
     candidate = artifact.inputs["candidate_sql"]
+    rules = get_dialect(
+        host_info.get("dialect") or ("sqlite" if engine == "sqlite" else "postgres")
+    )
+    if rules.warehouse:
+        return _rerun_warehouse(artifact, rules, str(ddl[0]), timeout_seconds, max_result_rows)
     db, pg = _schema(engine, list(ddl))
     constraints = artifact.inputs.get("constraints")
     domain_validated = "DOMAIN_VALIDATED" in artifact.inputs.get("validity_tiers", [])
@@ -189,6 +201,54 @@ def _rerun(
     }
 
 
+def _rerun_warehouse(
+    artifact: ReplayArtifact,
+    rules: Dialect,
+    ddl: str,
+    timeout_seconds: float,
+    max_result_rows: int,
+) -> dict[str, Any]:
+    """Rebuild a BigQuery or Presto counterexample on DuckDB: translate both queries again."""
+    db = parse_warehouse_schema(ddl, rules)
+    model = build_model(db, rules.name)
+    data = _state(model, artifact.world["rows"])
+    translations = []
+    ordered = False
+    for index, key in enumerate(("reference_sql", "candidate_sql")):
+        tree = resolve_tables(parse_warehouse_query(artifact.inputs[key], rules), db)
+        translations.append(to_duckdb(tree, rules, db).sql)
+        if index == 0:
+            ordered = tree.args.get("order") is not None
+    host = DuckdbHost(Schema(db), rules)
+    left, right = host.run_pair(
+        data,
+        translations[0],
+        translations[1],
+        timeout_seconds=timeout_seconds,
+        max_result_rows=max_result_rows,
+    )
+    try:
+        policy = ComparisonPolicy.model_validate(
+            {
+                k: v
+                for k, v in artifact.inputs.get("comparison_policy", {}).items()
+                if k in ComparisonPolicy.model_fields
+            }
+        )
+    except ValueError as error:
+        raise SqlInputError("invalid comparison policy in report") from error
+    disagrees = not compare_results(
+        left, right, policy=policy, reference_has_order_by=ordered
+    ).matches
+    return {
+        "reference_result": left.model_dump(mode="json"),
+        "candidate_result": right.model_dump(mode="json"),
+        "disagrees": disagrees,
+        "engine_version": host.version,
+        "execution_engine": "duckdb",
+    }
+
+
 def replay_artifact(
     artifact: ReplayArtifact,
     *,
@@ -233,6 +293,7 @@ def export_eval_cases(report: CaseReport) -> list[EvalCase]:
             source_finding=finding.finding_id,
             payload={
                 "engine": artifact.host["engine"],
+                "dialect": artifact.host.get("dialect"),
                 "schema_ddl": artifact.host["schema_ddl"],
                 "state_rows": artifact.world["rows"],
                 "question": artifact.inputs.get("question"),
@@ -258,7 +319,11 @@ def rerun_eval_case(case: EvalCase) -> dict[str, Any]:
         pack="sql",
         case_id=case.case_id,
         world={"rows": case.payload["state_rows"]},
-        host={"engine": case.payload["engine"], "schema_ddl": case.payload["schema_ddl"]},
+        host={
+            "engine": case.payload["engine"],
+            "dialect": case.payload.get("dialect"),
+            "schema_ddl": case.payload["schema_ddl"],
+        },
         inputs={
             k: case.payload.get(k)
             for k in (

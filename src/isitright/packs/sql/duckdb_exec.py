@@ -55,6 +55,9 @@ def _execute_duckdb(
     duckdb = importlib.import_module("duckdb")
     catalog = catalog_of(schema.database)
     with duckdb.connect(":memory:", config={"enable_external_access": "false"}) as connection:
+        if warehouse is not None:
+            # BigQuery and Presto read timestamps in UTC; DuckDB would use the machine's zone.
+            connection.execute("SET TimeZone = 'UTC'")
         for table in _ordered_schema_tables(schema.database):
             if warehouse is not None:
                 assert table.engine_ddl is not None

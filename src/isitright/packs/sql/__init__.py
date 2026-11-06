@@ -67,6 +67,7 @@ def check(
     config: CheckConfig | None = None,
     validator: CandidateStateValidator | None = None,
     verify_native: bool | None = None,
+    params: dict[str, str] | None = None,
     _server: tuple[Any, str] | None = None,
     _progress: Any = None,
 ) -> CaseReport:
@@ -79,6 +80,7 @@ def check(
         domain_schema=_constraints(constraints, constraints_file),
         validator=validator,
         verify_native=verify_native,
+        params=params,
         _server=_server,
     ) as audit:
         case = SqlCase(reference_sql, candidate_sql, case_id, question)
@@ -97,6 +99,7 @@ def check_suite(
     config: CheckConfig | None = None,
     validator: CandidateStateValidator | None = None,
     verify_native: bool | None = None,
+    params: dict[str, str] | None = None,
     _progress: Any = None,
 ) -> AuditReport:
     """Analyze a JSONL suite (or a list of `SuiteCase`), isolating per-case failures."""
@@ -108,6 +111,7 @@ def check_suite(
         domain_schema=_constraints(constraints, constraints_file),
         validator=validator,
         verify_native=verify_native,
+        params=params,
     )
     try:
         items = load_suite_cases(Path(cases)) if isinstance(cases, str | PathLike) else list(cases)
