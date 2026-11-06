@@ -124,13 +124,17 @@ def columns_of(ddl: str) -> str:
 
 
 def table_refs(sql: str) -> tuple[list[str], str | None]:
-    """Backticked dotted names in the text (what Spider's queries use), and a parse error if any."""
-    names = [m.group(1) for m in BACKTICKED.finditer(sql) if "." in m.group(1) or "*" in m.group(1)]
+    """Dotted table names a query reads: those in backticks, and the qualified tables the parser
+    finds (Spider's queries also write ``project.dataset.table`` without backticks)."""
+    names = {m.group(1) for m in BACKTICKED.finditer(sql) if "." in m.group(1) or "*" in m.group(1)}
     try:
-        sqlglot.parse_one(sql, read="bigquery")
-        return names, None
+        tree = sqlglot.parse_one(sql, read="bigquery")
     except Exception as error:
-        return names, f"{type(error).__name__}: {str(error)[:120]}"
+        return sorted(names), f"{type(error).__name__}: {str(error)[:120]}"
+    for table in tree.find_all(exp.Table):
+        if table.db:
+            names.add(".".join(part for part in (table.catalog, table.db, table.name) if part))
+    return sorted(names), None
 
 
 def main(spider: Path, schemagate: Path, out: Path) -> None:

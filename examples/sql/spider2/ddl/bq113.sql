@@ -23,6 +23,28 @@ CREATE TABLE `bigquery-public-data.geo_us_boundaries.counties`
 PARTITION BY DATE(_PARTITIONTIME)
 CLUSTER BY state_fips_code, county_name, csa_fips_code, cbsa_fips_code;
 
+CREATE TABLE `bigquery-public-data.geo_us_boundaries.states`
+(
+  geo_id STRING,
+  region_code STRING,
+  division_code STRING,
+  state_fips_code STRING,
+  state_gnis_code STRING,
+  state STRING,
+  state_name STRING,
+  lsad_code STRING,
+  mtfcc_feature_class_code STRING,
+  functional_status STRING,
+  area_land_meters INT64,
+  area_water_meters INT64,
+  int_point_lat FLOAT64,
+  int_point_lon FLOAT64,
+  int_point_geom GEOGRAPHY,
+  state_geom GEOGRAPHY
+)
+PARTITION BY DATE(_PARTITIONTIME)
+CLUSTER BY state, state_name, region_code, division_code;
+
 CREATE TABLE `bigquery-public-data.bls_qcew.shards_2000_q`
 (
   geoid STRING OPTIONS(description="US FIPS County Code"),

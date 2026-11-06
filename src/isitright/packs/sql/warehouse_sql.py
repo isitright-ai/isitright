@@ -53,7 +53,11 @@ def parse_query(sql: str, dialect: Dialect) -> exp.Query:
     except ParseError as error:
         raise SqlInputError(f"SQL could not be parsed: {error}") from error
     if len(statements) != 1:
-        raise SqlInputError("exactly one SQL statement is required")
+        first = type(statements[0]).__name__ if statements else "none"
+        raise SqlInputError(
+            f"unsupported construct: scripting ({len(statements)} statements, the first a "
+            f"{first}); exactly one query is required"
+        )
     tree = statements[0]
     if not isinstance(tree, exp.Query) or isinstance(tree, exp.Values):
         raise SqlInputError("only a single read-only SELECT statement is supported")
