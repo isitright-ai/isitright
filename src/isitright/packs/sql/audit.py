@@ -57,10 +57,12 @@ from isitright.packs.sql.analysis import (
 )
 from isitright.packs.sql.comparison import ComparisonError, compare_results, resolve_ordering
 from isitright.packs.sql.dialect_fidelity import catalog_of, translate_for_duckdb
+from isitright.packs.sql.dialects import resolve_dialect_and_engine
 from isitright.packs.sql.domain_validation import domain_errors
+from isitright.packs.sql.engines import get_engine
 from isitright.packs.sql.errors import SqlInputError, StateRejected
 from isitright.packs.sql.hints import hints_from_guidance
-from isitright.packs.sql.hosts import DuckdbHost, PostgresHost, SqlHost, SqliteHost
+from isitright.packs.sql.hosts import PostgresHost, SqlHost, SqliteHost
 from isitright.packs.sql.mapping import (
     SqlModel,
     build_model,
@@ -183,7 +185,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
     def __init__(
         self,
         *,
-        engine: Engine = "sqlite",
+        engine: str | None = None,
+        dialect: str | None = None,
         database: str | PathLike[str] | None = None,
         ddl: str | None = None,
         domain_schema: dict[str, Any] | None = None,
@@ -191,13 +194,14 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         verify_native: bool | None = None,
         _server: tuple[Any, str] | None = None,
     ) -> None:
-        if engine not in ("sqlite", "postgres", "duckdb"):
-            raise SqlInputError("engine must be sqlite, postgres or duckdb")
+        self.dialect, engine_name = resolve_dialect_and_engine(engine, dialect)
+        spec = get_engine(engine_name)
         if (database is None) == (ddl is None):
             raise SqlInputError("give exactly one of a database file or DDL")
-        if database is not None and engine != "sqlite":
+        if database is not None and not spec.accepts_database_file:
             raise SqlInputError("a database file is only supported for sqlite")
-        self.engine: Engine = engine
+        self.spec = spec
+        self.engine: Engine = engine_name  # type: ignore[assignment]
         self._server = _server
         self.host: SqlHost
         self._executed: tuple[str, str] = ("", "")
@@ -208,7 +212,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         self._native_cache: dict[str, tuple[str, Any, Any, Any]] = {}
         self.emulation_artifacts: list[dict[str, Any]] = []
         _validate_domain_schema(domain_schema)
-        self.prepared = self._prepare(engine, database, ddl, domain_schema, validator)
+        self.prepared = self._prepare(self.engine, database, ddl, domain_schema, validator)
 
     # --- preparation ------------------------------------------------------------------------
 
@@ -280,17 +284,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
 
     def __enter__(self) -> Self:
         p = self.prepared
-        if self.engine == "sqlite":
-            self.host = SqliteHost(p.model.db)
-        elif self.engine == "postgres":
-            assert p.pg is not None
-            postgres = PostgresHost(p.pg, self._server)
-            self._host_context = postgres
-            postgres.__enter__()
-            self.host = postgres
-        else:
-            assert p.pg is not None
-            self.host = DuckdbHost(p.pg)
+        self.host = self.spec.make_host(p.model.db, p.pg, self._server)
+        if isinstance(self.host, AbstractContextManager):
+            self._host_context = self.host
+            self.host.__enter__()
+        if self.spec.confirm_with == "postgres":
             self._start_verifier()
         return self
 
@@ -1042,7 +1040,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             elapsed_seconds=time.monotonic() - started,
             extensions={
                 "sql": {
-                    "target_dialect": "sqlite" if self.engine == "sqlite" else "postgres",
+                    "target_dialect": self.dialect.name,
                     "execution_engine": self.engine,
                     "native_verification": self._native_label(findings or []),
                     "emulation_artifacts": self.emulation_artifacts[:20],

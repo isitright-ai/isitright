@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from isitright.core.evidence import AuditReport, CaseReport
-from isitright.packs.sql.audit import Engine, InputError, SqlAudit, SqlCase
+from isitright.packs.sql.audit import InputError, SqlAudit, SqlCase
 from isitright.packs.sql.constraints_file import ConstraintInputError, load_constraint_schema
 from isitright.packs.sql.errors import SqlInputError
 from isitright.packs.sql.models import (
@@ -56,7 +56,8 @@ def check(
     *,
     reference_sql: str,
     candidate_sql: str,
-    engine: Engine = "sqlite",
+    engine: str | None = None,
+    dialect: str | None = None,
     database: str | PathLike[str] | None = None,
     ddl: str | None = None,
     question: str | None = None,
@@ -72,6 +73,7 @@ def check(
     """Compare two read-only queries on perturbed worlds; the user's data is never modified."""
     with SqlAudit(
         engine=engine,
+        dialect=dialect,
         database=database,
         ddl=ddl,
         domain_schema=_constraints(constraints, constraints_file),
@@ -86,7 +88,8 @@ def check(
 def check_suite(
     *,
     cases: str | PathLike[str] | list[SuiteCase],
-    engine: Engine = "sqlite",
+    engine: str | None = None,
+    dialect: str | None = None,
     database: str | PathLike[str] | None = None,
     ddl: str | None = None,
     constraints: dict[str, Any] | None = None,
@@ -99,6 +102,7 @@ def check_suite(
     """Analyze a JSONL suite (or a list of `SuiteCase`), isolating per-case failures."""
     audit = SqlAudit(
         engine=engine,
+        dialect=dialect,
         database=database,
         ddl=ddl,
         domain_schema=_constraints(constraints, constraints_file),
