@@ -100,11 +100,12 @@ The policy is explicit and goes into every report with its basis.
 
 Two conventions here belong to the data pack, not to the core, and come from InfiAgent-DABench: answers are read as `@name[value]` pairs (a repeated block of pairs, such as one per continent, is a list of groups), and the number of decimals is read from phrases such as "rounded to two decimal places" in the question. A task from another source would use the same comparators with its own answer format.
 
-- **Numbers**: within `abs_tol + rel_tol * |expected|`. When the question asks for N decimal places the tolerance is one unit in the last place, because the two programs may round a boundary value differently; the basis says so. Otherwise it is floating-point noise. This is deliberately loose: a difference smaller than the tolerance is not found.
-- **Text**: equal after trimming and case folding (`text: none` for exact).
-- **Named answers**: names are compared after normalization, values by their kind. A bare value stands for a task with one named answer. A list equals the same items in a comma-separated string.
+- **Numbers**: within `abs_tol + rel_tol * |expected|`. When the question asks for N decimal places the tolerance is one unit in the last place, because the two programs may round a boundary value differently; the basis says so. The relative term (1e-15) is only floating-point representation noise: near 2,000,000 two numbers 0.01 apart differ by about 0.0100000002 in floating point, so without it a rounding that differs by one unit at a tie (2243963.30 against 2243963.31) would count as a disagreement. When the question names no number of decimals the tolerance is floating-point noise only (1e-9, absolute and relative), so an answer that was rounded and a reference that was not disagree. This is deliberately loose where decimals are stated: a difference smaller than the tolerance is not found.
+- **Text**: equal after trimming and case folding (`text: none` for exact). One pair of quotes around a single value (`'Kuwait'`) is ignored.
+- **Named answers**: names are compared after normalization, values by their kind. A bare value stands for a task with one named answer. A list equals the same items in a comma-separated string, with or without brackets and quotes (`['a', 'b']`), and a list of names has no order.
+- **Groups**: when the first answer name comes round again (`@continent_name[...]` `@r[...]` ... repeated per continent) the answer is a list of groups. Groups are matched by the value of their first answer, so their order does not matter. A reference program returns the same shape as a list of dicts.
 - **Frames**: columns, dtype kind, values; the index is ignored unless the policy says `strict`.
-- **An undefined reference answer** (the mean of an empty column) is not compared: the world is inconclusive.
+- **An undefined reference answer** (the mean of an empty column, a division by zero that makes a correlation NaN) is not compared: the world is inconclusive in the frozen audit and is not run on the agent in live mode.
 
 ## Hints
 
@@ -133,7 +134,7 @@ isitright data export out/report.json --output cases
 
 - `check` is the frozen audit. `--attempts` (default 300) bounds the worlds tried per program.
 - `check` also takes `--cache DIR` and `--resume` for audits that may be interrupted (next section).
-- `audit` is the live audit. `--agent module:callable` builds a `DataAgent` (see `isitright.packs.data.adapters`) in a separate process that receives only the variables named by `--pass-env`. `--max-runs`, `--max-money` and `--max-seconds` are budgets; `--max-worlds` is a safety rail; `--stratum-patience` and `--run-patience` are the stopping rules. A world the agent was not run on is listed as `NOT_RUN` with the reason. A money budget needs the agent to report its cost. `--env-file FILE` reads the `--pass-env` variables (for example an API key) from a dotenv-style file: only the named variables are used, a variable already in the environment wins, no value is printed, and the command refuses to start if a named variable is still not set. Keep that file out of version control and out of synced folders.
+- `audit` is the live audit. `--agent module:callable` builds a `DataAgent` (see `isitright.packs.data.adapters`) in a separate process that receives only the variables named by `--pass-env`. `--attempts` sets the attempts of both the frozen check that finds the minimized world and the live world search. `--max-runs`, `--max-money` and `--max-seconds` are budgets; `--max-worlds` is a safety rail; `--stratum-patience` and `--run-patience` are the stopping rules. A world the agent was not run on is listed as `NOT_RUN` with the reason. A money budget needs the agent to report its cost. `--env-file FILE` reads the `--pass-env` variables (for example an API key) from a dotenv-style file: only the named variables are used, a variable already in the environment wins, no value is printed, and the command refuses to start if a named variable is still not set. Keep that file out of version control and out of synced folders.
 - `replay` reruns a finding from its concrete minimized world.
 - `export` writes each finding as an eval case: the dataset as CSV, the question, the gold program and the expected answer.
 
@@ -160,6 +161,20 @@ isitright data check tasks/177 --programs programs.jsonl --output out/177 --trus
 
 `DataAgent.solve(question, directory)` returns the code the agent executed, its answer and its usage. `PandasAIAgent` and `SmolagentsAgent` implement it behind that one method and import their framework only when they run. PandasAI 3 pins `pandas<3` and Python 3.11 or older, so run it in its own environment. Its recorded program starts with a short prelude that defines `execute_sql_query` over DuckDB, so the program replays without PandasAI. A hosted code-execution tool is not supported.
 
+`SmolagentsAgent` details that came from running it against a real model:
+
+- **Failed steps.** An agent often runs a step that raises an error, reads it and recovers in a later step; the agent's executor keeps what the failed step defined before the error. The steps are joined into one program with a failed step wrapped in `try / except Exception: pass`, so the replay carries on the same way. Without that, the replay stops at the first failed step and the recording does not run on the original data.
+- **Imports.** smolagents checks an import part by part, so `"scipy"` alone rejects `scipy.stats` and `"numpy"` alone rejects `numpy.random`. The default list therefore has a `"<name>.*"` entry for `pandas`, `numpy` and `scipy`. The environment that runs the agent needs those libraries installed.
+- **`stop` parameter.** Newer OpenAI models reject the `stop` parameter that `CodeAgent` sends, so the adapter tells smolagents to drop it for the OpenAI model it builds.
+- **Cost.** With `usd_per_million_tokens=(input, output)` the run reports its cost, which `--max-money` needs. `examples/data/dabench/capture.py` takes `--max-money` too and writes its recordings after every run.
+
 ## What a result means
 
 A frozen finding: this program, on this world, in this host, gives an answer the gold program does not. A live finding: the agent itself, run on this world, gave an answer the gold program does not, in the counted number of runs. A statistical claim about a rate needs the sequential test to cross its boundary; below that the report gives counts. `NOT_FOUND_WITHIN_BUDGET` says what was tried, not that the program is correct.
+
+Two cautions for reading a finding:
+
+- **Small minimized worlds.** Minimization keeps the fewest rows that keep the disagreement. For a statistic (a correlation, a standard deviation) that can leave two or three rows, where the reference answer is degenerate (the correlation of two points is always 1) and an agent that answers "undefined" is not obviously wrong. Look at the data before reading such a finding as a defect. The constraint language has no row-count rule yet.
+- **Validity tier.** With no declared rules a finding is `STRUCTURAL` only. A stray non-breaking space in a numeric text column is a world the data could contain, but nothing in the task says so. Declare the rules the data follows (`constraints.yaml`) before treating a finding as strong evidence.
+
+A live finding is also a count over a few runs of a stochastic agent: the same minimized world gave 3 of 3 matching runs in one live audit and 2 of 3 in another.

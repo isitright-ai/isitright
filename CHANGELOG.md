@@ -82,6 +82,15 @@ domain mostly reuses the core; `docs/data.md` describes what it adds.
 - A recorded program whose final answer is a literal the agent typed (every `final_answer(...)` call
   has only constant arguments) is `UNSUPPORTED` for frozen replay: it would print the same answer on
   every world. Found with the first real agent's programs.
+- Found by running a real agent (smolagents `CodeAgent` with an OpenAI model) through capture, frozen
+  audit and live audit: steps that raised an error are wrapped in `try / except` when an agent's steps
+  are joined, so the replay does what the agent did; the default imports include `pandas.*`,
+  `numpy.*` and `scipy.*` (smolagents rejects submodules otherwise); the `stop` parameter is dropped
+  for OpenAI models; repeated blocks of `@name[value]` answers compare as groups without order; quote
+  characters around a name or list item are ignored; the numeric policy for a stated number of
+  decimals allows floating-point noise on top of one unit in the last place; a live world whose
+  reference answer is NaN is not judged; the frozen step of `data audit` uses `--attempts`; the
+  Windows memory limit is applied by the runner itself.
 
 ### Changed (breaking)
 
