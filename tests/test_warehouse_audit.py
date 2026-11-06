@@ -176,3 +176,15 @@ def test_a_pseudo_column_is_matched_without_regard_to_case_when_the_query_define
             dialect="bigquery",
             ddl="CREATE TABLE d.t (s STRING)",
         )
+
+
+def test_a_cte_is_found_whatever_the_case_of_its_name() -> None:
+    query = "WITH Recent AS (SELECT id FROM d.t) SELECT id FROM recent"
+    report = check(
+        reference_sql=query,
+        candidate_sql=query,
+        dialect="bigquery",
+        ddl="CREATE TABLE d.t (id INT64)",
+        config=CheckConfig(max_attempts=10),
+    )
+    assert report.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET

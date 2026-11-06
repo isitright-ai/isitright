@@ -75,6 +75,12 @@ def resolve_tables(tree: exp.Query, db: DatabaseSchema) -> exp.Query:
     query could use (the last part of the name it was written with)."""
     resolver = TableResolver(db)
     out = tree.copy()
+    # CTE names are case-insensitive in BigQuery, but SQLGlot's scopes compare them exactly
+    spelled = {c.alias.lower(): c.alias for c in out.find_all(exp.CTE)}
+    for reference in out.find_all(exp.Table):
+        exact = spelled.get(reference.name.lower())
+        if exact and not reference.db and not reference.catalog and reference.name != exact:
+            reference.set("this", exp.to_identifier(exact))
     tables: list[exp.Table] = []
     for scope in traverse_scope(out):
         for source in scope.sources.values():
