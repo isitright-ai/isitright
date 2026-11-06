@@ -63,6 +63,35 @@ def test_the_live_agent_is_run_on_screened_worlds_and_its_own_runs_are_the_evide
     assert case.inputs["baseline_runs"]["met"] == 2  # right on the original data
 
 
+def test_a_world_where_the_reference_answer_is_undefined_is_not_judged(
+    audit: DataAudit, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reference that is NaN (a division by zero, the mean of nothing) has nothing to compare an
+    agent's answer with: the world must not be run on the agent, as in the frozen audit."""
+    from isitright.core.oracles import Role
+    from isitright.packs.data.hints import Hints
+    from isitright.packs.data.host import RunResult
+    from isitright.packs.data.live import generate_worlds
+
+    real = audit.run_pair
+
+    def undefined_reference(code: str, state: object):
+        pair = real(code, state)  # type: ignore[arg-type]
+        nan = RunResult("ok", result={"north_mean": {"__float__": "nan"}}, result_name="result")
+        return type(pair)(nan, pair.program)
+
+    monkeypatch.setattr(audit, "run_pair", undefined_reference)
+    worlds, _ = generate_worlds(
+        audit, program(CORRECT, "p"), Hints([]), LiveConfig(attempts=12, seed=1)
+    )
+    assert worlds and all(w.role is Role.UNJUDGEABLE for w in worlds)
+    monkeypatch.setattr(audit, "run_pair", real)
+    normal, _ = generate_worlds(
+        audit, program(CORRECT, "p"), Hints([]), LiveConfig(attempts=12, seed=1)
+    )
+    assert any(w.role is not Role.UNJUDGEABLE for w in normal)  # the check is not blanket
+
+
 def test_screening_orders_wrong_if_unchanged_first_and_unrun_worlds_are_reported(
     audit: DataAudit,
 ) -> None:

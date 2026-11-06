@@ -56,6 +56,7 @@ from isitright.core.subjects import Cost, SubjectKind
 from isitright.core.world import State, diff_states
 from isitright.packs.data.adapters import AgentRun, DataAgent
 from isitright.packs.data.audit import DataAudit, _path, validity_record
+from isitright.packs.data.comparison import undefined_answer
 from isitright.packs.data.hints import harvest_program_hints
 from isitright.packs.data.mapping import write_state
 from isitright.packs.data.programs import RecordedProgram
@@ -137,7 +138,9 @@ def generate_worlds(
             verdict, reason, detail = audit.judge(pair)
             screened = screening_class(verdict, reason)
             answer = detail.get("gold_answer")
-        judged = pair is None or pair.gold.status == "ok"
+        # A reference answer that is NaN or infinite (a mean of nothing, a division by zero) gives
+        # nothing to compare with, as in the frozen audit: the world is not judged, never scored.
+        judged = (pair is None or pair.gold.status == "ok") and not undefined_answer(answer)
         found.append(
             LiveWorld(
                 unique,
