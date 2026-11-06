@@ -78,3 +78,17 @@ mutation families, search, budgets, stochastic evaluation, minimization, replay 
 schema. A **pack** maps its worlds into the core's entity model, supplies hosts that declare their
 fidelity, and provides a comparator or oracle. You can add mutators, constraints, hints, oracles and
 hosts without writing a pack; see [Write a mutator or host](../guides/extending.md).
+
+isitright works at three levels:
+
+1. **Core** (`isitright.core`): domain-independent, as above.
+2. **Packs** (`isitright.packs.*`): one per kind of thing under test, not per engine or per agent.
+   `sql` audits SQL queries, and SQLite, PostgreSQL and DuckDB are hosts inside it. `mcp` audits
+   tool-calling agents. `data` audits agents that write and run Python over data files
+   ([Data analysis agents](../data.md)). Code that belongs to one framework, such as the smolagents
+   and PandasAI adapters of the data pack, lives inside the pack as an adapter.
+3. **Tasks and benchmarks** (`examples/`, or your own files): the questions, reference programs,
+   constraints and recorded programs an audit runs on. They are not part of the installed library.
+   Where a benchmark has a convention the pack must read, the pack carries it: the data pack reads
+   the `@name[value]` answer format of InfiAgent-DABench and the number of decimals a question asks
+   for, and says so in [its comparison rules](../data.md#comparison).

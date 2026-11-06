@@ -98,6 +98,8 @@ Unsupported tables, with the reason in the report: more than 5000 rows, duplicat
 
 The policy is explicit and goes into every report with its basis.
 
+Two conventions here belong to the data pack, not to the core, and come from InfiAgent-DABench: answers are read as `@name[value]` pairs (a repeated block of pairs, such as one per continent, is a list of groups), and the number of decimals is read from phrases such as "rounded to two decimal places" in the question. A task from another source would use the same comparators with its own answer format.
+
 - **Numbers**: within `abs_tol + rel_tol * |expected|`. When the question asks for N decimal places the tolerance is one unit in the last place, because the two programs may round a boundary value differently; the basis says so. Otherwise it is floating-point noise. This is deliberately loose: a difference smaller than the tolerance is not found.
 - **Text**: equal after trimming and case folding (`text: none` for exact).
 - **Named answers**: names are compared after normalization, values by their kind. A bare value stands for a task with one named answer. A list equals the same items in a comma-separated string.
