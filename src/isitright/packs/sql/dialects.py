@@ -20,6 +20,10 @@ class Dialect:
     engines: tuple[str, ...]
     """Engines that can run generated states for this dialect; the first is the default."""
     warehouse: bool = False
+    null_arrays: bool = True
+    """A stored array column may be NULL (BigQuery stores a NULL array as an empty one)."""
+    null_elements: bool = True
+    """A stored array may hold NULL elements (BigQuery stored arrays cannot)."""
     """Tables are usually qualified and rarely keyed; schema import is warehouse DDL."""
 
     @property
@@ -32,7 +36,15 @@ DIALECTS: dict[str, Dialect] = {
     for d in (
         Dialect("sqlite", "sqlite", "sqlite", ("sqlite",)),
         Dialect("postgres", "postgres", "postgres", ("postgres", "duckdb")),
-        Dialect("bigquery", "bigquery", "bigquery", ("duckdb",), warehouse=True),
+        Dialect(
+            "bigquery",
+            "bigquery",
+            "bigquery",
+            ("duckdb",),
+            warehouse=True,
+            null_arrays=False,
+            null_elements=False,
+        ),
         Dialect("presto", "presto", "presto", ("duckdb",), warehouse=True),
         Dialect("trino", "trino", "presto", ("duckdb",), warehouse=True),
     )

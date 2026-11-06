@@ -7,7 +7,7 @@ from decimal import Decimal
 from isitright.packs.sql.schema import ColumnSchema
 from isitright.packs.sql.state import SqlValue
 
-INTEGER_TYPES = frozenset({"INT", "INTEGER", "SMALLINT", "BIGINT"})
+INTEGER_TYPES = frozenset({"INT", "INTEGER", "SMALLINT", "BIGINT", "TINYINT"})
 FLOAT_TYPES = frozenset({"REAL", "DOUBLE"})
 KEY_TYPES = INTEGER_TYPES | {"TEXT", "UUID"}
 SYNTHETIC_TYPES = (

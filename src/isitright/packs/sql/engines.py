@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from isitright.core.hosts import Fidelity
+from isitright.packs.sql.dialects import Dialect
 from isitright.packs.sql.errors import SqlInputError
 from isitright.packs.sql.hosts import DuckdbHost, PostgresHost, SqlHost, SqliteHost
 from isitright.packs.sql.postgres_ddl import Schema
@@ -25,25 +26,31 @@ class EngineSpec:
     accepts_database_file: bool
     confirm_with: str | None
     """The native host that re-executes this engine's findings, if it is an emulation."""
-    make_host: Callable[[DatabaseSchema, Schema | None, tuple[Any, str] | None], SqlHost]
+    make_host: Callable[[DatabaseSchema, Schema | None, Dialect, tuple[Any, str] | None], SqlHost]
 
     @property
     def emulated(self) -> bool:
         return self.fidelity is Fidelity.EMULATED
 
 
-def _sqlite(db: DatabaseSchema, pg: Schema | None, server: tuple[Any, str] | None) -> SqlHost:
+def _sqlite(
+    db: DatabaseSchema, pg: Schema | None, dialect: Dialect, server: tuple[Any, str] | None
+) -> SqlHost:
     return SqliteHost(db)
 
 
-def _postgres(db: DatabaseSchema, pg: Schema | None, server: tuple[Any, str] | None) -> SqlHost:
+def _postgres(
+    db: DatabaseSchema, pg: Schema | None, dialect: Dialect, server: tuple[Any, str] | None
+) -> SqlHost:
     assert pg is not None
     return PostgresHost(pg, server)
 
 
-def _duckdb(db: DatabaseSchema, pg: Schema | None, server: tuple[Any, str] | None) -> SqlHost:
+def _duckdb(
+    db: DatabaseSchema, pg: Schema | None, dialect: Dialect, server: tuple[Any, str] | None
+) -> SqlHost:
     assert pg is not None
-    return DuckdbHost(pg)
+    return DuckdbHost(pg, dialect if dialect.warehouse else None)
 
 
 ENGINES: dict[str, EngineSpec] = {

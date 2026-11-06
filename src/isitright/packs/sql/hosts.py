@@ -13,6 +13,7 @@ from types import TracebackType
 from typing import Any, Self
 
 from isitright.core.hosts import Fidelity
+from isitright.packs.sql.dialects import Dialect
 from isitright.packs.sql.duckdb_exec import _execute_duckdb
 from isitright.packs.sql.errors import StateRejected
 from isitright.packs.sql.models import QueryResult
@@ -205,11 +206,15 @@ class PostgresHost(SqlHost, AbstractContextManager["PostgresHost"]):
 
 
 class DuckdbHost(SqlHost):
+    """DuckDB. For PostgreSQL it translates the query text it is given; for a warehouse dialect
+    it is given DuckDB text already (translated from the dialect, step by step, by the audit)."""
+
     fidelity = Fidelity.EMULATED
     engine = "duckdb"
 
-    def __init__(self, schema: Schema) -> None:
+    def __init__(self, schema: Schema, warehouse: Dialect | None = None) -> None:
         self.schema = schema
+        self.warehouse = warehouse
 
     def run_pair(
         self,
@@ -221,7 +226,13 @@ class DuckdbHost(SqlHost):
         max_result_rows: int,
     ) -> tuple[QueryResult, QueryResult]:
         left, right, version = _execute_duckdb(
-            self.schema, state, reference_sql, candidate_sql, timeout_seconds, max_result_rows
+            self.schema,
+            state,
+            reference_sql,
+            candidate_sql,
+            timeout_seconds,
+            max_result_rows,
+            self.warehouse,
         )
         self.version = version
         return left, right

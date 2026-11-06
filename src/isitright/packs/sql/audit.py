@@ -41,6 +41,7 @@ from isitright.core.evidence import (
     totals_of,
 )
 from isitright.core.families import default_mutators
+from isitright.core.hints import Hints
 from isitright.core.minimize import minimize_world
 from isitright.core.mutations import Candidate, World
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
@@ -81,13 +82,18 @@ from isitright.packs.sql.models import (
     QueryResult,
     SuiteCase,
 )
+from isitright.packs.sql.nested import NestedEdit, nested_hints
 from isitright.packs.sql.postgres_ddl import (
     Schema,
     _validate_domain_schema,
     parse_postgres_database_schema,
     parse_query,
 )
-from isitright.packs.sql.reproducer import postgres_reproducer, sqlite_reproducer
+from isitright.packs.sql.reproducer import (
+    postgres_reproducer,
+    sqlite_reproducer,
+    warehouse_reproducer,
+)
 from isitright.packs.sql.sqlite_sandbox import (
     DatabaseInputError,
     QueryExecutionError,
@@ -103,6 +109,17 @@ from isitright.packs.sql.validation import (
     CandidateStateValidator,
     ValidatorStatus,
 )
+from isitright.packs.sql.warehouse_ddl import parse_warehouse_schema
+from isitright.packs.sql.warehouse_sql import (
+    Translation,
+    nested_references,
+    resolve_tables,
+    to_duckdb,
+)
+from isitright.packs.sql.warehouse_sql import (
+    parse_query as parse_warehouse_query,
+)
+from isitright.packs.sql.warehouse_state import warehouse_base_state
 
 Engine = Literal["sqlite", "postgres", "duckdb"]
 Progress = Callable[[str], None]
@@ -209,6 +226,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         self._verify_requested = verify_native
         self._verifier: PostgresHost | None = None
         self._verifier_note = ""
+        self._translation_notes_data: dict[str, int] = {}
+        self._warehouse_translations: dict[str, Translation] = {}
         self._native_cache: dict[str, tuple[str, Any, Any, Any]] = {}
         self.emulation_artifacts: list[dict[str, Any]] = []
         _validate_domain_schema(domain_schema)
@@ -252,12 +271,15 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             source = {"ddl": ddl}
         else:
             assert ddl is not None
-            db = parse_postgres_database_schema(ddl)
+            db = (
+                parse_warehouse_schema(ddl, self.dialect)
+                if self.dialect.warehouse
+                else parse_postgres_database_schema(ddl)
+            )
             pg = Schema(db)
             data = DatabaseState(())
             source = {"ddl": ddl}
-        dialect: Literal["sqlite", "postgres"] = "sqlite" if engine == "sqlite" else "postgres"
-        model = build_model(db, dialect)
+        model = build_model(db, self.dialect.name)
         constraints: list[Constraint] = [*model.constraints, *import_sql_checks(model)]
         python_rules: list[PythonConstraint] = []
         if domain_schema is not None:
@@ -269,7 +291,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             id="sql", schema=model.schema, constraints=constraints, python_constraints=python_rules
         )
         base_data: DatabaseState | None = data
-        if not any(t.rows for t in data.tables):
+        if self.dialect.warehouse:
+            base_data = warehouse_base_state(
+                model, constraints, set(), null_arrays=self.dialect.null_arrays
+            )
+        elif not any(t.rows for t in data.tables):
             base_data = generate_base_state(model, constraints)
             if base_data is None and engine == "sqlite":
                 base_data = fallback_base_state(model, constraints)
@@ -284,12 +310,16 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
 
     def __enter__(self) -> Self:
         p = self.prepared
-        self.host = self.spec.make_host(p.model.db, p.pg, self._server)
+        self.host = self.spec.make_host(p.model.db, p.pg, self.dialect, self._server)
         if isinstance(self.host, AbstractContextManager):
             self._host_context = self.host
             self.host.__enter__()
-        if self.spec.confirm_with == "postgres":
+        if self.spec.confirm_with == "postgres" and self.dialect.name == "postgres":
             self._start_verifier()
+        elif self.spec.emulated:
+            self._verifier_note = (
+                "no native host is configured: confirm warehouse findings with --confirm"
+            )
         return self
 
     def _start_verifier(self) -> None:
@@ -356,13 +386,25 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 raise SqlInputError(str(error)) from error
             return self._unsupported(case, str(error), started)
         reference_statement, candidate_statement = statements
-        self._executed = (
-            (
-                reference_statement.expression.sql(dialect="duckdb"),
-                candidate_statement.expression.sql(dialect="duckdb"),
+        if self.dialect.warehouse:
+            t_ref = self._warehouse_translations[case.reference_sql]
+            t_cand = self._warehouse_translations[case.candidate_sql]
+            self._executed = (t_ref.sql, t_cand.sql)
+            self._translation_notes_data = {
+                k: t_ref.notes.get(k, 0) + t_cand.notes.get(k, 0)
+                for k in {*t_ref.notes, *t_cand.notes}
+            }
+        else:
+            self._executed = (
+                (
+                    reference_statement.expression.sql(dialect="duckdb"),
+                    candidate_statement.expression.sql(dialect="duckdb"),
+                )
+                if self.engine == "duckdb"
+                else (case.reference_sql, case.candidate_sql)
             )
-            if self.engine == "duckdb"
-            else (case.reference_sql, case.candidate_sql)
+        host_texts = (
+            self._executed if self.dialect.warehouse else (case.reference_sql, case.candidate_sql)
         )
         policy = ComparisonPolicy(
             columns=config.column_policy,
@@ -380,6 +422,33 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         )
         guidance = harvest_query_guidance(reference_statement, candidate_statement)
         hints = hints_from_guidance(p.model, guidance)
+        base_state = p.base
+        mutators = default_mutators(insert_variants=True) if guidance.tables else []
+        if self.dialect.warehouse:
+            nested_refs = nested_references(
+                reference_statement.expression, p.model.db
+            ) | nested_references(candidate_statement.expression, p.model.db)
+            shapes = {(t, c): p.model.schema.collection(t).field(c).shape for t, c in nested_refs}
+            hints = Hints(
+                [*hints, *nested_hints(nested_refs, {k: v for k, v in shapes.items() if v})]
+            )
+            base_state = to_state(
+                p.model,
+                warehouse_base_state(
+                    p.model,
+                    list(p.spec.constraints),
+                    nested_refs,
+                    null_arrays=self.dialect.null_arrays,
+                ),
+            )
+            trees = {
+                (t.name, c.name): c.type_tree
+                for t in p.model.db.tables
+                for c in t.columns
+                if c.type_tree is not None and c.type_tree.nested
+            }
+            if trees:
+                mutators = [*mutators, NestedEdit(trees, self.dialect)]
         hints.validate(p.model.schema)
         referenced = [t for t in (x.name for x in p.model.db.tables) if t in guidance.tables]
         if p.domain_schema is not None:
@@ -395,8 +464,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         def run(state: State) -> tuple[QueryResult, QueryResult]:
             return self.host.run_pair(
                 to_database_state(p.model, state),
-                case.reference_sql,
-                case.candidate_sql,
+                host_texts[0],
+                host_texts[1],
                 timeout_seconds=config.timeout_seconds,
                 max_result_rows=config.max_result_rows,
             )
@@ -445,7 +514,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 return False, left, right, difference
             return differs, left, right, difference
 
-        base_world = World(p.base)
+        base_world = World(base_state)
         original: dict[str, Any] = {"outputs_match": None, "note": "skipped: schema-only run"}
         original_validity = p.spec.validate(p.original)
         original_diff: tuple[QueryResult, QueryResult, str | None] | None = None
@@ -619,7 +688,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     p.spec,
                     base_world,
                     hints,
-                    default_mutators(insert_variants=True) if guidance.tables else [],
+                    mutators,
                     evaluate,
                     budget=budget,
                     seed=config.seed,
@@ -641,7 +710,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 search_result=None,
             )
         result.errors.extend(search_errors[:10])
-        base_validity = p.spec.validate(p.base)
+        base_validity = p.spec.validate(base_state)
         if not p.seeded and base_validity.status is not ValidityStatus.VALID:
             # Mutations start from a generated state the rules reject; count it, say so.
             result.reject("domain_constraint")
@@ -667,7 +736,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 if len(found.candidate.world.path) == 1
                 else "+".join(m.family for m in found.candidate.world.path),
                 description="; ".join(m.description for m in found.candidate.world.path),
-                base=p.base,
+                base=base_state,
             )
             family = finding.mutation_path[-1].family if finding.mutation_path else "baseline"
             return self._report(
@@ -752,6 +821,13 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         if self.engine == "sqlite":
             return validate_read_only_query(sql)
         assert self.prepared.pg is not None
+        if self.dialect.warehouse:
+            db = self.prepared.model.db
+            resolved = resolve_tables(parse_warehouse_query(sql, self.dialect), db)
+            self._warehouse_translations[sql] = to_duckdb(resolved, self.dialect, db)
+            return SqlStatement(
+                expression=resolved, top_level_ordered=resolved.args.get("order") is not None
+            )
         tree = parse_query(sql, self.prepared.pg, allow_qualified=True)
         return SqlStatement(expression=tree, top_level_ordered=tree.args.get("order") is not None)
 
@@ -786,6 +862,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         """For the emulating engine: integer divisions made to truncate, and ones left uncertain."""
         if self.engine != "duckdb":
             return {}
+        if self.dialect.warehouse:
+            return {"rewrites": dict(self._translation_notes_data)}
         catalog = catalog_of(self.prepared.model.db)
         translated = uncertain = 0
         for sql in (case.reference_sql, case.candidate_sql):
@@ -899,6 +977,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         if self.engine == "sqlite":
             reproducer = sqlite_reproducer(p.model.db, data)
             fixture = "counterexample.sql"
+        elif self.dialect.warehouse:
+            reproducer = warehouse_reproducer(p.model.db, data, *self._executed)
+            fixture = "counterexample.duckdb.sql"
         else:
             assert p.pg is not None
             reproducer = postgres_reproducer(
