@@ -12,6 +12,7 @@ and the host's memory limit; the audit process never executes what a model wrote
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import shutil
@@ -46,6 +47,35 @@ def load_env_file(path: Path, names: list[str]) -> None:
                 value = value[1:-1]
             if value:
                 os.environ[key] = value
+
+
+def join_steps(steps: list[tuple[str, bool]]) -> str:
+    """One replayable program from an agent's steps, each given as (code, raised an error).
+
+    An agent often runs a step that raises (a wrong column name, a missing import), sees the error
+    and carries on. Its executor keeps what the step defined before the error, so a later step can
+    rely on it. Joining the steps as they are would stop the replay at the first failed one, so a
+    failed step is wrapped in ``try / except Exception: pass``: the same things happen, and the
+    program still runs to the final answer. A failed step that does not parse never ran and is left
+    out. Steps that succeeded are kept as they were written.
+    """
+    blocks = []
+    for code, failed in steps:
+        if not failed:
+            blocks.append(code)
+            continue
+        try:
+            body = ast.parse(code).body
+        except SyntaxError:
+            continue
+        if not body:
+            continue
+        handler = ast.ExceptHandler(
+            type=ast.Name(id="Exception", ctx=ast.Load()), name=None, body=[ast.Pass()]
+        )
+        guarded = ast.Try(body=body, handlers=[handler], orelse=[], finalbody=[])
+        blocks.append(ast.unparse(ast.fix_missing_locations(ast.Module([guarded], []))))
+    return "\n\n".join(blocks)
 
 
 def unset_names(names: list[str]) -> list[str]:
@@ -147,10 +177,12 @@ class SmolagentsAgent:
             f"{question}\n\nThe data files are in the current working directory: {files}. "
             "Read them with pandas. Give the final answer with final_answer(...)."
         )
-        code = "\n\n".join(
-            step.code_action
-            for step in agent.memory.steps
-            if isinstance(step, ActionStep) and step.code_action
+        code = join_steps(
+            [
+                (step.code_action, getattr(step, "error", None) is not None)
+                for step in agent.memory.steps
+                if isinstance(step, ActionStep) and step.code_action
+            ]
         )
         monitor = getattr(agent, "monitor", None)
         tokens_in = int(getattr(monitor, "total_input_token_count", 0) or 0)

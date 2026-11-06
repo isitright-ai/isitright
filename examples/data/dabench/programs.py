@@ -99,7 +99,7 @@ correct(
     """
 import pandas as pd
 x = pd.read_csv("0020200722.csv")["EVENTMSGTYPE"]
-print(f"@mean_eventmsgtype[{x.mean():.2f}]")
+print(f"@mean_eventmsgtype[{x.mean()}]")
 """,
 )
 correct(
@@ -147,7 +147,7 @@ correct(
     """
 import pandas as pd
 x = pd.to_numeric(pd.read_csv("Current_Logan.csv")["JAMES LOGAN"], errors="coerce").dropna()
-print(f"@mean_wins[{x.mean():.1f}]")
+print(f"@mean_wins[{x.mean()}]")
 """,
 )
 correct(
@@ -205,7 +205,7 @@ correct(
 import pandas as pd
 df = pd.read_csv("cost_data_with_errors.csv")
 row = df.loc[df["max_storm_cat"].idxmax()]
-print(f"@max_wind_speed[{row['max_sust_wind']:.2f}]")
+print(f"@max_wind_speed[{row['max_sust_wind']}]")
 """,
 )
 correct(
@@ -362,7 +362,7 @@ out = []
 for name, col in (("age", "Age"), ("fare", "Fare")):
     x = df[col].dropna()
     inside = ((x >= x.mean() - x.std()) & (x <= x.mean() + x.std())).sum()
-    out.append(f"@{name}_skewness[{skew(x):.2f}] @{name}_kurtosis[{kurtosis(x):.2f}] @{name}_values_within_one_stdev[{inside}]")
+    out.append(f"@{name}_skewness[{skew(x)}] @{name}_kurtosis[{kurtosis(x)}] @{name}_values_within_one_stdev[{inside}]")
 print(" ".join(out))
 """,
 )
@@ -467,7 +467,7 @@ MISTAKES: list[tuple[int, str, str, str]] = [
     (59, "M1_dropna_forgotten", '.dropna(subset=["cases"])', '.fillna({"cases": 0})'),
     (243, "M2_truncated", "{x.mean():.3f}", "{int(x.mean() * 1000) / 1000:.3f}"),
     (255, "M2_truncated", "{x.mean():.2f}", "{int(x.mean()):.2f}"),
-    (320, "M2_truncated", "{x.mean():.2f}", "{int(x.mean()):.2f}"),
+    (320, "M2_truncated", "{x.mean()}", "{int(x.mean())}"),
     (490, "M2_truncated", "{x.mean():.2f}", "{int(x.mean()):.2f}"),
     (578, "M2_truncated", "{x.mean():.2f}", "{int(x.mean()):.2f}"),
     (108, "M2_truncated", "{t.std():.2f}", "{int(t.std()):.2f}"),
@@ -480,7 +480,7 @@ MISTAKES: list[tuple[int, str, str, str]] = [
     (578, "M3_median_for_mean", "{x.mean():.2f}", "{x.median():.2f}"),
     (421, "M3_median_for_mean", "{v.mean():.2f}", "{v.median():.2f}"),
     (108, "M3_median_for_mean", "{t.mean():.2f}", "{t.median():.2f}"),
-    (320, "M3_median_for_mean", "{x.mean():.2f}", "{x.median():.2f}"),
+    (320, "M3_median_for_mean", "{x.mean()}", "{x.median()}"),
     (
         426,
         "M4_unstable_head",

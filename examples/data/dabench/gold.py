@@ -113,7 +113,7 @@ gold(
     """
 import pandas as pd
 df = pd.read_csv("0020200722.csv")
-result = {"mean_eventmsgtype": round(float(df["EVENTMSGTYPE"].mean()), 2)}
+result = {"mean_eventmsgtype": float(df["EVENTMSGTYPE"].mean())}
 """,
 )
 
@@ -176,7 +176,7 @@ gold(
 import pandas as pd
 df = pd.read_csv("Current_Logan.csv")
 wins = pd.to_numeric(df["JAMES LOGAN"], errors="coerce").dropna()
-result = {"mean_wins": round(float(wins.mean()), 1)}
+result = {"mean_wins": float(wins.mean())}
 """,
 )
 
@@ -259,7 +259,7 @@ gold(
 import pandas as pd
 df = pd.read_csv("cost_data_with_errors.csv")
 top = df.loc[df["max_storm_cat"].idxmax()]  # first row of the highest category
-result = {"max_wind_speed": round(float(top["max_sust_wind"]), 2)}
+result = {"max_wind_speed": float(top["max_sust_wind"])}
 """,
 )
 
@@ -469,8 +469,8 @@ df = pd.read_csv("titanic.csv")
 result = {}
 for name, col in (("age", "Age"), ("fare", "Fare")):
     x = df[col].dropna()
-    result[f"{name}_skewness"] = round(float(stats.skew(x)), 2)
-    result[f"{name}_kurtosis"] = round(float(stats.kurtosis(x)), 2)
+    result[f"{name}_skewness"] = float(stats.skew(x))
+    result[f"{name}_kurtosis"] = float(stats.kurtosis(x))
     result[f"{name}_values_within_one_stdev"] = int(((x >= x.mean() - x.std()) & (x <= x.mean() + x.std())).sum())
 """,
 )

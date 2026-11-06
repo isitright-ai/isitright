@@ -308,3 +308,20 @@ def test_the_env_file_supplies_only_the_named_variables_and_prints_nothing(
     assert os.environ["ISITRIGHT_TEST_C"] == ""  # not named, so not read
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err == ""
+
+
+def test_a_failed_step_is_guarded_so_the_replay_does_what_the_agent_did() -> None:
+    from isitright.packs.data.adapters import join_steps
+
+    steps = [
+        ("rows = [1, 2, 3]\nvalue = rows[10]", True),  # raised IndexError after defining rows
+        ("this is not python (", True),  # never ran, so it is left out
+        ("total = sum(rows)\nfinal_answer(total)", False),
+    ]
+    program = join_steps(steps)
+    assert "this is not python" not in program
+    assert "try:" in program and "except Exception:" in program
+    answers: list[Any] = []
+    exec(compile(program, "<program>", "exec"), {"final_answer": answers.append})
+    assert answers == [6]  # `rows` survived the failed step, and the replay did not stop there
+    assert join_steps([("x = 1", False), ("y = 2", False)]) == "x = 1\n\ny = 2"
