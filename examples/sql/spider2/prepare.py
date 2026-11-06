@@ -214,7 +214,8 @@ def main(spider: Path, schemagate: Path, out: Path) -> None:
                     text = rep.replace(old_name, f"`{full}`", 1)
                     text = text.replace(
                         "(\n",
-                        '(\n  _shard STRING NOT NULL OPTIONS(description="suffix of the shard name after the family prefix"),\n',
+                        '(\n  _shard STRING NOT NULL OPTIONS(description="suffix of the shard name '
+                        'after the family prefix"),\n',
                         1,
                     )
                     families[full] = {
@@ -245,16 +246,17 @@ def main(spider: Path, schemagate: Path, out: Path) -> None:
                     unresolved.append(ref)
         for table in sorted(set(used_tables)):
             statements.append(tables[table].rstrip().rstrip(";") + ";")
-        for full, fam in sorted(families.items()):
+        for _full, fam in sorted(families.items()):
             statements.append(fam["ddl"].rstrip().rstrip(";") + ";")
 
-        def rewrite(sql: str) -> str:
+        def rewrite(sql: str, rewrites: list[dict] = rewrites) -> str:
             for item in rewrites:
                 token = f"`{item['wildcard']}`"
                 f, w = item["family_prefix"], item["wildcard_prefix"]
                 derived = (
-                    f"(SELECT t.* EXCEPT (_shard), SUBSTR(CONCAT('{f}', t._shard), {len(w) + 1}) AS _TABLE_SUFFIX "
-                    f"FROM `{item['family_table']}` AS t WHERE SUBSTR(CONCAT('{f}', t._shard), 1, {len(w)}) = '{w}')"
+                    f"(SELECT t.* EXCEPT (_shard), SUBSTR(CONCAT('{f}', t._shard), {len(w) + 1}) "
+                    f"AS _TABLE_SUFFIX FROM `{item['family_table']}` AS t "
+                    f"WHERE SUBSTR(CONCAT('{f}', t._shard), 1, {len(w)}) = '{w}')"
                 )
                 sql = sql.replace(token, derived)
             return sql
