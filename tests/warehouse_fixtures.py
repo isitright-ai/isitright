@@ -1,8 +1,10 @@
 # Proposed fixture: pending owner review.
 # Written by Claude, who also wrote the translation under test. The native outcomes are the
 # behavior the engines' documentation states (claim ids E1..E17 in the 0.7 DECISIONS notes); a
-# documented outcome is not a confirmed one. Every native outcome below is `confirmed=False` until
-# the owner's BigQuery runbook (smoke test) or a local Trino has run it.
+# documented outcome is not a confirmed one. A native outcome is `confirmed=False` until the
+# BigQuery smoke test (run 2026-11-07) or a local Trino has run it: the 23 BigQuery fixtures that
+# were sent are `confirmed=True` (6 of them had no documented outcome; their `native` is what
+# BigQuery returned). The Presto fixtures are all unconfirmed.
 """Dialect fidelity fixtures for the DuckDB emulation of BigQuery and Presto/Trino.
 
 Each fixture is one query on a small fixed state with the outcome it has on the emulation after
@@ -105,6 +107,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "agrees",
         "E11 (NULLS FIRST by default when ascending)",
         ordered=True,
+        confirmed=True,
     ),
     Fixture(
         "bq-null-order-desc",
@@ -115,6 +118,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "agrees",
         "E11 (NULLS LAST by default when descending)",
         ordered=True,
+        confirmed=True,
     ),
     Fixture(
         "bq-unnest-cross-empty-array",
@@ -124,6 +128,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         [[1, 1], [1, 2]],
         "agrees",
         "E9 (empty arrays produce zero rows)",
+        confirmed=True,
     ),
     Fixture(
         "bq-unnest-left-empty-array",
@@ -134,6 +139,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "agrees",
         "E9 (zero rows from UNNEST) with LEFT JOIN keeping the row; the page does not spell out "
         "the LEFT JOIN case, so it is part of what the runbook confirms",
+        confirmed=True,
     ),
     Fixture(
         "bq-unnest-with-offset",
@@ -144,6 +150,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "translated",
         "E10 (offset counting starts at zero); DuckDB's ordinality starts at one and SQLGlot "
         "gives no warning",
+        confirmed=True,
     ),
     Fixture(
         "bq-unnest-with-offset-no-element-alias",
@@ -153,6 +160,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         [[1, 0], [1, 1]],
         "translated",
         "E10; SQLGlot drops the offset's name when the element has no alias",
+        confirmed=True,
     ),
     Fixture(
         "bq-array-offset-out-of-range",
@@ -162,6 +170,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         ERROR,
         "translated",
         "E5 (OFFSET produces an error if the index is out of range); DuckDB gives NULL",
+        confirmed=True,
     ),
     Fixture(
         "bq-array-offset-in-range",
@@ -171,6 +180,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         [[1, 2]],
         "agrees",
         "E5 (zero-based OFFSET); ORDINAL is one-based",
+        confirmed=True,
     ),
     Fixture(
         "bq-array-safe-offset-out-of-range",
@@ -181,6 +191,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "translated",
         "E6 (SAFE_OFFSET returns NULL if the index is out of range); a negative index counts "
         "from the end in DuckDB",
+        confirmed=True,
     ),
     Fixture(
         "bq-division-by-zero",
@@ -190,6 +201,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         ERROR,
         "translated",
         "E7 (divide by zero operations return an error); DuckDB returns infinity",
+        confirmed=True,
     ),
     Fixture(
         "bq-division-by-zero-column",
@@ -199,24 +211,29 @@ BIGQUERY: tuple[Fixture, ...] = (
         ERROR,
         "translated",
         "E7",
+        confirmed=True,
     ),
     Fixture(
         "bq-integer-division-is-float",
         "bigquery",
         "SELECT id / 2 FROM t WHERE id = 1",
         [[0.5]],
-        None,
+        [[0.5]],
         "agrees",
         "not fetched: the operators page read does not quote the INT64 / INT64 result type",
+        rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
+        confirmed=True,
     ),
     Fixture(
         "bq-safe-divide",
         "bigquery",
         "SELECT SAFE_DIVIDE(f, f) FROM t",
         [[1.0], [1.0], [None]],
-        None,
+        [[1.0], [1.0], [None]],
         "agrees",
         "not fetched: SAFE_DIVIDE is not quoted from the page read",
+        rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
+        confirmed=True,
     ),
     Fixture(
         "bq-integer-overflow",
@@ -226,6 +243,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         ERROR,
         "agrees",
         "E8 (all operators throw an error if the computation result overflows)",
+        confirmed=True,
     ),
     Fixture(
         "bq-dayofweek",
@@ -236,6 +254,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "translated",
         "E13 (range [1,7] with Sunday as the first day); 2021-01-06 is a Wednesday. DuckDB "
         "counts from 0",
+        confirmed=True,
     ),
     Fixture(
         "bq-date-trunc-week",
@@ -245,35 +264,44 @@ BIGQUERY: tuple[Fixture, ...] = (
         [["2021-01-03"], ["2021-01-10"]],
         "translated",
         "E12 (weeks begin on Sundays); DuckDB's week begins on Monday and returns a timestamp",
+        confirmed=True,
     ),
     Fixture(
         "bq-date-trunc-month-is-a-date",
         "bigquery",
         "SELECT DATE_TRUNC(d, MONTH) FROM t WHERE id = 1",
         [["2021-01-01"]],
-        None,
+        [["2021-01-01"]],
         "translated",
         "not fetched: BigQuery returns a DATE; DuckDB returns a timestamp",
+        rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
+        confirmed=True,
     ),
     Fixture(
         "bq-timestamp-is-utc",
         "bigquery",
         "SELECT EXTRACT(HOUR FROM ts), DATE(ts) FROM t WHERE id = 1",
         [[23, "2021-01-06"]],
-        None,
+        [[23, "2021-01-06"]],
         "translated",
         "not fetched: BigQuery reads a TIMESTAMP in UTC; DuckDB uses the machine's zone unless "
         "the session is set to UTC (it is)",
+        rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
+        extra={"state_does_not_discriminate": "UTC session: a plain transpile agrees here"},
+        confirmed=True,
     ),
     Fixture(
         "bq-array-agg-ignore-nulls",
         "bigquery",
         "SELECT ARRAY_AGG(e IGNORE NULLS ORDER BY e) FROM t, UNNEST(arr) AS e",
         [[[1, 2]]],
-        None,
+        [[[1, 2]]],
         "translated",
         "not fetched: IGNORE NULLS is dropped by SQLGlot and a NULLS FIRST is added; rewritten "
         "as FILTER (WHERE e IS NOT NULL)",
+        rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
+        extra={"state_does_not_discriminate": "no NULL element: a plain transpile agrees"},
+        confirmed=True,
     ),
     Fixture(
         "bq-array-agg-null-element-in-result",
@@ -283,6 +311,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         ERROR,
         "checked",
         "E4 (an error if the query result has an array which contains NULL elements)",
+        confirmed=True,
     ),
     Fixture(
         "bq-null-array-in-result-is-empty",
@@ -292,6 +321,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         [[[]]],
         "checked",
         "E2 (a NULL array is an empty array in the query result)",
+        confirmed=True,
     ),
     Fixture(
         "bq-null-and-empty-arrays-differ-inside-a-query",
@@ -301,15 +331,18 @@ BIGQUERY: tuple[Fixture, ...] = (
         [[True, True]],
         "agrees",
         "E3 (inside the query, NULL and empty arrays are two distinct values)",
+        confirmed=True,
     ),
     Fixture(
         "bq-cast-rounds-half-away",
         "bigquery",
         "SELECT CAST(2.5 AS INT64), CAST(-2.5 AS INT64)",
         [[3, -3]],
-        None,
+        [[3, -3]],
         "agrees",
         "not fetched: rounding of CAST(FLOAT64 AS INT64)",
+        rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
+        confirmed=True,
     ),
     Fixture(
         "bq-array-agg-limit",

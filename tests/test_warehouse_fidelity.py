@@ -101,7 +101,8 @@ def test_the_emulated_outcome_is_the_recorded_one(fixture: Fixture) -> None:
 )
 def test_the_emulation_matches_the_documented_native_outcome(fixture: Fixture) -> None:
     assert _normal(fixture.emulated, fixture.ordered) == _normal(fixture.native, fixture.ordered)
-    assert not fixture.confirmed  # documented, not confirmed: the runbook confirms
+    # BigQuery fixtures were run by the owner's smoke test (2026-11-07); Presto has not run natively
+    assert fixture.confirmed == (fixture.dialect == "bigquery")
 
 
 @pytest.mark.parametrize(
@@ -116,7 +117,9 @@ def test_the_emulation_matches_the_documented_native_outcome(fixture: Fixture) -
 def test_translated_means_a_plain_transpile_would_have_differed(fixture: Fixture) -> None:
     raw = _normal(_raw(fixture), fixture.ordered)
     native = _normal(fixture.native, fixture.ordered)
-    if fixture.status == "translated":
+    if fixture.status == "translated" and "state_does_not_discriminate" in fixture.extra:
+        assert raw == native  # true here only because of the state; REVIEW lists these
+    elif fixture.status == "translated":
         assert raw != native, "the rewrite is not needed: mark the fixture 'agrees'"
     else:  # agrees, or checked by the result rules that every route shares
         assert raw == native, "a rewrite changes this fixture: mark it 'translated'"
