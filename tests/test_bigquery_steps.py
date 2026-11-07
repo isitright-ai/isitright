@@ -80,6 +80,9 @@ def test_a_query_over_the_cap_is_never_run_and_the_total_is_enforced() -> None:
 
 def _mini_demo(tmp_path: Path) -> Path:
     demo = tmp_path / "demo"
+    (tmp_path / "spider2" / "spider2-lite" / "evaluation_suite" / "gold" / "exec_result").mkdir(
+        parents=True
+    )
     for sub in ("ddl", "gold", "candidate", "original/gold", "original/candidate"):
         (demo / sub).mkdir(parents=True)
     ddl = "CREATE TABLE `proj.shop.items` (id INT64 NOT NULL, tags ARRAY<INT64>)"
@@ -167,13 +170,57 @@ def test_baseline_records_a_comparison_error_and_goes_on(tmp_path: Path) -> None
     same = Client(respond=lambda sql: (["id", "tag"], [(1, 5)]))
     result = steps.baseline(runner(same), tmp_path / "spider2", demo=demo)
     first, other = result["tasks"]
-    assert first["error"].startswith("comparison: ComparisonError")
+    assert first["error"] == "no condition_cols list fits the gold's 2 columns"
     assert other["pair_matches_under_task_settings"] is True and result["kept_pairs"] == ["t2"]
+
+
+def test_baseline_tries_each_condition_cols_variant_that_fits(tmp_path: Path) -> None:
+    demo = _mini_demo(tmp_path)
+    task = json.loads((demo / "tasks.jsonl").read_text(encoding="utf-8"))
+    task["condition_cols"] = [[5], [1]]  # the first list does not fit; the second does
+    (demo / "tasks.jsonl").write_text(json.dumps(task) + chr(10), encoding="utf-8")
+    same = Client(respond=lambda sql: (["id", "tag"], [(1, 5)]))
+    result = steps.baseline(runner(same), tmp_path / "spider2", demo=demo)
+    entry = result["tasks"][0]
+    assert entry["condition_cols_lists_fitting"] == "1 of 2"
+    assert entry["matched_condition_cols"] == [1] and result["kept_pairs"] == ["t1"]
+
+
+def test_baseline_refuses_to_start_without_the_spider_gold_results(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="Spider2 checkout"):
+        steps.baseline(runner(Client()), tmp_path / "missing", demo=_mini_demo(tmp_path))
+
+
+def test_confirm_refuses_an_empty_results_directory(tmp_path: Path) -> None:
+    (tmp_path / "results").mkdir()
+    with pytest.raises(SystemExit, match="no task records"):
+        steps.confirm(
+            ConnectionHost(run=lambda sql: ([], [])),
+            tmp_path / "results",
+            demo=_mini_demo(tmp_path),
+        )
+
+
+def test_the_rewrite_family_table_is_outside_the_wildcard_prefix() -> None:
+    statements: list[str] = []
+
+    def respond(sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        statements.append(sql)
+        return (["id", "s", "suffix"], [(1, "a", "x")]) if sql.startswith("SELECT") else ([], [])
+
+    steps.rewrite_equivalence(runner(Client(respond=respond)), "proj", "scratch")
+    wildcard = next(s for s in statements if s.endswith("*`"))
+    prefix = wildcard.split("scratch.")[1].rstrip("*`")
+    family = next(s for s in statements if "AS _shard" in s or "UNION ALL" in s)
+    family_name = family.split("`proj.scratch.")[1].split("`")[0]
+    assert not family_name.startswith(prefix)
 
 
 def test_baseline_does_not_compare_a_result_without_column_names(tmp_path: Path) -> None:
     result = steps.baseline(
-        runner(Client(respond=lambda sql: ([], [(1,)]))), tmp_path / "s", demo=_mini_demo(tmp_path)
+        runner(Client(respond=lambda sql: ([], [(1,)]))),
+        tmp_path / "spider2",
+        demo=_mini_demo(tmp_path),
     )
     assert "no column names" in result["tasks"][0]["error"] and result["kept"] == 0
 
@@ -194,7 +241,7 @@ def test_the_query_cache_is_off_unless_the_runner_asks_for_it() -> None:
 
 def test_baseline_skips_a_task_whose_estimate_is_over_the_cap(tmp_path: Path) -> None:
     result = steps.baseline(
-        runner(Client(estimate=10**6), per=1000), tmp_path / "s", demo=_mini_demo(tmp_path)
+        runner(Client(estimate=10**6), per=1000), tmp_path / "spider2", demo=_mini_demo(tmp_path)
     )
     assert "skipped" in result["tasks"][0] and result["kept"] == 0
 
@@ -304,7 +351,7 @@ def test_a_dry_run_only_baseline_prints_estimates_and_reads_nothing(tmp_path: Pa
         max_bytes_total=10_000,
         dry_run_only=True,
     )
-    result = steps.baseline(r, tmp_path / "s", demo=_mini_demo(tmp_path))
+    result = steps.baseline(r, tmp_path / "spider2", demo=_mini_demo(tmp_path))
     assert all(call[1].get("dry_run") for call in client.calls)
     assert result["tasks"][0]["gold_estimate"] == 700
     assert result["tasks"][0]["candidate_estimate"] == 700

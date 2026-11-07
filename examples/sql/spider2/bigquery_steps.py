@@ -273,6 +273,9 @@ def baseline(
             rows=[[canonical(v) for v in row] for row in rows],
         )
 
+    spider_gold = spider2 / "spider2-lite" / "evaluation_suite" / "gold" / "exec_result"
+    if not runner.dry_run_only and not spider_gold.is_dir():
+        raise SystemExit(f"{spider_gold} not found: --spider2 must be the Spider2 checkout")
     out: list[dict[str, Any]] = []
     for line in (demo / "tasks.jsonl").read_text(encoding="utf-8").splitlines():
         task = json.loads(line)
@@ -308,25 +311,41 @@ def baseline(
             entry["error"] = "a query returned no column names; not compared"
             out.append(entry)
             continue
+        # Spider keeps one gold result per accepted variant (`_a`, `_b`, ...) with its own
+        # `condition_cols`; a prediction passes if it matches any. Only the gold SQL's own result is
+        # available here, so try each list that fits its columns and keep the pair if one matches.
         cols = task["condition_cols"]
-        first = cols[0] if cols and isinstance(cols[0], list) else cols
-        policy = ComparisonPolicy(
-            columns=ColumnComparisonPolicy.CONTAINED,
-            ordering=OrderingPolicy.UNORDERED if task["ignore_order"] else OrderingPolicy.ORDERED,
-            null_as_zero=True,
-            float_absolute_tolerance=0.01,
-            reference_columns=[int(c) for c in first] or None if first else None,
-        )
+        variants = cols if cols and all(isinstance(c, list) for c in cols) else [cols]
+        fitting = [v for v in variants if all(0 <= int(c) < len(gold[0]) for c in v)]
+        entry["condition_cols_lists_fitting"] = f"{len(fitting)} of {len(variants)}"
+        if not fitting:
+            entry["error"] = f"no condition_cols list fits the gold's {len(gold[0])} columns"
+            out.append(entry)
+            continue
+        match = None
         try:
-            match = compare_results(as_result(*gold), as_result(*cand), policy=policy)
+            for variant in fitting:
+                policy = ComparisonPolicy(
+                    columns=ColumnComparisonPolicy.CONTAINED,
+                    ordering=(
+                        OrderingPolicy.UNORDERED if task["ignore_order"] else OrderingPolicy.ORDERED
+                    ),
+                    null_as_zero=True,
+                    float_absolute_tolerance=0.01,
+                    reference_columns=[int(c) for c in variant] or None,
+                )
+                match = compare_results(as_result(*gold), as_result(*cand), policy=policy)
+                if match.matches:
+                    entry["matched_condition_cols"] = variant
+                    break
         except Exception as error:  # one task's comparison must not lose the other tasks' runs
             entry["error"] = f"comparison: {type(error).__name__}: {str(error)[:200]}"
             out.append(entry)
             continue
+        assert match is not None
         entry["pair_matches_under_task_settings"] = match.matches
         entry["difference"] = match.difference
         entry["gold_rows"], entry["candidate_rows"] = len(gold[1]), len(cand[1])
-        spider_gold = spider2 / "spider2-lite" / "evaluation_suite" / "gold" / "exec_result"
         csv_files = sorted(spider_gold.glob(f"{task['id']}*.csv"))
         entry["spider_gold_result_files"] = [p.name for p in csv_files]
         entry["gold_row_count_equals_spider_gold_csv"] = (
@@ -348,7 +367,8 @@ def rewrite_equivalence(runner: Runner, project: str, dataset: str) -> dict[str,
     This is the only step that writes to a project. The tables are dropped at the end."""
     prefix = f"isitright_ev_{int(time.time())}_"
     shards = {"20200101": [(1, "a")], "20200102": [(2, "b"), (3, "c")], "20210101": [(4, "d")]}
-    family = f"{prefix}family"
+    # not under `prefix`: an empty-prefix wildcard would match the family table as well
+    family = f"isitright_evfamily_{int(time.time())}"
     created: list[str] = []
     results: list[dict[str, Any]] = []
     try:
@@ -380,9 +400,11 @@ def rewrite_equivalence(runner: Runner, project: str, dataset: str) -> dict[str,
             )
             left = sorted(runner.run(original)[1], key=repr)
             right = sorted(runner.run(rewritten)[1], key=repr)
-            results.append(
-                {"wildcard_prefix": wildcard_prefix, "equal": left == right, "rows": len(left)}
-            )
+            check = {"wildcard_prefix": wildcard_prefix, "equal": left == right, "rows": len(left)}
+            if left != right:  # small tables: show both sides so the difference can be read
+                check["wildcard_rows"] = [list(r) for r in left]
+                check["rewrite_rows"] = [list(r) for r in right]
+            results.append(check)
     finally:
         for name in created:
             try:
@@ -406,6 +428,15 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
     from isitright.packs.sql.constraints_file import load_constraint_schema
     from isitright.packs.sql.models import ColumnComparisonPolicy, OrderingPolicy
 
+    task_ids = [
+        json.loads(line)["id"]
+        for line in (demo / "tasks.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    if not results_dir.is_dir() or not any((results_dir / f"{i}.json").exists() for i in task_ids):
+        raise SystemExit(
+            f"no task records (<id>.json) in {results_dir}: copy the results-final folder of the "
+            "demo run there, or point --results at it"
+        )
     out: list[dict[str, Any]] = []
     for line in (demo / "tasks.jsonl").read_text(encoding="utf-8").splitlines():
         task = json.loads(line)
