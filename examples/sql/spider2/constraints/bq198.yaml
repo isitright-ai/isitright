@@ -1,0 +1,11 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  mbb_historical_teams_seasons:
+    items:
+      properties:
+        losses:
+          minimum: 0
+        ties:
+          minimum: 0
+        wins:
+          minimum: 0

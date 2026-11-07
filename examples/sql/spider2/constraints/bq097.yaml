@@ -1,0 +1,17 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  fips:
+    items:
+      properties:
+        Farm_proprietors_employment:
+          minimum: 0
+        Nonfarm_proprietors_employment:
+          minimum: 0
+        Population:
+          minimum: 0
+        Proprietors_employment:
+          minimum: 0
+        Total_employment:
+          minimum: 0
+        Wage_and_salary_employment:
+          minimum: 0

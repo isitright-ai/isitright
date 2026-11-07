@@ -42,7 +42,10 @@ def load_state(
         dependencies[table.name] = {
             key.referenced_table
             for key in table_schema.foreign_keys
-            if key.referenced_table in by_name and table.rows and by_name[key.referenced_table].rows
+            if key.on_update != "NOT ENFORCED"
+            and key.referenced_table in by_name
+            and table.rows
+            and by_name[key.referenced_table].rows
         }
 
     ordered: list[TableState] = []

@@ -1,0 +1,31 @@
+﻿python evaluate.py --mode exec_result --result_dir claude-sonnet-5-5     (Spider2/spider2-lite/evaluation_suite, 2026-10-24)
+
+
+Evaluating Exec Results:   0%|          | 0/190 [00:00<?, ?it/s]
+Evaluating Exec Results:   8%|8         | 16/190 [00:00<00:01, 151.65it/s]
+Evaluating Exec Results:  17%|#6        | 32/190 [00:00<00:01, 98.26it/s] 
+Evaluating Exec Results:  23%|##2       | 43/190 [00:00<00:01, 94.87it/s]
+Evaluating Exec Results:  28%|##8       | 54/190 [00:00<00:01, 69.42it/s]
+Evaluating Exec Results:  33%|###2      | 62/190 [00:00<00:01, 69.06it/s]
+Evaluating Exec Results:  37%|###6      | 70/190 [00:00<00:01, 69.54it/s]
+Evaluating Exec Results:  41%|####1     | 78/190 [00:02<00:07, 14.22it/s]
+Evaluating Exec Results:  46%|####6     | 88/190 [00:02<00:05, 19.88it/s]
+Evaluating Exec Results:  52%|#####2    | 99/190 [00:02<00:03, 27.65it/s]
+Evaluating Exec Results:  56%|#####6    | 107/190 [00:02<00:02, 32.47it/s]
+Evaluating Exec Results:  63%|######3   | 120/190 [00:03<00:01, 44.81it/s]
+Evaluating Exec Results:  68%|######7   | 129/190 [00:03<00:01, 46.30it/s]
+Evaluating Exec Results:  72%|#######2  | 137/190 [00:03<00:01, 47.34it/s]bq389: multi-compare against [WindowsPath('gold/exec_result/bq389_a.csv'), WindowsPath('gold/exec_result/bq389_b.csv'), WindowsPath('gold/exec_result/bq389_c.csv'), WindowsPath('gold/exec_result/bq389_d.csv'), WindowsPath('gold/exec_result/bq389_e.csv'), WindowsPath('gold/exec_result/bq389_f.csv'), WindowsPath('gold/exec_result/bq389_g.csv')] failed: positional indexers are out-of-bounds
+
+Evaluating Exec Results:  78%|#######7  | 148/190 [00:03<00:00, 58.35it/s]
+Evaluating Exec Results:  83%|########2 | 157/190 [00:03<00:00, 62.23it/s]
+Evaluating Exec Results:  87%|########6 | 165/190 [00:03<00:00, 58.21it/s]
+Evaluating Exec Results:  94%|#########3| 178/190 [00:03<00:00, 73.29it/s]
+Evaluating Exec Results:  94%|#########3| 178/190 [00:20<00:00, 73.29it/s]
+Evaluating Exec Results: 100%|##########| 190/190 [00:49<00:00,  1.28s/it]
+Evaluating Exec Results: 100%|##########| 190/190 [00:49<00:00,  3.82it/s]
+{'bq001': 1, 'bq002': 0, 'bq003': 1, 'bq004': 1, 'bq006': 1, 'bq008': 0, 'bq009': 0, 'bq010': 0, 'bq011': 1, 'bq018': 1, 'bq019': 1, 'bq022': 0, 'bq023': 0, 'bq024': 0, 'bq025': 1, 'bq030': 0, 'bq031': 0, 'bq032': 1, 'bq034': 0, 'bq035': 0, 'bq038': 0, 'bq041': 1, 'bq042': 1, 'bq045': 1, 'bq046': 1, 'bq047': 0, 'bq048': 0, 'bq049': 1, 'bq051': 1, 'bq053': 0, 'bq054': 0, 'bq055': 0, 'bq059': 1, 'bq060': 1, 'bq061': 1, 'bq064': 0, 'bq066': 1, 'bq067': 0, 'bq074': 0, 'bq075': 0, 'bq076': 0, 'bq077': 1, 'bq079': 0, 'bq081': 1, 'bq086': 0, 'bq087': 0, 'bq088': 1, 'bq090': 0, 'bq094': 0, 'bq097': 1, 'bq102': 0, 'bq103': 0, 'bq105': 0, 'bq108': 0, 'bq110': 1, 'bq111': 0, 'bq112': 0, 'bq113': 1, 'bq114': 1, 'bq115': 1, 'bq116': 0, 'bq119': 1, 'bq120': 1, 'bq123': 1, 'bq124': 0, 'bq126': 1, 'bq130': 0, 'bq137': 1, 'bq143': 0, 'bq144': 1, 'bq151': 0, 'bq161': 1, 'bq162': 0, 'bq165': 0, 'bq169': 0, 'bq172': 1, 'bq177': 1, 'bq181': 0, 'bq186': 1, 'bq198': 1, 'bq199': 1, 'bq200': 0, 'bq202': 0, 'bq203': 0, 'bq204': 0, 'bq208': 1, 'bq218': 1, 'bq220': 0, 'bq227': 0, 'bq228': 1, 'bq229': 1, 'bq230': 1, 'bq232': 1, 'bq234': 0, 'bq235': 1, 'bq268': 1, 'bq269': 1, 'bq270': 0, 'bq275': 0, 'bq277': 0, 'bq278': 0, 'bq279': 1, 'bq280': 1, 'bq281': 1, 'bq282': 1, 'bq284': 1, 'bq285': 1, 'bq286': 1, 'bq288': 1, 'bq290': 1, 'bq293': 0, 'bq300': 1, 'bq301': 1, 'bq302': 1, 'bq303': 1, 'bq304': 0, 'bq305': 1, 'bq308': 0, 'bq310': 1, 'bq326': 1, 'bq327': 0, 'bq328': 1, 'bq330': 0, 'bq338': 1, 'bq339': 1, 'bq352': 0, 'bq354': 0, 'bq356': 0, 'bq360': 0, 'bq362': 1, 'bq363': 0, 'bq366': 0, 'bq374': 0, 'bq376': 0, 'bq383': 1, 'bq389': 0, 'bq391': 1, 'bq392': 0, 'bq393': 0, 'bq394': 1, 'bq395': 1, 'bq396': 1, 'bq397': 0, 'bq398': 1, 'bq399': 0, 'bq400': 1, 'bq402': 1, 'bq403': 1, 'bq406': 0, 'bq407': 0, 'bq413': 1, 'bq414': 1, 'bq418': 0, 'bq419': 0, 'bq424': 0, 'bq425': 0, 'bq427': 0, 'bq428': 0, 'bq432': 0, 'bq441': 0, 'bq442': 1, 'bq445': 0, 'bq457': 0, 'bq461': 1, 'bq462': 0, 'ga001': 1, 'ga002': 1, 'ga003': 0, 'ga004': 0, 'ga005': 0, 'ga006': 1, 'ga007': 1, 'ga008': 1, 'ga009': 1, 'ga010': 1, 'ga011': 0, 'ga012': 1, 'ga013': 0, 'ga014': 0, 'ga017': 1, 'ga018': 0, 'ga019': 1, 'ga020': 0, 'ga021': 0, 'ga022': 0, 'ga025': 1, 'ga028': 0, 'ga030': 1, 'ga031': 0, 'ga032': 1}
+Final score: 0.49473684210526314, Correct examples: 94, Total examples: 190
+Real score: 0.17184643510054845, Correct examples: 94, Total examples: 547
+Correct IDs saved to: claude-sonnet-5-5-ids.csv
+TOTAL_GB_PROCESSED: 0.00000 GB
+

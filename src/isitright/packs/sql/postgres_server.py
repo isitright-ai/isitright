@@ -14,14 +14,16 @@ import tempfile
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
+from isitright.packs.sql.dialects import Dialect
 from isitright.packs.sql.errors import StateRejected
 from isitright.packs.sql.models import CanonicalValue, CanonicalValueKind, QueryResult, ResultColumn
 from isitright.packs.sql.postgres_ddl import Schema, _ordered_schema_tables
+from isitright.packs.sql.results import empty_array, nested_value
 from isitright.packs.sql.sqlite_sandbox import canonicalize_sqlite_value
 from isitright.packs.sql.state import DatabaseState
 from isitright.packs.sql.state_loader import load_state
@@ -42,12 +44,17 @@ def _constraint_error(error: Exception, engine: Literal["postgres", "duckdb"]) -
     }
 
 
-def _result(cursor: Any, limit: int) -> QueryResult:
+def _result(cursor: Any, limit: int, *, dialect: Dialect | None = None) -> QueryResult:
     rows = cursor.fetchmany(limit + 1)
     if len(rows) > limit:
         raise RuntimeError(f"query exceeded {limit} result rows")
+    array_columns = [str(col[1]).endswith("[]") for col in cursor.description or ()]
 
-    def canonical(value: Any) -> CanonicalValue:
+    def canonical(value: Any, array_typed: bool = False) -> CanonicalValue:
+        if isinstance(value, list | dict):
+            return nested_value(value, dialect)
+        if value is None and array_typed and dialect is not None and not dialect.null_arrays:
+            return empty_array(dialect)
         if isinstance(value, bool):
             return CanonicalValue(kind=CanonicalValueKind.BOOLEAN, value=value)
         if isinstance(value, Decimal):
@@ -56,6 +63,8 @@ def _result(cursor: Any, limit: int) -> QueryResult:
             return CanonicalValue(kind=CanonicalValueKind.DECIMAL, value=str(value))
         if isinstance(value, datetime):
             return CanonicalValue(kind=CanonicalValueKind.DATETIME, value=value.isoformat())
+        if isinstance(value, time):
+            return CanonicalValue(kind=CanonicalValueKind.TIME, value=value.isoformat())
         if isinstance(value, date):
             return CanonicalValue(kind=CanonicalValueKind.DATE, value=value.isoformat())
         if isinstance(value, uuid.UUID):
@@ -70,7 +79,7 @@ def _result(cursor: Any, limit: int) -> QueryResult:
 
     return QueryResult(
         columns=[ResultColumn(name=str(col[0])) for col in cursor.description or ()],
-        rows=[[canonical(value) for value in row] for row in rows],
+        rows=[[canonical(value, array_columns[i]) for i, value in enumerate(row)] for row in rows],
     )
 
 

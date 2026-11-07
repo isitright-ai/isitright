@@ -1,0 +1,17 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  part_d_prescriber_2014:
+    items:
+      properties:
+        bene_count:
+          minimum: 0
+        bene_count_ge65:
+          minimum: 0
+        total_claim_count:
+          minimum: 0
+        total_claim_count_ge65:
+          minimum: 0
+        total_day_supply:
+          minimum: 0
+        total_day_supply_ge65:
+          minimum: 0

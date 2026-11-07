@@ -7,6 +7,7 @@ duplicates, empty relations and dangling references there are tried first).
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from isitright.core.entities import ModelError
@@ -93,3 +94,60 @@ def validate_hints(model: SqlModel, hints: Hints) -> None:
         hints.validate(model.schema)
     except ModelError as error:  # pragma: no cover - harvested hints always resolve
         raise ValueError(str(error)) from error
+
+
+_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w])")
+_QUOTED = re.compile(r"'([^']{1,60})'|\"([^\"]{1,60})\"")
+_ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+MAX_QUESTION_LITERALS = 8
+MAX_QUESTION_HINTS = 60
+
+
+def question_literals(question: str) -> list[Any]:
+    """Numbers, quoted strings and ISO dates the question names, in order of appearance."""
+    found: list[tuple[int, Any]] = []
+    covered: list[tuple[int, int]] = []  # spans of quoted strings and dates: no numbers inside
+    for match in _QUOTED.finditer(question):
+        found.append((match.start(), match.group(1) or match.group(2)))
+        covered.append(match.span())
+    for match in _ISO_DATE.finditer(question):
+        if not any(a <= match.start() < b for a, b in covered):
+            found.append((match.start(), match.group(0)))
+            covered.append(match.span())
+    for match in _NUMBER.finditer(question):
+        if any(a <= match.start() < b for a, b in covered):
+            continue
+        text = match.group(0)
+        found.append((match.start(), float(text) if "." in text else int(text)))
+    values = [value for _, value in sorted(found, key=lambda item: item[0])]
+    return list(dict.fromkeys(values))[:MAX_QUESTION_LITERALS]
+
+
+def hints_from_question(model: SqlModel, guidance: QueryGuidance, question: str) -> list[Hint]:
+    """``literal`` hints for the constants the question names, on the columns the queries read.
+
+    Provenance ``harvested:question``. A constant is paired with every referenced column of a
+    compatible type, as program literals are; it never comes from a result file or a finding.
+    """
+    out: list[Hint] = []
+    for literal in question_literals(question):
+        for table in model.db.tables:
+            if table.name not in guidance.tables:
+                continue
+            for column in table.columns:
+                if column.hidden or column.primary_key_position:
+                    continue
+                if not guidance.references_column(table.name, column.name):
+                    continue
+                kind = model.schema.collection(table.name).field(column.name).type
+                numeric = isinstance(literal, int | float) and not isinstance(literal, bool)
+                if (numeric and kind in _NUMERIC) or (isinstance(literal, str) and kind == "text"):
+                    out.append(
+                        Hint(
+                            kind="literal",
+                            name=f"question-literal:{table.name}.{column.name}={literal!r}",
+                            provenance=Provenance.HARVESTED_QUESTION,
+                            args={"path": f"{table.name}.{column.name}", "value": literal},
+                        )
+                    )
+    return out[:MAX_QUESTION_HINTS]

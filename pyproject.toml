@@ -33,6 +33,8 @@ postgres = [
   "psycopg[binary]>=3.2,<4",
 ]
 duckdb = ["duckdb>=1.5,<2"]
+bigquery = ["google-cloud-bigquery>=3.25,<4"]
+trino = ["trino>=0.330,<1"]
 mcp = ["mcp>=2.3,<3"]
 data = ["pandas>=2.2,<4"]
 data-schema = ["pandas>=2.2,<4", "pandera>=0.20,<1"]

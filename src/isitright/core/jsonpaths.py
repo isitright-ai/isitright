@@ -105,6 +105,16 @@ def duplicate_at(value: Any, path: JsonPath) -> Any:
     return out
 
 
+def shape_kind(shape: dict[str, Any]) -> Any:
+    """The ``type`` of a shape node; for a nullable node (``["integer", "null"]``) the type that
+    is not null."""
+    kind = shape.get("type")
+    if isinstance(kind, list):
+        rest = [k for k in kind if k != "null"]
+        return rest[0] if len(rest) == 1 else None
+    return kind
+
+
 def shape_leaf(shape: dict[str, Any] | None, path: JsonPath) -> dict[str, Any] | None:
     """The shape of the node a path leads to, or None when the shape does not describe it."""
     node = shape
@@ -112,9 +122,9 @@ def shape_leaf(shape: dict[str, Any] | None, path: JsonPath) -> dict[str, Any] |
         if node is None:
             return None
         if token == WILD or isinstance(token, int):
-            node = node.get("items") if node.get("type") == "array" else None
+            node = node.get("items") if shape_kind(node) == "array" else None
         else:
-            props = node.get("properties") if node.get("type") == "object" else None
+            props = node.get("properties") if shape_kind(node) == "object" else None
             node = props.get(token) if isinstance(props, dict) else None
     return node
 
@@ -122,7 +132,7 @@ def shape_leaf(shape: dict[str, Any] | None, path: JsonPath) -> dict[str, Any] |
 def numeric_leaves(shape: dict[str, Any], prefix: JsonPath | None = None) -> list[JsonPath]:
     """Paths (with wildcards) of the numeric leaves a shape declares."""
     prefix = prefix or []
-    kind = shape.get("type")
+    kind = shape_kind(shape)
     if kind in NUMERIC_SHAPES:
         return [prefix]
     if kind == "array" and isinstance(shape.get("items"), dict):

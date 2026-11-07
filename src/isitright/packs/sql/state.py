@@ -9,8 +9,23 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
+from typing import Any
 
-SqlValue = None | bool | int | float | str | bytes | Decimal | date | time | datetime
+SqlValue = (
+    None
+    | bool
+    | int
+    | float
+    | str
+    | bytes
+    | Decimal
+    | date
+    | time
+    | datetime
+    | list[Any]
+    | dict[str, Any]
+)
+"""A cell. Lists and mappings are nested values (warehouse arrays, structs, maps) in JSON form."""
 
 
 @dataclass(frozen=True, slots=True)

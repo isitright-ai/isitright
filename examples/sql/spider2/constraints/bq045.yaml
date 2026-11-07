@@ -1,0 +1,41 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  gsod:
+    items:
+      properties:
+        count_dewp:
+          minimum: 0
+        count_slp:
+          minimum: 0
+        count_stp:
+          minimum: 0
+        count_temp:
+          minimum: 0
+        count_visib:
+          minimum: 0
+  gsod2022:
+    items:
+      properties:
+        count_dewp:
+          minimum: 0
+        count_slp:
+          minimum: 0
+        count_stp:
+          minimum: 0
+        count_temp:
+          minimum: 0
+        count_visib:
+          minimum: 0
+  gsod2023:
+    items:
+      properties:
+        count_dewp:
+          minimum: 0
+        count_slp:
+          minimum: 0
+        count_stp:
+          minimum: 0
+        count_temp:
+          minimum: 0
+        count_visib:
+          minimum: 0

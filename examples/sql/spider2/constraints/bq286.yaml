@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  usa_1910_current:
+    items:
+      properties:
+        number:
+          minimum: 0

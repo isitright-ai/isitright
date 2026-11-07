@@ -3,6 +3,43 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
+## 0.7.0.dev0 - Warehouse dialects
+
+BigQuery and Presto/Trino queries are audited from table definitions alone, without moving data.
+The search runs on DuckDB; findings are confirmed on your own engine with the state written into
+the query text. See `docs/sql/warehouses.md`.
+
+### Added
+
+- **Dialects.** `--dialect sqlite|postgres|bigquery|presto|trino` (the SQL the queries are written
+  in) apart from `--engine` (where states run). `--engine` alone keeps its 0.6 meaning.
+- **Schema import** for BigQuery DDL (as `INFORMATION_SCHEMA` and Spider ship it), Presto/Trino
+  `SHOW CREATE TABLE` and Hive DDL: qualified names, optional and unenforced keys, partitions as
+  columns, column descriptions, `TIME` columns.
+- **Nested types** (`ARRAY`, `STRUCT`, `MAP`/`ROW`): generation scoped to the columns the queries
+  read, a nested mutation family, validity per dialect (BigQuery stored arrays hold no NULL array
+  or NULL element), minimization inside arrays, comparison of nested results.
+- **Query templates** (`--param`, `params` in a suite case) for `<NAME>` and `{{ NAME }}`.
+- **Comparison options**: `contained` columns, `--reference-columns`, `--column-vectors`,
+  `--null-as-zero`, and `--wall-time`.
+- **Constraints file**: `x-unique` rules. A finding that needs equal values in a column with no
+  declared key or unique rule says so in `validity.notes`.
+- **Fidelity fixtures** for both dialects and exact translations for the divergences found
+  (`WITH OFFSET`, `ARRAY_AGG ... IGNORE NULLS`, array subscripts, division by zero, `DAYOFWEEK`,
+  `DATE_TRUNC`, session time zone, Presto integer division). SQLGlot's "unsupported" warnings are
+  errors.
+- **Native confirmation hosts** (`NATIVE_INLINE`): BigQuery (dry run, bytes cap, labels), Trino, and
+  a function you supply (`--confirm connection --connection module:function --trust-code`). Every
+  host refuses text that still names a real table. The `bigquery` and `trino` extras are optional.
+- **Spider 2.0-lite BigQuery demo** under `examples/sql/spider2/`.
+
+### Changed
+
+- `check` and `check_suite` take `dialect`, `params` and `confirm`; `engine` defaults to the
+  dialect's engine. `SqlValue` now includes lists and mappings (nested values).
+- `core/jsonpaths.py` reads a JSON Schema `type` given as a list (nullable leaves).
+- No breaking change to the SQLite, PostgreSQL or DuckDB invocations. The report schema stays 0.6.
+
 ## 0.5.1 - 2026-11-01
 
 ### Added
