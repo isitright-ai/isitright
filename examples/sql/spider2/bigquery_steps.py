@@ -52,8 +52,10 @@ class Runner:
         max_bytes_per_query: int,
         max_bytes_total: int,
         dry_run_only: bool = False,
+        use_query_cache: bool = False,
     ) -> None:
         self.client, self.config = client, config
+        self.use_query_cache = use_query_cache
         self.dry_run_only = dry_run_only
         self.last_estimate = 0
         self.per_query, self.total_cap = max_bytes_per_query, max_bytes_total
@@ -62,7 +64,7 @@ class Runner:
         self.log: list[dict[str, Any]] = []
 
     def run(self, sql: str, *, timeout: float = 300.0) -> tuple[list[str], list[tuple[Any, ...]]]:
-        options = {"use_query_cache": False, "labels": dict(LABELS)}
+        options = {"use_query_cache": self.use_query_cache, "labels": dict(LABELS)}
         dry = self.client.query(sql, job_config=self.config(dry_run=True, **options))
         estimate = int(getattr(dry, "total_bytes_processed", 0) or 0)
         if estimate > self.per_query:
@@ -79,8 +81,10 @@ class Runner:
         job = self.client.query(
             sql, job_config=self.config(maximum_bytes_billed=self.per_query, **options)
         )
-        rows = list(job.result(timeout=timeout))
-        schema = list(getattr(job, "schema", []) or [])
+        iterator = job.result(timeout=timeout)
+        rows = list(iterator)
+        # the row iterator has the result schema; a query job's own `schema` can still be empty
+        schema = list(getattr(iterator, "schema", None) or getattr(job, "schema", None) or [])
         self.estimated_total += estimate
         self.billed_total += int(getattr(job, "total_bytes_billed", 0) or 0)
         self.log.append({"estimate": estimate, "billed": getattr(job, "total_bytes_billed", None)})
@@ -300,6 +304,10 @@ def baseline(
             entry["error"] = f"{type(error).__name__}: {str(error)[:200]}"
             out.append(entry)
             continue
+        if not gold[0] or not cand[0]:
+            entry["error"] = "a query returned no column names; not compared"
+            out.append(entry)
+            continue
         cols = task["condition_cols"]
         first = cols[0] if cols and isinstance(cols[0], list) else cols
         policy = ComparisonPolicy(
@@ -309,7 +317,12 @@ def baseline(
             float_absolute_tolerance=0.01,
             reference_columns=[int(c) for c in first] or None if first else None,
         )
-        match = compare_results(as_result(*gold), as_result(*cand), policy=policy)
+        try:
+            match = compare_results(as_result(*gold), as_result(*cand), policy=policy)
+        except Exception as error:  # one task's comparison must not lose the other tasks' runs
+            entry["error"] = f"comparison: {type(error).__name__}: {str(error)[:200]}"
+            out.append(entry)
+            continue
         entry["pair_matches_under_task_settings"] = match.matches
         entry["difference"] = match.difference
         entry["gold_rows"], entry["candidate_rows"] = len(gold[1]), len(cand[1])
@@ -494,6 +507,7 @@ def main(argv: list[str]) -> None:
             max_bytes_per_query=args.max_bytes_per_query,
             max_bytes_total=args.max_bytes_total,
             dry_run_only=args.dry_run_only,
+            use_query_cache=args.step == "baseline",  # a rerun inside 24 h reads BigQuery's cache
         )
         if args.step == "schema":
             result = schema_check(runner)

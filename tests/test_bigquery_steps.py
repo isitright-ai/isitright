@@ -130,6 +130,68 @@ def test_baseline_keeps_pairs_that_match_under_the_task_settings(tmp_path: Path)
     )
 
 
+class _Iterator(list):  # what job.result() returns: the rows, with the result schema
+    def __init__(self, rows: Any, names: Any) -> None:
+        super().__init__(rows)
+        self.schema = [SimpleNamespace(name=n) for n in names]
+
+
+class _LateSchemaClient(Client):
+    """A job whose own `schema` is empty after `result()`, as the real client can leave it."""
+
+    def query(self, sql: str, job_config: dict[str, Any]) -> Job:
+        job = super().query(sql, job_config)
+        if not job_config.get("dry_run"):
+            names, rows = self.respond(sql)
+            job.schema = []
+            job.result = lambda timeout=None, rows=rows, names=names: _Iterator(rows, names)  # type: ignore[method-assign]
+        return job
+
+
+def test_the_column_names_come_from_the_row_iterator_when_the_job_has_none() -> None:
+    client = _LateSchemaClient(respond=lambda sql: (["id", "tag"], [(1, 5)]))
+    names, rows = runner(client).run("SELECT 1")
+    assert names == ["id", "tag"] and rows == [(1, 5)]
+
+
+def test_baseline_records_a_comparison_error_and_goes_on(tmp_path: Path) -> None:
+    demo = _mini_demo(tmp_path)
+    task = json.loads((demo / "tasks.jsonl").read_text(encoding="utf-8"))
+    task["condition_cols"] = [[7]]  # a column the result does not have
+    second = dict(task, id="t2", condition_cols=[])
+    for side in ("gold", "candidate"):
+        text = (demo / "original" / side / "t1.sql").read_text(encoding="utf-8")
+        (demo / "original" / side / "t2.sql").write_text(text, encoding="utf-8")
+    lines = [json.dumps(task), json.dumps(second)]
+    (demo / "tasks.jsonl").write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+    same = Client(respond=lambda sql: (["id", "tag"], [(1, 5)]))
+    result = steps.baseline(runner(same), tmp_path / "spider2", demo=demo)
+    first, other = result["tasks"]
+    assert first["error"].startswith("comparison: ComparisonError")
+    assert other["pair_matches_under_task_settings"] is True and result["kept_pairs"] == ["t2"]
+
+
+def test_baseline_does_not_compare_a_result_without_column_names(tmp_path: Path) -> None:
+    result = steps.baseline(
+        runner(Client(respond=lambda sql: ([], [(1,)]))), tmp_path / "s", demo=_mini_demo(tmp_path)
+    )
+    assert "no column names" in result["tasks"][0]["error"] and result["kept"] == 0
+
+
+def test_the_query_cache_is_off_unless_the_runner_asks_for_it() -> None:
+    off, on = Client(), Client()
+    runner(off).run("SELECT 1")
+    steps.Runner(
+        on,
+        config=lambda **kw: kw,
+        max_bytes_per_query=1000,
+        max_bytes_total=5000,
+        use_query_cache=True,
+    ).run("SELECT 1")
+    assert off.calls[1][1]["use_query_cache"] is False
+    assert on.calls[1][1]["use_query_cache"] is True
+
+
 def test_baseline_skips_a_task_whose_estimate_is_over_the_cap(tmp_path: Path) -> None:
     result = steps.baseline(
         runner(Client(estimate=10**6), per=1000), tmp_path / "s", demo=_mini_demo(tmp_path)
