@@ -364,3 +364,18 @@ def test_schema_check_records_a_dataset_it_cannot_read_and_goes_on(tmp_path: Pat
 
     result = steps.schema_check(runner(Client(respond=denied)), demo=_mini_demo(tmp_path))
     assert "Access Denied" in result["differences"][0]["error"]
+
+
+def test_baseline_compares_a_numeric_gold_column_with_a_float_candidate_column(
+    tmp_path: Path,
+) -> None:
+    """BigQuery returns NUMERIC as Decimal; read as text it never matched a FLOAT64 column."""
+    from decimal import Decimal
+
+    def respond(sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        return ["avg"], [(Decimal("2.50"),)] if "LEFT" in sql else [(2.5,)]
+
+    result = steps.baseline(
+        runner(Client(respond=respond)), tmp_path / "spider2", demo=_mini_demo(tmp_path)
+    )
+    assert result["kept_pairs"] == ["t1"]

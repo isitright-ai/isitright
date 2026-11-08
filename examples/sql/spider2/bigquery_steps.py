@@ -28,6 +28,7 @@ import json
 import sys
 import time
 from collections.abc import Callable
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -265,6 +266,8 @@ def baseline(
             return CanonicalValue(kind=CanonicalValueKind.INTEGER, value=value)
         if isinstance(value, float):
             return CanonicalValue(kind=CanonicalValueKind.FLOAT, value=value)
+        if isinstance(value, Decimal):  # NUMERIC: a number, not text, so a FLOAT64 column can match
+            return CanonicalValue(kind=CanonicalValueKind.DECIMAL, value=str(value))
         return CanonicalValue(kind=CanonicalValueKind.TEXT, value=str(value))
 
     def as_result(names: list[str], rows: list[tuple[Any, ...]]) -> QueryResult:

@@ -212,20 +212,29 @@ def inline_sql(tree: exp.Query, dialect: Dialect, db: DatabaseSchema, state: Dat
     by_name = {t.name: t for t in state.tables}
     work = tree.copy()
     pieces: dict[str, str] = {}
-    tables: list[exp.Table] = []
+    tables: list[tuple[exp.Table, Any]] = []
     for scope in traverse_scope(work):
         for source in scope.sources.values():
-            if isinstance(source, exp.Table) and not any(source is seen for seen in tables):
-                tables.append(source)
-    for source in tables:
-        if True:
-            table = db.table(source.name)
-            rows = by_name.get(table.name) or TableState(table.name, (), ())
-            alias = source.alias or source.name
-            placeholder = f"__inline_{len(pieces)}__"
-            pieces[placeholder] = inline_table(table, rows, dialect)
-            source.set("this", exp.to_identifier(placeholder))
-            source.set("alias", exp.TableAlias(this=exp.to_identifier(alias)))
+            if isinstance(source, exp.Table) and not any(source is seen for seen, _ in tables):
+                tables.append((source, scope))
+    for source, scope in tables:
+        table = db.table(source.name)
+        rows = by_name.get(table.name) or TableState(table.name, (), ())
+        alias = source.alias or source.name
+        if alias.lower() == source.name.lower() and alias.lower() in {
+            c.name.lower() for c in table.columns
+        }:
+            # A table named like one of its columns: as a subquery alias the name would also be a
+            # row-valued range variable, and BigQuery then reads the bare column name as the whole
+            # row (seen on bq025). Use another alias and move the qualified references to it.
+            alias = f"{source.name}__t"
+            for column in scope.columns:
+                if column.table and column.table.lower() == source.name.lower():
+                    column.set("table", exp.to_identifier(alias))
+        placeholder = f"__inline_{len(pieces)}__"
+        pieces[placeholder] = inline_table(table, rows, dialect)
+        source.set("this", exp.to_identifier(placeholder))
+        source.set("alias", exp.TableAlias(this=exp.to_identifier(alias)))
     text = work.sql(dialect=dialect.read)
     for placeholder, inline in pieces.items():
         for spelled in (f"`{placeholder}`", f'"{placeholder}"', placeholder):

@@ -398,3 +398,25 @@ def test_trino_host_uses_the_supplied_connection_and_the_guard() -> None:
     assert report.findings[0].fidelity.verified_on == "NATIVE_INLINE"
     with pytest.raises(RealTableReference):
         TrinoHost(connect=Connection).run_inline(left, PRESTO, timeout_seconds=1, max_rows=5)
+
+
+def test_a_table_named_like_its_column_gets_another_alias_when_inlined() -> None:
+    """bq025: `SELECT midyear_population FROM midyear_population` read the whole row on BigQuery
+    once the table became an aliased subquery of the same name."""
+    from isitright.packs.sql.dialects import get_dialect
+    from isitright.packs.sql.inline import inline_sql
+    from isitright.packs.sql.mapping import build_model
+    from isitright.packs.sql.replaying import _state
+    from isitright.packs.sql.warehouse_ddl import parse_warehouse_schema
+    from isitright.packs.sql.warehouse_sql import parse_query, resolve_tables
+
+    dialect = get_dialect("bigquery")
+    db = parse_warehouse_schema("CREATE TABLE d.pop (k INT64, pop INT64)", dialect)
+    state = _state(build_model(db, "bigquery"), {"pop": [{"k": 1, "pop": 5}]})
+    query = "SELECT pop, pop.k FROM d.pop WHERE pop.k = 1"
+    text = inline_sql(resolve_tables(parse_query(query, dialect), db), dialect, db, state)
+    assert "AS pop__t" in text and "pop__t.k" in text
+    assert "AS pop " not in text and not text.endswith("AS pop")
+    other = "SELECT k FROM d.pop AS q"  # an explicit alias is left alone
+    text = inline_sql(resolve_tables(parse_query(other, dialect), db), dialect, db, state)
+    assert "AS q" in text and "__t" not in text
