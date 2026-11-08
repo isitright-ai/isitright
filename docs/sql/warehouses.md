@@ -125,7 +125,7 @@ division and array and map subscripts. SQLGlot's own "unsupported" warnings are 
 silent divergence that nobody listed is found only by a fixture; add one when you find one.
 
 A documented outcome is not a confirmed one. The expected outcomes are confirmed natively by the
-BigQuery runbook or on a local Trino. The BigQuery smoke test has run (2026-11-07): the 23 BigQuery fixtures it sent say `confirmed=True`; the Presto fixtures say `confirmed=False` until a local Trino has run them.
+BigQuery runbook or on a local Trino. Both have run: the BigQuery smoke test (2026-11-07) and a local Trino 484 in Docker (2026-11-08, `examples/sql/trino/smoke.py`). The 23 BigQuery fixtures it sent and the 15 Presto fixtures say `confirmed=True`; the 3 `detected` BigQuery fixtures were not sent. Trino is not Meta's Presto: the Presto fixtures are confirmed on Trino only.
 
 **Listed, not translated**: `numeric / integer` is exact decimal division in Presto and floating
 point in DuckDB; floating-point results can differ in the last digits; regular-expression flavors,

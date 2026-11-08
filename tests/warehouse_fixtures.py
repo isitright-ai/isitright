@@ -1,10 +1,11 @@
 # Proposed fixture: pending owner review.
 # Written by Claude, who also wrote the translation under test. The native outcomes are the
 # behavior the engines' documentation states (claim ids E1..E17 in the 0.7 DECISIONS notes); a
-# documented outcome is not a confirmed one. A native outcome is `confirmed=False` until the
-# BigQuery smoke test (run 2026-11-07) or a local Trino has run it: the 23 BigQuery fixtures that
-# were sent are `confirmed=True` (6 of them had no documented outcome; their `native` is what
-# BigQuery returned). The Presto fixtures are all unconfirmed.
+# documented outcome is not a confirmed one. A native outcome is `confirmed=False` until an engine
+# has run it: the 23 BigQuery fixtures sent to the owner's smoke test (2026-11-07) and the 15
+# Presto fixtures run on a local Trino 484 (2026-11-08) are `confirmed=True`. Where a fixture had
+# no documented outcome, its `native` is what the engine returned (see `rows_note`). Trino is not
+# Meta's Presto.
 """Dialect fidelity fixtures for the DuckDB emulation of BigQuery and Presto/Trino.
 
 Each fixture is one query on a small fixed state with the outcome it has on the emulation after
@@ -385,25 +386,30 @@ PRESTO: tuple[Fixture, ...] = (
         [[2]],
         "translated",
         "E16 (integer division performs truncation); DuckDB's / is floating point",
+        confirmed=True,
     ),
     Fixture(
         "pr-integer-division-column",
         "presto",
         "SELECT id / x FROM t",
         [[None], [0], [0]],
-        None,
+        [[None], [0], [0]],
         "translated",
         "E16",
+        rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
+        confirmed=True,
     ),
     Fixture(
         "pr-division-by-zero",
         "presto",
         "SELECT id / 0 FROM t",
         ERROR,
-        None,
+        ERROR,
         "translated",
         "E16 does not state division by zero; Presto and Trino raise an error (unconfirmed "
         "recollection)",
+        rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
+        confirmed=True,
     ),
     Fixture(
         "pr-array-subscript-out-of-bounds",
@@ -413,6 +419,7 @@ PRESTO: tuple[Fixture, ...] = (
         ERROR,
         "translated",
         "E14 (the subscript fails where element_at returns NULL); DuckDB gives NULL",
+        confirmed=True,
     ),
     Fixture(
         "pr-array-subscript-in-bounds",
@@ -422,6 +429,7 @@ PRESTO: tuple[Fixture, ...] = (
         [[1, 2]],
         "agrees",
         "E14 (indexed starting from one)",
+        confirmed=True,
     ),
     Fixture(
         "pr-element-at-out-of-bounds",
@@ -431,6 +439,7 @@ PRESTO: tuple[Fixture, ...] = (
         [[None]],
         "agrees",
         "E14 (element_at returns NULL when accessing an index larger than array length)",
+        confirmed=True,
     ),
     Fixture(
         "pr-map-subscript-missing-key",
@@ -440,6 +449,7 @@ PRESTO: tuple[Fixture, ...] = (
         ERROR,
         "translated",
         "E15 (the operator throws an error if the key is not contained in the map)",
+        confirmed=True,
     ),
     Fixture(
         "pr-map-element-at-missing-key",
@@ -449,6 +459,7 @@ PRESTO: tuple[Fixture, ...] = (
         [[None]],
         "agrees",
         "E15 (element_at returns NULL)",
+        confirmed=True,
     ),
     Fixture(
         "pr-unnest-cross-null-and-empty",
@@ -458,6 +469,7 @@ PRESTO: tuple[Fixture, ...] = (
         [[1, 1], [1, 2]],
         "agrees",
         "E17 (UNNEST returns zero entries when the array is empty, or null)",
+        confirmed=True,
     ),
     Fixture(
         "pr-unnest-left-join-keeps-row",
@@ -467,6 +479,7 @@ PRESTO: tuple[Fixture, ...] = (
         [[1, 1], [1, 2], [2, None], [3, None]],
         "agrees",
         "E17 (LEFT JOIN is preferable to avoid losing the row)",
+        confirmed=True,
     ),
     Fixture(
         "pr-null-order-asc",
@@ -477,6 +490,7 @@ PRESTO: tuple[Fixture, ...] = (
         "agrees",
         "E17 (the default null ordering is NULLS LAST, regardless of direction)",
         ordered=True,
+        confirmed=True,
     ),
     Fixture(
         "pr-null-order-desc",
@@ -487,34 +501,41 @@ PRESTO: tuple[Fixture, ...] = (
         "agrees",
         "E17",
         ordered=True,
+        confirmed=True,
     ),
     Fixture(
         "pr-date-trunc-week-is-a-date",
         "presto",
         "SELECT date_trunc('week', d) FROM t WHERE id = 1",
         [["2021-01-04"]],
-        None,
+        [["2021-01-04"]],
         "translated",
         "not fetched: a Presto week begins on Monday and the result keeps the DATE type; "
         "DuckDB returns a timestamp",
+        rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
+        confirmed=True,
     ),
     Fixture(
         "pr-null-elements-in-result-arrays",
         "presto",
         "SELECT ARRAY[1, NULL]",
         [[[1, None]]],
-        None,
+        [[[1, None]]],
         "agrees",
         "not fetched: Presto allows NULL elements in arrays (BigQuery does not in results)",
+        rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
+        confirmed=True,
     ),
     Fixture(
         "pr-cast-varchar-to-integer-fails",
         "presto",
         "SELECT CAST('abc' AS INTEGER)",
         ERROR,
-        None,
+        ERROR,
         "agrees",
         "not fetched: invalid casts fail in both",
+        rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
+        confirmed=True,
     ),
 )
 

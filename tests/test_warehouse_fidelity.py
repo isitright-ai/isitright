@@ -101,8 +101,8 @@ def test_the_emulated_outcome_is_the_recorded_one(fixture: Fixture) -> None:
 )
 def test_the_emulation_matches_the_documented_native_outcome(fixture: Fixture) -> None:
     assert _normal(fixture.emulated, fixture.ordered) == _normal(fixture.native, fixture.ordered)
-    # BigQuery fixtures were run by the owner's smoke test (2026-11-07); Presto has not run natively
-    assert fixture.confirmed == (fixture.dialect == "bigquery")
+    # BigQuery: the owner's smoke test (2026-11-07); Presto: a local Trino 484 (2026-11-08)
+    assert fixture.confirmed
 
 
 @pytest.mark.parametrize(
