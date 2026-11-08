@@ -379,3 +379,21 @@ def test_baseline_compares_a_numeric_gold_column_with_a_float_candidate_column(
         runner(Client(respond=respond)), tmp_path / "spider2", demo=_mini_demo(tmp_path)
     )
     assert result["kept_pairs"] == ["t1"]
+
+
+def test_baseline_shows_samples_of_a_pair_that_does_not_match(tmp_path: Path) -> None:
+    demo = _mini_demo(tmp_path)
+    gold_dir = tmp_path / "spider2" / "spider2-lite" / "evaluation_suite" / "gold" / "exec_result"
+    (gold_dir / "t1_a.csv").write_text("id,tag\n1,5\n2,\n", encoding="utf-8")
+
+    def differ(sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        return ["id", "tag"], ([(1, 5), (2, None)] if "LEFT" in sql else [(1, 5)])
+
+    entry = steps.baseline(runner(Client(respond=differ)), tmp_path / "spider2", demo=demo)[
+        "tasks"
+    ][0]
+    assert entry["pair_matches_under_task_settings"] is False
+    assert entry["candidate_sample"]["rows"] == [["int:1", "int:5"]]
+    assert entry["spider_gold_row_counts"] == [2]
+    assert entry["gold_row_count_equals_spider_gold_csv"] is True
+    assert entry["spider_gold_csv_samples"] == [[["id", "tag"], ["1", "5"], ["2", ""]]]

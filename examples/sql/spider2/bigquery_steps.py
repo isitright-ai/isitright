@@ -236,6 +236,22 @@ def schema_check(runner: Runner, demo: Path = HERE) -> dict[str, Any]:
     return {"differences": findings, "tables_checked": len(cache), **runner.summary()}
 
 
+def _read_csv(path: Path) -> list[list[str]]:
+    import csv
+
+    csv.field_size_limit(10**9)
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        return [[cell[:60] for cell in row] for row in csv.reader(handle)]
+
+
+def _sample(result: tuple[list[str], list[tuple[Any, ...]]], rows: int = 3) -> dict[str, Any]:
+    names, data = result
+    return {
+        "columns": names,
+        "rows": [[f"{type(v).__name__}:{str(v)[:60]}" for v in row] for row in data[:rows]],
+    }
+
+
 # --- step 4: baseline ---------------------------------------------------------------------------
 
 
@@ -351,12 +367,17 @@ def baseline(
         entry["gold_rows"], entry["candidate_rows"] = len(gold[1]), len(cand[1])
         csv_files = sorted(spider_gold.glob(f"{task['id']}*.csv"))
         entry["spider_gold_result_files"] = [p.name for p in csv_files]
+        csv_rows = [_read_csv(p) for p in csv_files]
+        # Spider keeps one gold result per accepted variant; the gold SQL should match one of them
+        entry["spider_gold_row_counts"] = [max(len(r) - 1, 0) for r in csv_rows]
         entry["gold_row_count_equals_spider_gold_csv"] = (
-            [len(p.read_text(encoding="utf-8").splitlines()) - 1 for p in csv_files][:1]
-            == [len(gold[1])]
-            if csv_files
-            else None
+            len(gold[1]) in entry["spider_gold_row_counts"] if csv_rows else None
         )
+        if not match.matches or entry["gold_row_count_equals_spider_gold_csv"] is False:
+            # public data, small samples: enough to read why two results are called different
+            entry["gold_sample"] = _sample(gold)
+            entry["candidate_sample"] = _sample(cand)
+            entry["spider_gold_csv_samples"] = [r[:4] for r in csv_rows]
         out.append(entry)
     kept = [e["id"] for e in out if e.get("pair_matches_under_task_settings")]
     return {"tasks": out, "kept_pairs": kept, "kept": len(kept), **runner.summary()}
