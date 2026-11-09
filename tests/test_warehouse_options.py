@@ -141,3 +141,24 @@ def test_the_wall_time_cap_stops_the_search_and_the_headline_says_so(
         DivergenceStatus.NOT_FOUND_WITHIN_BUDGET,
         DivergenceStatus.INCONCLUSIVE,
     )
+
+
+def test_vector_comparison_reads_text_that_looks_like_a_number_as_a_number() -> None:
+    # The benchmark writes both results to CSV and reads them back, so the text "2012" and the
+    # integer 2012 are one value there (found on bq403: year as text against year as integer).
+    def text(v: str) -> CanonicalValue:
+        return CanonicalValue(kind=CanonicalValueKind.TEXT, value=v)
+
+    def date(v: str) -> CanonicalValue:
+        return CanonicalValue(kind=CanonicalValueKind.DATE, value=v)
+
+    policy = _policy(columns=ColumnComparisonPolicy.CONTAINED)
+    gold = _result(["year", "d"], [[text("2012"), _float(1.5)], [text("2013"), _float(2.5)]])
+    candidate = _result(["y", "n"], [[_int(2013), _float(2.5)], [_int(2012), _float(1.5)]])
+    assert compare_results(gold, candidate, policy=policy).matches
+    # text that is not a plain number stays text
+    words = _result(["w"], [[text("2012a")]])
+    assert not compare_results(words, _result(["w"], [[_int(2012)]]), policy=policy).matches
+    # a date equals its text
+    dates = _result(["m"], [[date("2022-01-01")]])
+    assert compare_results(dates, _result(["m"], [[text("2022-01-01")]]), policy=policy).matches

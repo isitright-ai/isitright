@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import cast
@@ -217,10 +218,23 @@ def _zero_nulls(result: QueryResult) -> QueryResult:
     return QueryResult(columns=result.columns, rows=rows)
 
 
+_PLAIN_NUMBER = re.compile(r"[+-]?\d+(\.\d+)?")
+_TEXT_LIKE = (
+    CanonicalValueKind.TEXT,
+    CanonicalValueKind.DATE,
+    CanonicalValueKind.TIME,
+    CanonicalValueKind.DATETIME,
+)
+
+
 def _number(value: CanonicalValue) -> float | None:
-    if value.kind not in _NUMERIC:
-        return None
-    return float(cast(str | int | float, value.value))
+    """A number, or text that reads as a plain number: the benchmark writes both results to CSV
+    and reads them back, so the text ``2012`` and the integer 2012 are the same value there."""
+    if value.kind in _NUMERIC:
+        return float(cast(str | int | float, value.value))
+    if value.kind is CanonicalValueKind.TEXT and _PLAIN_NUMBER.fullmatch(str(value.value).strip()):
+        return float(str(value.value))
+    return None
 
 
 def _sort_key(value: CanonicalValue) -> tuple[int, float, str]:
@@ -241,6 +255,8 @@ def _vector_values_equal(left: CanonicalValue, right: CanonicalValue, tolerance:
     a, b = _number(left), _number(right)
     if a is not None and b is not None:
         return math.isclose(a, b, rel_tol=0.0, abs_tol=tolerance)
+    if left.kind in _TEXT_LIKE and right.kind in _TEXT_LIKE:  # a date and its text are the same
+        return str(left.value) == str(right.value)
     return left.kind is right.kind and left.value == right.value
 
 
