@@ -45,11 +45,19 @@ procedure all read this shape, and `Layout` maps it to and from the entity model
 def _state(created_at, *, flight_status="scheduled", cabin="economy"):
     return {
         "now": NOW.isoformat(),
-        "service": {},                       # service parameters live here
-        "bookings": {"B100": {"id": "B100", "customer": "cust_1", "cabin": cabin,
-                              "created_at": created_at.isoformat(), "price": 250,
-                              "segments": [{"flight": "HT100", "date": "2024-05-20"}],
-                              "status": "active", "refunded": 0}},
+        "service": {},  # service parameters live here
+        "bookings": {
+            "B100": {
+                "id": "B100",
+                "customer": "cust_1",
+                "cabin": cabin,
+                "created_at": created_at.isoformat(),
+                "price": 250,
+                "segments": [{"flight": "HT100", "date": "2024-05-20"}],
+                "status": "active",
+                "refunded": 0,
+            }
+        },
         "flights": {"HT100|2024-05-20": {"id": "HT100|2024-05-20", "status": flight_status}},
     }
 ```
@@ -63,16 +71,23 @@ and arguments.
 
 ```python
 def _cancel_booking(state, args):
-    booking = _get_booking(state, args)   # raises ValueError("... not found") for an unknown id
+    booking = _get_booking(state, args)  # raises ValueError("... not found") for an unknown id
     booking["status"] = "cancelled"
     booking["refunded"] = booking["price"]
     return booking
 
-ToolDef("cancel_booking",
-        "Cancel a booking and refund it. Does not check the cancellation policy.",
-        {"type": "object", "properties": {"booking_id": {"type": "string"}},
-         "required": ["booking_id"]},
-        _cancel_booking, writes=True)
+
+ToolDef(
+    "cancel_booking",
+    "Cancel a booking and refund it. Does not check the cancellation policy.",
+    {
+        "type": "object",
+        "properties": {"booking_id": {"type": "string"}},
+        "required": ["booking_id"],
+    },
+    _cancel_booking,
+    writes=True,
+)
 ```
 
 Use the tool descriptions and schemas your real service exposes, because the agent reads them. If
@@ -85,20 +100,32 @@ An exception raised by a handler becomes an error result for the agent, as a rea
 The entity schema tells the core what the world is made of, so generic families can mutate it.
 
 ```python
-SCHEMA = EntitySchema(collections=[
-    CollectionSpec(name="bookings", key="id", fields=[
-        FieldSpec(name="id"), FieldSpec(name="customer"),
-        FieldSpec(name="cabin", enum=["economy", "business"]),
-        FieldSpec(name="created_at", type="datetime"),
-        FieldSpec(name="price", type="int"),
-        FieldSpec(name="segments", type="json"),
-        FieldSpec(name="status", enum=["active", "cancelled"]),
-        FieldSpec(name="refunded", type="int"),
-    ]),
-    CollectionSpec(name="flights", key="id", fields=[
-        FieldSpec(name="id"), FieldSpec(name="status", enum=["scheduled", "cancelled"]),
-    ]),
-])
+SCHEMA = EntitySchema(
+    collections=[
+        CollectionSpec(
+            name="bookings",
+            key="id",
+            fields=[
+                FieldSpec(name="id"),
+                FieldSpec(name="customer"),
+                FieldSpec(name="cabin", enum=["economy", "business"]),
+                FieldSpec(name="created_at", type="datetime"),
+                FieldSpec(name="price", type="int"),
+                FieldSpec(name="segments", type="json"),
+                FieldSpec(name="status", enum=["active", "cancelled"]),
+                FieldSpec(name="refunded", type="int"),
+            ],
+        ),
+        CollectionSpec(
+            name="flights",
+            key="id",
+            fields=[
+                FieldSpec(name="id"),
+                FieldSpec(name="status", enum=["scheduled", "cancelled"]),
+            ],
+        ),
+    ]
+)
 LAYOUT = Layout(keyed=("bookings", "flights"), scalars=("now",), block="service")
 ```
 
@@ -119,11 +146,20 @@ _EXPOSES = {
     "get_booking": ["bookings.id", "bookings.cabin", "bookings.created_at", "bookings.status", ...],
     "get_flight_status": ["flights.status"],
 }
-_SPEC = WorldSpec(id="booking", schema=SCHEMA, tools=[
-    ToolSpec(name=t.name, description=t.description, input_schema=t.input_schema,
-             writes=t.writes, exposes=_EXPOSES.get(t.name, []))
-    for t in _TOOLS
-])
+_SPEC = WorldSpec(
+    id="booking",
+    schema=SCHEMA,
+    tools=[
+        ToolSpec(
+            name=t.name,
+            description=t.description,
+            input_schema=t.input_schema,
+            writes=t.writes,
+            exposes=_EXPOSES.get(t.name, []),
+        )
+        for t in _TOOLS
+    ],
+)
 ```
 
 `exposes` lists the entity fields each read tool shows. A mutation that changes only fields no read
@@ -194,12 +230,23 @@ State your assumptions. A world your oracle did not anticipate should be `CANNOT
 ## 7. Hints
 
 ```python
-Hints([
-    Hint(kind="gate", args={"collection": "flights", "field": "status", "allows": ["cancelled"]}),
-    Hint(kind="gate", name="active",
-         args={"collection": "bookings", "field": "status", "allows": ["active"],
-               "action": "cancel_booking"}),
-])
+Hints(
+    [
+        Hint(
+            kind="gate", args={"collection": "flights", "field": "status", "allows": ["cancelled"]}
+        ),
+        Hint(
+            kind="gate",
+            name="active",
+            args={
+                "collection": "bookings",
+                "field": "status",
+                "allows": ["active"],
+                "action": "cancel_booking",
+            },
+        ),
+    ]
+)
 ```
 
 Read the task and policy and ask: which lookups, orderings, status gates, scopes and cut-offs does

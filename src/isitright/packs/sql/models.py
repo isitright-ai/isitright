@@ -87,13 +87,25 @@ class SuiteCase(ContractModel):
     question: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     params: dict[str, str] = Field(default_factory=dict)
+    gold_trusted: bool | None = None
+    """Whether the reference query is known to be right (true, false, or absent for unknown)."""
+    gold_trust_basis: str | None = None
 
     @model_validator(mode="before")
     @classmethod
     def collect_extra_metadata(cls, value: Any) -> Any:
         if not isinstance(value, dict):
             return value
-        known = {"case_id", "reference_sql", "candidate_sql", "question", "metadata", "params"}
+        known = {
+            "case_id",
+            "reference_sql",
+            "candidate_sql",
+            "question",
+            "metadata",
+            "params",
+            "gold_trusted",
+            "gold_trust_basis",
+        }
         result = dict(value)
         metadata = dict(result.get("metadata") or {})
         for key in list(result):

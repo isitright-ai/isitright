@@ -18,6 +18,7 @@ from isitright.packs.sql.models import (
     OrderingPolicy,
     QueryResult,
 )
+from isitright.packs.sql.results import is_error_result
 
 
 class ComparisonError(ValueError):
@@ -39,6 +40,13 @@ def compare_results(
     reference_has_order_by: bool = False,
 ) -> ComparisonOutcome:
     """Compare two query results, retaining type and duplicate semantics."""
+    if is_error_result(candidate) and not is_error_result(reference):
+        return ComparisonOutcome(
+            False,
+            f"candidate errors: {candidate.rows[0][0].value}",
+            resolve_ordering(policy.ordering, reference_has_order_by=reference_has_order_by)
+            is EffectiveOrdering.ORDERED,
+        )
     if policy.null_as_zero:
         reference, candidate = _zero_nulls(reference), _zero_nulls(candidate)
     if (
@@ -218,7 +226,7 @@ def _zero_nulls(result: QueryResult) -> QueryResult:
     return QueryResult(columns=result.columns, rows=rows)
 
 
-_PLAIN_NUMBER = re.compile(r"[+-]?\d+(\.\d+)?")
+_PLAIN_NUMBER = re.compile(r"[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?")
 _TEXT_LIKE = (
     CanonicalValueKind.TEXT,
     CanonicalValueKind.DATE,

@@ -70,6 +70,8 @@ def check(
     verify_native: bool | None = None,
     params: dict[str, str] | None = None,
     confirm: InlineHost | None = None,
+    gold_trusted: bool | None = None,
+    gold_trust_basis: str | None = None,
     _server: tuple[Any, str] | None = None,
     _progress: Any = None,
 ) -> CaseReport:
@@ -86,7 +88,14 @@ def check(
         confirm=confirm,
         _server=_server,
     ) as audit:
-        case = SqlCase(reference_sql, candidate_sql, case_id, question)
+        case = SqlCase(
+            reference_sql,
+            candidate_sql,
+            case_id,
+            question,
+            gold_trusted=gold_trusted,
+            gold_trust_basis=gold_trust_basis,
+        )
         return audit.check(case, config, _progress)
 
 

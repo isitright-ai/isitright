@@ -397,3 +397,50 @@ def test_baseline_shows_samples_of_a_pair_that_does_not_match(tmp_path: Path) ->
     assert entry["spider_gold_row_counts"] == [2]
     assert entry["gold_row_count_equals_spider_gold_csv"] is True
     assert entry["spider_gold_csv_samples"] == [[["id", "tag"], ["1", "5"], ["2", ""]]]
+
+
+def _baseline_entry(tmp_path: Path, files: dict[str, str]) -> dict[str, Any]:
+    demo = _mini_demo(tmp_path)
+    gold_dir = tmp_path / "spider2" / "spider2-lite" / "evaluation_suite" / "gold" / "exec_result"
+    for name, text in files.items():
+        (gold_dir / name).write_text(text, encoding="utf-8")
+    same = Client(respond=lambda sql: (["id", "tag"], [(1, 5), (2, None)]))
+    return steps.baseline(runner(same), tmp_path / "spider2", demo=demo)["tasks"][0]
+
+
+def test_gold_is_trusted_only_when_it_reproduces_one_of_spiders_result_files(
+    tmp_path: Path,
+) -> None:
+    entry = _baseline_entry(
+        tmp_path, {"t1_a.csv": "id,tag\n9,9\n", "t1_b.csv": "ID,TAG\n2,\n1,5.0\n"}
+    )
+    assert entry["gold_trusted"] is True
+    assert entry["gold_matches_spider_files"] == ["t1_b.csv"]  # row order, case and 5 against 5.0
+    assert "t1_b.csv" in entry["gold_trust_basis"]
+
+
+def test_gold_that_matches_no_result_file_is_not_trusted_and_says_why(tmp_path: Path) -> None:
+    entry = _baseline_entry(tmp_path, {"t1_a.csv": "id,tag\n1,6\n2,\n"})
+    assert entry["gold_trusted"] is False and entry["gold_matches_spider_files"] == []
+    assert "equals none of Spider's 1 result files" in entry["gold_trust_basis"]
+
+
+def test_gold_trust_is_unknown_without_a_result_file_and_the_script_skips_it(
+    tmp_path: Path,
+) -> None:
+    entry = _baseline_entry(tmp_path, {})
+    assert entry["gold_trusted"] is None
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "gold_trust", Path(steps.__file__).with_name("gold_trust.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    baseline = tmp_path / "baseline.json"
+    trusted = {"id": "a", "gold_trusted": True, "gold_trust_basis": "x"}
+    baseline.write_text(json.dumps({"tasks": [entry, trusted]}), encoding="utf-8")
+    target = tmp_path / "gold_trust.json"
+    assert module.main([str(baseline), str(target)]) == 0
+    assert json.loads(target.read_text(encoding="utf-8")) == {"a": {"trusted": True, "basis": "x"}}

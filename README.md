@@ -53,8 +53,16 @@ python -m pip install "isitright[mcp]"          # + MCP agent pack
 python -m pip install "isitright[postgres]"     # + native PostgreSQL (disposable local server)
 python -m pip install "isitright[duckdb]"       # + DuckDB emulation
 python -m pip install "isitright[data]"         # + data-analysis pack (pandas)
-python -m pip install "isitright[all]"
+python -m pip install "isitright[bigquery]"     # + BigQuery client, to confirm findings (NOT in [all])
+python -m pip install "isitright[trino]"        # + Trino client, to confirm findings (NOT in [all])
+python -m pip install "isitright[all]"          # all of the above except bigquery and trino
 ```
+
+`isitright[all]` does **not** include `bigquery` or `trino`. Those two extras install a cloud
+client (about thirty packages for BigQuery) that you need only to confirm a finding on your own
+engine, so you install them on purpose: `pip install "isitright[bigquery]"` or
+`pip install "isitright[trino]"`. Searching and reporting for BigQuery, Presto and Trino
+queries needs neither.
 
 The quick starts below use files from `examples/`, which the package does not ship:
 

@@ -126,6 +126,7 @@ when the agent wrote a transcript, the stack under test.
 
 ```python
 import json
+
 report = json.load(open("artifacts/shop/report.json", encoding="utf-8"))
 case = report["cases"][0]
 print(case["divergence_status"], case["headline"])
@@ -137,5 +138,6 @@ Or load it into the model, which validates it:
 
 ```python
 from isitright.core.evidence import AuditReport
+
 report = AuditReport.model_validate_json(open("report.json", encoding="utf-8").read())
 ```

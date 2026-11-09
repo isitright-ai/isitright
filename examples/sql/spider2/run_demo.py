@@ -37,6 +37,13 @@ def load_tasks() -> dict[str, dict]:
     return tasks
 
 
+def load_gold_trust() -> dict[str, dict]:
+    """``gold_trust.json`` (from ``gold_trust.py``, which reads the baseline run): per task whether
+    the gold SQL reproduces one of Spider's result files on the real data. Absent means unknown."""
+    path = HERE / "gold_trust.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
 def reference_columns(condition_cols: object) -> list[int] | None:
     """Spider's ``condition_cols``: [] means all columns; a list of lists means several accepted
     gold results, of which the first is the one the gold SQL produces."""
@@ -62,6 +69,7 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
     from isitright.packs.sql.models import ColumnComparisonPolicy, OrderingPolicy
 
     record = load_tasks()[task_id]
+    trust = load_gold_trust().get(task_id, {})
     ddl = (HERE / "ddl" / f"{task_id}.sql").read_text(encoding="utf-8")
     gold = (HERE / "gold" / f"{task_id}.sql").read_text(encoding="utf-8")
     candidate = (HERE / "candidate" / f"{task_id}.sql").read_text(encoding="utf-8")
@@ -84,6 +92,7 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
         "db": record["db"],
         "rewrites": len(record["rewrites"]),
         "constraints": constraints is not None,
+        "gold_trusted": trust.get("trusted"),
         "settings": {
             "condition_cols": record["condition_cols"],
             "ignore_order": record["ignore_order"],
@@ -103,6 +112,8 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
                 case_id=task_id,
                 constraints=constraints,
                 config=config,
+                gold_trusted=trust.get("trusted"),
+                gold_trust_basis=trust.get("basis"),
             )
             entry["status"] = report.divergence_status.value
             entry["headline"] = report.headline
@@ -135,6 +146,7 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
                     "validity": finding.validity.tiers,
                     "validity_notes": finding.validity.notes,
                     "difference": finding.divergence.get("difference"),
+                    "kind": finding.divergence.get("kind"),
                     "reference_result_rows": len(finding.divergence["reference_result"]["rows"]),
                     "candidate_result_rows": len(finding.divergence["candidate_result"]["rows"]),
                     "found_on": finding.fidelity.found_on,

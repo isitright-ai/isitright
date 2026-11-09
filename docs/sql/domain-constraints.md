@@ -71,7 +71,10 @@ rows or tables, pass a trusted validator in Python:
 ```python
 from isitright import check
 from isitright.packs.sql.validation import (
-    CandidateStateView, ValidationFinding, ValidatorResult, ValidatorStatus,
+    CandidateStateView,
+    ValidationFinding,
+    ValidatorResult,
+    ValidatorStatus,
 )
 
 
@@ -97,8 +100,12 @@ class CollectedWithinOwed:
         )
 
 
-report = check(database="example.sqlite", reference_sql=ref, candidate_sql=cand,
-               validator=CollectedWithinOwed())
+report = check(
+    database="example.sqlite",
+    reference_sql=ref,
+    candidate_sql=cand,
+    validator=CollectedWithinOwed(),
+)
 ```
 
 `state.rows(table)` yields one mapping per row. Each value is a `CanonicalValue`; read the Python

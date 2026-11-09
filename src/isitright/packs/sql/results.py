@@ -14,8 +14,31 @@ from decimal import Decimal
 from typing import Any
 
 from isitright.packs.sql.dialects import Dialect
-from isitright.packs.sql.models import CanonicalValue, CanonicalValueKind
-from isitright.packs.sql.sqlite_sandbox import QueryExecutionError
+from isitright.packs.sql.models import (
+    CanonicalValue,
+    CanonicalValueKind,
+    QueryResult,
+    ResultColumn,
+)
+from isitright.packs.sql.sqlite_sandbox import QueryDataError, QueryExecutionError
+
+ERROR_COLUMN = "query_error"
+
+
+def error_result(message: str) -> QueryResult:
+    """A query that raised an error on a world, as a result: one column, one text row."""
+    first = message.strip().splitlines()[0][:300] if message.strip() else "error"
+    value = CanonicalValue(kind=CanonicalValueKind.TEXT, value=first, engine_type=ERROR_COLUMN)
+    return QueryResult(columns=[ResultColumn(name=ERROR_COLUMN)], rows=[[value]])
+
+
+def is_error_result(result: QueryResult) -> bool:
+    return (
+        len(result.columns) == 1
+        and result.columns[0].name == ERROR_COLUMN
+        and len(result.rows) == 1
+        and result.rows[0][0].engine_type == ERROR_COLUMN
+    )
 
 
 def nested_value(value: Any, dialect: Dialect | None) -> CanonicalValue:
@@ -44,7 +67,7 @@ def _json(value: Any, dialect: Dialect | None) -> Any:
     if isinstance(value, list | tuple):
         items = [_json(v, dialect) for v in value]
         if dialect is not None and not dialect.null_elements and any(i is None for i in items):
-            raise QueryExecutionError(
+            raise QueryDataError(
                 f"{dialect.name} raises an error when a query result has an array with NULL "
                 "elements"
             )

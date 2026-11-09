@@ -97,6 +97,7 @@ from isitright.packs.sql.reproducer import (
     sqlite_reproducer,
     warehouse_reproducer,
 )
+from isitright.packs.sql.results import error_result, is_error_result
 from isitright.packs.sql.sqlite_sandbox import (
     DatabaseInputError,
     QueryExecutionError,
@@ -148,6 +149,12 @@ class SqlCase:
     metadata: dict[str, Any] = field(default_factory=dict)
     params: dict[str, str] = field(default_factory=dict)
     """Values for ``<NAME>`` and ``{{ NAME }}`` placeholders in this case's queries."""
+    gold_trusted: bool | None = None
+    """Whether the reference (gold) query is known to be right: True, False, or None (unknown).
+    The audit never decides it; it records it and says so beside a finding."""
+    gold_trust_basis: str | None = None
+    """How ``gold_trusted`` was decided, in words (for example, "reproduces the published result
+    file on the real data")."""
 
 
 class StateView:
@@ -540,15 +547,23 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                         inline_sql(s.expression, self.dialect, p.model.db, data)
                         for s in (reference_statement, candidate_statement)
                     ]
-                    left, right = (
-                        host.run_inline(
-                            text,
+                    left = host.run_inline(
+                        texts[0],
+                        self.dialect,
+                        timeout_seconds=config.timeout_seconds,
+                        max_rows=config.max_result_rows,
+                    )
+                    try:
+                        right = host.run_inline(
+                            texts[1],
                             self.dialect,
                             timeout_seconds=config.timeout_seconds,
                             max_rows=config.max_result_rows,
                         )
-                        for text in texts
-                    )
+                    except (QueryTimeoutError, QueryResourceLimitError):
+                        raise
+                    except QueryExecutionError as error:  # the candidate errors natively too
+                        right = error_result(str(error))
                     outcome = compare_results(
                         left, right, policy=policy, reference_has_order_by=ordered
                     )
@@ -843,7 +858,12 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 config,
                 status=DivergenceStatus.COUNTEREXAMPLE_FOUND,
                 validity=finding.validity,
-                headline=f"Generated counterexample: queries diverge after a {family} mutation",
+                headline=(
+                    f"Generated counterexample (candidate errors): the candidate errors after a "
+                    f"{family} mutation where the reference returns a result"
+                    if is_error_result(right)
+                    else f"Generated counterexample: queries diverge after a {family} mutation"
+                ),
                 original=original,
                 errors=errors,
                 search_result=result,
@@ -1160,6 +1180,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 "reference_result": left.model_dump(mode="json"),
                 "candidate_result": right.model_dump(mode="json"),
                 "difference": difference or outputs[2] or "query results differ",
+                **({"kind": "candidate_errors"} if is_error_result(right) else {}),
                 "candidate_state": state_json,
                 "reproducer_sql": reproducer,
                 "original_injected_change": description,
@@ -1183,7 +1204,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 ),
             },
             headline=(
-                "Original-data mismatch: queries return different results"
+                "Candidate errors where the reference returns a result"
+                if is_error_result(right)
+                else "Original-data mismatch: queries return different results"
                 if generator == "original_state"
                 else f"Queries diverge after a {path[-1].family if path else 'baseline'} mutation"
             ),
@@ -1281,6 +1304,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         checked: list[str] | None = None,
     ) -> CaseReport:
         p = self.prepared
+        if findings and case.gold_trusted is False:
+            headline += " (the reference query is marked untrusted: the defect may be in it)"
         account = search_result.accounting() if search_result is not None else None
         search_record = (
             SearchRecord(**account)
@@ -1295,6 +1320,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             "candidate_sql_sha256": sha256_text(case.candidate_sql),
             "question": case.question,
         }
+        if case.gold_trusted is not None:
+            inputs["gold_trusted"] = {"value": case.gold_trusted, "basis": case.gold_trust_basis}
         if "ddl" in p.source:
             inputs["schema_sql"] = p.source["ddl"]
         if p.domain_schema is not None:
@@ -1325,6 +1352,15 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 "rule; domain validation does not guarantee real-world plausibility.",
                 "Minimization is bounded and preserves the observed disagreement plus configured "
                 "constraints; an incomplete run returns the smallest state found in its budget.",
+                *(
+                    [
+                        "The reference query is marked untrusted"
+                        + (f" ({case.gold_trust_basis})" if case.gold_trust_basis else "")
+                        + ": a divergence may be a defect of the reference, not of the candidate."
+                    ]
+                    if case.gold_trusted is False
+                    else []
+                ),
             ],
             checked_rules=sorted(set(checked or [])),
             unused_rules=[r.name for r in p.spec.python_constraints],
@@ -1372,6 +1408,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 item.question,
                 item.metadata,
                 item.params,
+                item.gold_trusted,
+                item.gold_trust_basis,
             )
             callback = (
                 (lambda outcome, cid=item.case_id: progress(cid, outcome)) if progress else None

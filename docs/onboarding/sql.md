@@ -14,27 +14,37 @@ null counts, distinct counts, min and max, and the values of low-cardinality col
 
 ```python
 """Print a compact profile of a SQLite database: facts to give an LLM, not rules."""
+
 import sqlite3
 import sys
 
 path, show_values = sys.argv[1], "--no-values" not in sys.argv
 con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-tables = [r[0] for r in con.execute(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
+tables = [
+    r[0]
+    for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+    )
+]
 for table in tables:
     total = con.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
     print(f"\n## {table} ({total} rows)")
     for _, column, ctype, notnull, _, pk in con.execute(f'PRAGMA table_info("{table}")'):
         nulls, distinct, low, high = con.execute(
             f'SELECT SUM("{column}" IS NULL), COUNT(DISTINCT "{column}"), '
-            f'MIN("{column}"), MAX("{column}") FROM "{table}"').fetchone()
-        line = (f"- {column} {ctype}{' PK' if pk else ''}{' NOT NULL' if notnull else ''}: "
-                f"{nulls or 0} null, {distinct} distinct")
+            f'MIN("{column}"), MAX("{column}") FROM "{table}"'
+        ).fetchone()
+        line = (
+            f"- {column} {ctype}{' PK' if pk else ''}{' NOT NULL' if notnull else ''}: "
+            f"{nulls or 0} null, {distinct} distinct"
+        )
         if show_values:
             line += f", min={low!r}, max={high!r}"
             if 0 < distinct <= 10:
-                values = [v for (v,) in con.execute(
-                    f'SELECT DISTINCT "{column}" FROM "{table}" ORDER BY 1')]
+                values = [
+                    v
+                    for (v,) in con.execute(f'SELECT DISTINCT "{column}" FROM "{table}" ORDER BY 1')
+                ]
                 line += f", values={values}"
         print(line)
 ```

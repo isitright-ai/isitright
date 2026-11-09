@@ -330,7 +330,8 @@ def check_command(
         Confirm | None,
         typer.Option(
             help="Confirm findings of a warehouse dialect natively with the state inlined: "
-            "bigquery, trino, or connection (your own function: --connection, --trust-code)."
+            "bigquery, trino, or connection (your own function: --connection, --trust-code). "
+            "bigquery and trino need their extras, which isitright[all] does not install."
         ),
     ] = None,
     connection: Annotated[
@@ -369,6 +370,14 @@ def check_command(
             help="Re-execute findings from the duckdb engine on PostgreSQL when it is installed."
         ),
     ] = True,
+    gold_trusted: Annotated[
+        bool | None,
+        typer.Option(
+            "--gold-trusted/--gold-untrusted",
+            help="Say whether you know the reference (gold) query is right. Recorded in the "
+            "report; a finding on an untrusted reference says so. Default: unknown.",
+        ),
+    ] = None,
 ) -> None:
     """Compare one query pair on perturbed worlds of a database or schema."""
     progress = _CandidateProgress()
@@ -395,6 +404,8 @@ def check_command(
             ),
             constraints_file=constraints,
             verify_native=None if verify_native else False,
+            gold_trusted=gold_trusted,
+            gold_trust_basis="stated on the command line" if gold_trusted is not None else None,
             config=_config(
                 seed,
                 max_attempts,
@@ -529,7 +540,8 @@ def suite_command(
         Confirm | None,
         typer.Option(
             help="Confirm findings of a warehouse dialect natively with the state inlined: "
-            "bigquery, trino, or connection (your own function: --connection, --trust-code)."
+            "bigquery, trino, or connection (your own function: --connection, --trust-code). "
+            "bigquery and trino need their extras, which isitright[all] does not install."
         ),
     ] = None,
     connection: Annotated[

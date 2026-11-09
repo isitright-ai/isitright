@@ -244,6 +244,14 @@ def _read_csv(path: Path) -> list[list[str]]:
         return [[cell[:60] for cell in row] for row in csv.reader(handle)]
 
 
+def _read_csv_full(path: Path) -> list[list[str]]:
+    import csv
+
+    csv.field_size_limit(10**9)
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        return [list(row) for row in csv.reader(handle)]
+
+
 def _sample(result: tuple[list[str], list[tuple[Any, ...]]], rows: int = 3) -> dict[str, Any]:
     names, data = result
     return {
@@ -292,6 +300,62 @@ def baseline(
             rows=[[canonical(v) for v in row] for row in rows],
         )
 
+    def gold_vs_files(task: dict[str, Any], gold: Any, csv_files: list[Path]) -> dict[str, Any]:
+        """Is the gold SQL trustworthy as a reference? Only if its result on today's data equals one
+        of Spider's published result files under that file's own ``condition_cols`` (the way Spider
+        scores a prediction). The files are what the benchmark scores; the SQL is not."""
+        if not csv_files:
+            return {"gold_trusted": None, "gold_trust_basis": "no Spider result file for the task"}
+        cols = task["condition_cols"]
+        variants = cols if cols and all(isinstance(c, list) for c in cols) else [cols]
+        matched: list[str] = []
+        problems: list[str] = []
+        for index, path in enumerate(csv_files):
+            variant = (
+                variants[index] if len(variants) > 1 and index < len(variants) else variants[0]
+            )
+            rows = _read_csv_full(path)
+            if not rows:
+                continue
+            reference = QueryResult(
+                columns=[ResultColumn(name=n) for n in rows[0]],
+                rows=[
+                    [
+                        CanonicalValue(kind=CanonicalValueKind.NULL, value=None)
+                        if cell == ""
+                        else CanonicalValue(kind=CanonicalValueKind.TEXT, value=cell)
+                        for cell in row
+                    ]
+                    for row in rows[1:]
+                ],
+            )
+            policy = ComparisonPolicy(
+                columns=ColumnComparisonPolicy.CONTAINED,
+                ordering=OrderingPolicy.UNORDERED
+                if task["ignore_order"]
+                else OrderingPolicy.ORDERED,
+                null_as_zero=True,
+                float_absolute_tolerance=0.01,
+                reference_columns=[int(c) for c in variant] or None,
+            )
+            try:
+                if compare_results(reference, as_result(*gold), policy=policy).matches:
+                    matched.append(path.name)
+            except Exception as error:  # a file this comparison cannot read is not a match
+                problems.append(f"{path.name}: {type(error).__name__}")
+        basis = (
+            f"the gold SQL's result on the real data equals Spider's result file {matched[0]}"
+            if matched
+            else f"the gold SQL's result on the real data equals none of Spider's {len(csv_files)} "
+            "result files (the data may have changed since the files were made, or the gold SQL "
+            "is not the query behind them)"
+        )
+        out: dict[str, Any] = {"gold_matches_spider_files": matched, "gold_trusted": bool(matched)}
+        out["gold_trust_basis"] = basis
+        if problems:
+            out["gold_vs_files_problems"] = problems
+        return out
+
     spider_gold = spider2 / "spider2-lite" / "evaluation_suite" / "gold" / "exec_result"
     if not runner.dry_run_only and not spider_gold.is_dir():
         raise SystemExit(f"{spider_gold} not found: --spider2 must be the Spider2 checkout")
@@ -330,6 +394,7 @@ def baseline(
             entry["error"] = "a query returned no column names; not compared"
             out.append(entry)
             continue
+        entry.update(gold_vs_files(task, gold, sorted(spider_gold.glob(f"{task['id']}*.csv"))))
         # Spider keeps one gold result per accepted variant (`_a`, `_b`, ...) with its own
         # `condition_cols`; a prediction passes if it matches any. Only the gold SQL's own result is
         # available here, so try each list that fits its columns and keep the pair if one matches.

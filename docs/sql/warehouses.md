@@ -10,6 +10,12 @@ can then be confirmed on your own engine with the state written into the query t
     divergence that does not reproduce natively is an emulation artifact: it is counted and
     listed, and it is not a counterexample.
 
+!!! warning "Confirmation needs an extra that `isitright[all]` does not install"
+    `pip install "isitright[bigquery]"` or `pip install "isitright[trino]"`, only if you want to
+    confirm findings on your own engine. `isitright[all]` leaves both out on purpose (a cloud client
+    stack you may never use). Searching and reporting need neither. Without the extra,
+    `--confirm bigquery` stops with a message that names the one to install.
+
 ## Dialects, engines and confirmation
 
 `--dialect` is the SQL your queries are written in. `--engine` is where generated states run.
@@ -88,7 +94,12 @@ error that names it. The values and the original texts are recorded in
 - **Generation is scoped to the columns the queries read** (by `UNNEST`, dot access, or a function
   on the column). A nested column no query reads is NULL if it can be, else its smallest valid
   value; a referenced array holds one element, so emptying it is a change. This keeps a Google
-  Analytics row (hundreds of nested fields) small. Scoping is per column, not per path inside it.
+  Analytics row (hundreds of nested fields) small.
+- **Known limit: scoping is per column, not per path inside it.** If a query reads only
+  `items[].qty`, the whole `items` column is still generated and mutated, `sku` included.
+  That costs search budget (it is spent on fields no query reads) and can leave extra
+  fields in a counterexample; it never produces a wrong finding. Per-path scoping is
+  planned: it needs the references resolved through `UNNEST`, joins, CTEs and subqueries.
 - **Mutations**: an array emptied or set to NULL, an element set to NULL, removed or duplicated,
   elements reversed, a struct field or a struct set to NULL, a map entry removed. Map entries are
   never reordered. Numeric leaves are moved by the JSON family.
@@ -198,9 +209,28 @@ network: the search ran offline from DDL, and the engine sees only query text.
 
 ### Trino
 
-`--confirm trino` uses the `trino` client (`isitright[trino]`) against `--trino-host`,
-`--trino-port`, `--trino-catalog` and `--trino-schema`. A local server is enough, since the query
-reads no table.
+`--confirm trino` uses the `trino` client (`isitright[trino]`, not part of `isitright[all]`)
+against `--trino-host`, `--trino-port`, `--trino-catalog` and `--trino-schema`. A local server is
+enough, since the query reads no table.
+
+If you have no Trino server, run one in Docker. The repository has a compose file
+(`examples/sql/trino/docker-compose.yml`) that starts the version the 0.7 fixtures were confirmed
+on, on `127.0.0.1:8080` with the `memory` catalog (the defaults of `--trino-host`, `--trino-port`
+and `--trino-catalog`):
+
+```console
+docker compose -f examples/sql/trino/docker-compose.yml up -d --wait
+python -m pip install "isitright[trino]"
+isitright sql check --dialect trino --schema schema.sql --reference gold.sql \
+  --candidate candidate.sql --confirm trino
+docker compose -f examples/sql/trino/docker-compose.yml down
+```
+
+Without the compose file, one command does the same:
+`docker run --rm -d --name isitright-trino -p 127.0.0.1:8080:8080 trinodb/trino:484`. The server
+needs about 30 to 60 seconds to start; `curl http://127.0.0.1:8080/v1/info` shows
+`"starting":false` when it is ready. Stop it with `docker stop isitright-trino`. The container holds
+no data of yours: the confirmation queries read no table.
 
 ## Costs and safety
 
@@ -210,6 +240,30 @@ reads no table.
 - The host cannot be made to run DDL, DML or a second statement.
 - Not protected: a function you supply is trusted code, and a query that is itself expensive on
   inline data is limited only by the bytes cap and your engine's own limits.
+
+## Candidate errors
+
+A candidate that raises an error on a valid world where the reference returns a result is a finding
+of its own kind, labeled **candidate errors** (`divergence.kind` is `candidate_errors`; the headline
+and the difference say so). Example: the reference uses `SAFE_CAST(s AS INT64)` and the candidate
+`CAST(s AS INT64)`; on a row where `s` is `'abc'` BigQuery returns NULL for the first and raises
+`Bad int64 value` for the second.
+
+- Only an error that depends on the data counts: a failed conversion, an overflow, a division by
+  zero where the engine raises, an array with a NULL element in a BigQuery result. A parse, bind or
+  catalog error does not (it would show on every world and means the translation, not the
+  candidate, is wrong), and neither does a timeout or a row-limit stop.
+- The reference erroring, or both erroring, is still no finding.
+- The error is first seen on DuckDB. **Confirm it natively** (`--confirm bigquery` or
+  `--confirm trino`): the host then runs both queries with the state inlined, and the finding is
+  `VERIFIED` only if the candidate errors there too. If it does not, the finding is an emulation
+  artifact and is excluded, as for any other divergence. On BigQuery the error must come from running
+  the query: an error at the dry run is a static error and leaves the finding unverified. A Trino
+  server reports static and run-time errors alike, so there the check cannot tell them apart.
+- This applies to the BigQuery, Presto and Trino dialects. SQLite and PostgreSQL keep their earlier
+  rule (a query error on a world skips that world).
+- In the report the candidate's result is one `query_error` column holding the first line of the
+  error message, so a replay and an exported eval case reproduce it.
 
 ## Comparing the way a benchmark does
 
