@@ -11,14 +11,17 @@ import base64
 import re
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from isitright.core.constraints import Constraint, Domain, OneOf, Pattern, Range, Unique
 from isitright.core.entities import CollectionSpec, EntitySchema, FieldSpec, FieldType, RefSpec
 from isitright.core.values import UnsupportedPattern, nth_pattern_value
 from isitright.core.world import State
+from isitright.packs.sql.dialects import Dialect as DialectRules
+from isitright.packs.sql.dialects import get_dialect
 from isitright.packs.sql.schema import ColumnSchema, DatabaseSchema, TableSchema
 from isitright.packs.sql.state import DatabaseState, SqlValue, TableState
+from isitright.packs.sql.typetree import NESTED, shape
 from isitright.packs.sql.value_types import (
     FLOAT_TYPES,
     INTEGER_TYPES,
@@ -27,7 +30,7 @@ from isitright.packs.sql.value_types import (
     generated_value,
 )
 
-Dialect = Literal["sqlite", "postgres"]
+Dialect = str
 ROW_KEY = "__row"
 
 
@@ -36,6 +39,8 @@ def _field_type(column: ColumnSchema, dialect: Dialect) -> FieldType:
     if dialect == "sqlite":
         return "json"
     kind = column.declared_type.upper()
+    if kind in NESTED or kind == "BYTES":
+        return "json"
     if kind in INTEGER_TYPES:
         return "int"
     if kind in FLOAT_TYPES:
@@ -49,6 +54,21 @@ def _field_type(column: ColumnSchema, dialect: Dialect) -> FieldType:
     if kind in {"TIMESTAMP", "TIMESTAMPTZ"}:
         return "datetime"
     return "text"
+
+
+def _field(column: ColumnSchema, dialect: Dialect, rules: DialectRules) -> FieldSpec:
+    """A column as an entity field; a nested column carries the shape its dialect allows."""
+    nullable = not column.not_null and not column.primary_key_position
+    tree = column.type_tree
+    if tree is not None and tree.nested and dialect != "sqlite":
+        nullable = nullable and (rules.null_arrays or tree.kind != "ARRAY")
+        return FieldSpec(
+            name=column.name,
+            type="json",
+            nullable=nullable,
+            shape=shape(tree, nullable=nullable, null_elements=rules.null_elements),
+        )
+    return FieldSpec(name=column.name, type=_field_type(column, dialect), nullable=nullable)
 
 
 @dataclass(frozen=True)
@@ -75,17 +95,10 @@ def build_model(db: DatabaseSchema, dialect: Dialect) -> SqlModel:
     collections: list[CollectionSpec] = []
     constraints: list[Constraint] = []
     synthetic: set[str] = set()
+    rules = get_dialect(dialect)
     for table in db.tables:
         key = single_key(table)
-        fields = [
-            FieldSpec(
-                name=column.name,
-                type=_field_type(column, dialect),
-                nullable=not column.not_null and not column.primary_key_position,
-            )
-            for column in table.columns
-            if column.hidden == 0
-        ]
+        fields = [_field(column, dialect, rules) for column in table.columns if column.hidden == 0]
         if key is None:
             synthetic.add(table.name)
             fields.insert(0, FieldSpec(name=ROW_KEY, type="int"))
@@ -98,7 +111,9 @@ def build_model(db: DatabaseSchema, dialect: Dialect) -> SqlModel:
                 RefSpec(
                     field=foreign.from_column,
                     to=foreign.referenced_table,
-                    enforced=targets_key and foreign.sequence == 0,
+                    enforced=targets_key
+                    and foreign.sequence == 0
+                    and foreign.on_update != "NOT ENFORCED",
                 )
             )
         collections.append(
@@ -132,6 +147,8 @@ def encode(value: SqlValue) -> Any:
     """A SQL value as a JSON-compatible state value."""
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, list | dict):
+        return value
     if isinstance(value, bytes):
         return {"$bytes": base64.b64encode(value).decode("ascii")}
     if value is not None and not isinstance(value, bool | int | float | str):
@@ -350,7 +367,9 @@ def import_json_schema(model: SqlModel, schema: dict[str, Any]) -> list[Constrai
     if not isinstance(tables, dict):
         return out
     for table in model.db.tables:
-        items = (tables.get(table.name) or {}).get("items", {})
+        declared = tables.get(table.name) or {}
+        out.extend(_declared_unique(table, declared))
+        items = declared.get("items", {})
         columns = items.get("properties", {}) if isinstance(items, dict) else {}
         for column in table.columns:
             facts = columns.get(column.name) if isinstance(columns, dict) else None
@@ -374,6 +393,35 @@ def import_json_schema(model: SqlModel, schema: dict[str, Any]) -> list[Constrai
                 out.append(
                     Pattern(name=f"domain:{path}:pattern", path=path, regex=facts["pattern"])
                 )
+    return out
+
+
+def _declared_unique(table: TableSchema, declared: dict[str, Any]) -> list[Constraint]:
+    """``x-unique`` rules: column groups on the table (``x-unique: [[a], [b, c]]``) or ``x-unique:
+    true`` on a column. They are domain rules the user declares (a warehouse table with no key can
+    still have a column that is an identifier); without them the search may create duplicates the
+    domain forbids."""
+    groups: list[list[str]] = []
+    raw = declared.get("x-unique", [])
+    if isinstance(raw, list):
+        groups.extend([str(c) for c in g] for g in raw if isinstance(g, list))
+    items = declared.get("items", {})
+    columns = items.get("properties", {}) if isinstance(items, dict) else {}
+    for name, facts in columns.items() if isinstance(columns, dict) else []:
+        if isinstance(facts, dict) and facts.get("x-unique") is True:
+            groups.append([str(name)])
+    known = {c.name for c in table.columns}
+    out: list[Constraint] = []
+    for group in groups:
+        if not group or any(c not in known for c in group):
+            raise ValueError(f"x-unique on {table.name} names an unknown column: {group}")
+        out.append(
+            Unique(
+                name=f"declared-unique:{table.name}({', '.join(group)})",
+                collection=table.name,
+                fields=group,
+            )
+        )
     return out
 
 

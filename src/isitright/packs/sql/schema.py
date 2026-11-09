@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from isitright.packs.sql.typetree import TypeNode
+
 
 @dataclass(frozen=True, slots=True)
 class ColumnSchema:
@@ -19,6 +21,9 @@ class ColumnSchema:
     primary_key_position: int
     hidden: int
     type_parameters: tuple[int, ...] = ()
+    type_tree: TypeNode | None = None
+    """The declared type as a tree; set for warehouse columns (scalars and nested types)."""
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +46,14 @@ class TableSchema:
     foreign_keys: tuple[ForeignKeySchema, ...]
     unique_columns: tuple[tuple[str, ...], ...]
     index_ddls: tuple[str, ...]
+    qualified: str | None = None
+    """The name as written in the DDL (``project.dataset.table``); `name` is its last part."""
+    engine_ddl: str | None = None
+    """DDL for the emulating engine, when the declared DDL is not in its dialect."""
+    partition_columns: tuple[str, ...] = ()
+    declared_keys: tuple[tuple[str, ...], ...] = ()
+    """Keys the DDL declares without enforcing them (BigQuery ``NOT ENFORCED``)."""
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

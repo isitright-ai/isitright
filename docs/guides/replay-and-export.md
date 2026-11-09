@@ -70,10 +70,11 @@ Both are plain functions that return a result dict:
 
 ```python
 from isitright.core.evidence import EvalCase
-from isitright.packs.sql.replaying import rerun_eval_case          # SQL
+from isitright.packs.sql.replaying import rerun_eval_case  # SQL
 # from isitright.packs.mcp.replay import rerun_eval_case           # agents (takes the scenario too)
 
 import json
+
 for line in open("evals/generated.jsonl", encoding="utf-8"):
     print(rerun_eval_case(EvalCase.model_validate(json.loads(line))))
 ```

@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  mbb_historical_tournament_games:
+    items:
+      properties:
+        num_ot:
+          minimum: 0

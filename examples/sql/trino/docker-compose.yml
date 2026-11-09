@@ -1,0 +1,16 @@
+# Proposed fixture: pending owner review.
+# Written by Claude. A local Trino server for `isitright sql check --confirm trino`: the version
+# the 0.7 Presto fixtures were confirmed on (484), the `memory` catalog, bound to this machine only.
+#
+#   docker compose -f examples/sql/trino/docker-compose.yml up -d --wait
+#   docker compose -f examples/sql/trino/docker-compose.yml down
+#
+# The confirmation queries read no table, so nothing is stored and no volume is mounted.
+services:
+  trino:
+    image: trinodb/trino:484
+    container_name: isitright-trino
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 3g
+    # the image ships a health check; `up --wait` returns when the server has started

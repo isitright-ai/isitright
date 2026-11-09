@@ -7,8 +7,16 @@ python -m pip install isitright                 # the core and SQLite
 python -m pip install "isitright[mcp]"          # + the agent pack (MCP)
 python -m pip install "isitright[postgres]"     # + native PostgreSQL on a disposable local server
 python -m pip install "isitright[duckdb]"       # + DuckDB, as labeled emulation of PostgreSQL
-python -m pip install "isitright[all]"
+python -m pip install "isitright[bigquery]"     # + BigQuery client, to confirm findings (NOT in [all])
+python -m pip install "isitright[trino]"        # + Trino client, to confirm findings (NOT in [all])
+python -m pip install "isitright[all]"          # all of the above except bigquery and trino
 ```
+
+`isitright[all]` does **not** include `bigquery` or `trino`. Those two extras install a cloud
+client (about thirty packages for BigQuery) that you need only to confirm a finding on your own
+engine, so you install them on purpose: `pip install "isitright[bigquery]"` or
+`pip install "isitright[trino]"`. Searching and reporting for BigQuery, Presto and Trino
+queries needs neither.
 
 Check the install:
 

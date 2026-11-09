@@ -69,8 +69,15 @@ report = check_suite(cases=suite, database="shop.sqlite", config=CheckConfig(max
 
 ```python
 from isitright.packs.mcp.model import (
-    McpScenario, ToolDef, ScenarioOracle, Invariant, Layout, FixedWorld, Expectation,
-    ToolCallError, load_scenario,
+    McpScenario,
+    ToolDef,
+    ScenarioOracle,
+    Invariant,
+    Layout,
+    FixedWorld,
+    Expectation,
+    ToolCallError,
+    load_scenario,
 )
 from isitright.core.entities import EntitySchema, CollectionSpec, FieldSpec, RefSpec
 from isitright.core.hints import Hint, Hints, Provenance

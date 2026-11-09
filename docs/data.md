@@ -42,6 +42,7 @@ The gold program is a reference implementation of the question. It runs on each 
 
 ```python
 import pandas as pd
+
 df = pd.read_csv("orders.csv")
 north = df[df["region"] == "north"]["amount"].dropna()
 result = {"north_mean": round(float(north.mean()), 2)}
@@ -117,6 +118,7 @@ Domain rules use the core constraint language (`range`, `one_of`, `not_null`, `u
 
 ```python
 from isitright.packs.data.pandera_import import constraints_from_pandera
+
 rules, notes = constraints_from_pandera("orders", schema)
 ```
 

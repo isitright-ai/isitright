@@ -22,6 +22,11 @@ class QueryExecutionError(RuntimeError):
     """Raised when SQLite cannot execute a validated query."""
 
 
+class QueryDataError(QueryExecutionError):
+    """A query error that depends on the data (a failed conversion, an overflow, a result the
+    dialect forbids), not a timeout, a limit or a translation failure."""
+
+
 class QueryTimeoutError(QueryExecutionError):
     """Raised when a query exceeds its execution budget."""
 

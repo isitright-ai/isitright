@@ -1,0 +1,8 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  incidents:
+    x-unique:
+    - - unique_key
+  incidents_2016:
+    x-unique:
+    - - unique_key

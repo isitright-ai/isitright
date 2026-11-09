@@ -27,9 +27,9 @@ from isitright.core.mutations import Mutation, SetField, World
 
 
 class HalvePrice:
-    family = "halve_price"      # the name reports use
-    target = "state"            # "state", "response" or "timing"
-    consumes = frozenset()      # the hint kinds this family reads
+    family = "halve_price"  # the name reports use
+    target = "state"  # "state", "response" or "timing"
+    consumes = frozenset()  # the hint kinds this family reads
 
     def propose(self, spec, world, hints):
         for booking in world.state.entities("bookings"):
@@ -37,8 +37,12 @@ class HalvePrice:
                 family=self.family,
                 description=f"bookings[{booking['id']!r}].price halved",
                 edits=[
-                    SetField(collection="bookings", key=booking["id"], path=["price"],
-                             value=booking["price"] // 2)
+                    SetField(
+                        collection="bookings",
+                        key=booking["id"],
+                        path=["price"],
+                        value=booking["price"] // 2,
+                    )
                 ],
                 touches=["bookings.price"],
             )
@@ -55,13 +59,16 @@ your subject and oracle and returns a verdict:
 from isitright.core.search import Evaluation, Verdict, search
 from isitright.core.stochastic import Budget
 
+
 def evaluate(candidate, validity):
     state = candidate.world.state
     ...  # run your subject and the oracle on this world, then compare
-    return Evaluation(Verdict.DISAGREE, validity)   # or AGREE, INCONCLUSIVE, ERROR, REJECTED
+    return Evaluation(Verdict.DISAGREE, validity)  # or AGREE, INCONCLUSIVE, ERROR, REJECTED
 
-result = search(spec, World(base_state), hints, [HalvePrice()], evaluate,
-                budget=Budget(attempts=50))
+
+result = search(
+    spec, World(base_state), hints, [HalvePrice()], evaluate, budget=Budget(attempts=50)
+)
 print(result.attempts, result.executed, result.findings)
 ```
 
@@ -83,14 +90,15 @@ A host makes a world available to a subject and declares how faithful it is:
 from contextlib import contextmanager
 from isitright.core.hosts import Fidelity
 
+
 class SpssHost:
     fidelity = Fidelity.NATIVE_ISOLATED
 
     @contextmanager
     def prepare(self, spec, world):
-        path = write_sav_file(world.state)      # your code: entity state -> the tool's input
+        path = write_sav_file(world.state)  # your code: entity state -> the tool's input
         try:
-            yield path                          # the handle the subject receives
+            yield path  # the handle the subject receives
         finally:
             cleanup(path)
 ```
@@ -105,7 +113,7 @@ a disposable instance, an in-process engine, or inline text.
 ```python
 from isitright.core.hints import HintKind, register_hint_kind
 
-register_hint_kind(HintKind("freshness", check=my_check))   # check(schema, hint) raises ModelError
+register_hint_kind(HintKind("freshness", check=my_check))  # check(schema, hint) raises ModelError
 ```
 
 A family reads the kinds it lists in `consumes`. A constraint that declares a value domain steers

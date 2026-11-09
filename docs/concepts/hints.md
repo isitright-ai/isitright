@@ -57,12 +57,29 @@ such as the first argument of `STRFTIME` is not tried as a date.
 them with `--hints`. [Agent setup](../onboarding/agents.md) has the prompt. Example from the shop:
 
 ```python
-Hint(kind="lookup", args={"collection": "customers", "fields": ["name", "zip"],
-                          "value": ["Maria Lopez", "10027"]}),
-Hint(kind="ordering", args={"collection": "orders", "field": "created_at", "direction": "desc"}),
-Hint(kind="gate", args={"collection": "orders", "field": "status",
-                        "allows": ["pending"], "action": "cancel_order"}),
-Hint(kind="scope", args={"collection": "orders", "where": "customer_id in $lookup.id"}),
+(
+    Hint(
+        kind="lookup",
+        args={
+            "collection": "customers",
+            "fields": ["name", "zip"],
+            "value": ["Maria Lopez", "10027"],
+        },
+    ),
+)
+(Hint(kind="ordering", args={"collection": "orders", "field": "created_at", "direction": "desc"}),)
+(
+    Hint(
+        kind="gate",
+        args={
+            "collection": "orders",
+            "field": "status",
+            "allows": ["pending"],
+            "action": "cancel_order",
+        },
+    ),
+)
+(Hint(kind="scope", args={"collection": "orders", "where": "customer_id in $lookup.id"}),)
 ```
 
 A hints file, as `agents hints propose` writes it and `agents run --hints` reads it:

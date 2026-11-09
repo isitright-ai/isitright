@@ -47,6 +47,23 @@ handler deadline (`--timeout`, default 30 s) and a result-row cap (`--max-result
       needs composite keys, [open an issue](https://github.com/isitright-ai/isitright/issues): demand
       from a real suite decides what gets added.
 
+## BigQuery, Presto and Trino
+
+The supported subset for the warehouse dialects is described on
+[BigQuery and Presto/Trino](warehouses.md). In short:
+
+- **Supported**: one read-only query (CTEs, subqueries, joins, `UNNEST` with `WITH OFFSET` or
+  `WITH ORDINALITY`, window functions, set operations, struct dot access, array subscripts),
+  `CREATE TABLE` DDL with nested types, qualified names, optional and unenforced keys, partitions
+  and column descriptions, and `<NAME>` or `{{ NAME }}` placeholders.
+- **Rejected with the construct named**: wildcard tables, scripting, DML, geography types and
+  `ST_` functions, BigQuery `JSON`, `BIGNUMERIC`, `INTERVAL`, an implicit correlated unnest
+  (`FROM t, t.arr`), `LIMIT` inside `ARRAY_AGG`, `EXTRACT(WEEK ...)`, and `DATE_TRUNC` on an
+  expression of unknown type. SQLGlot's "unsupported" warnings are errors.
+- **Known emulation divergences, listed not translated**: `numeric / integer` division in Presto,
+  last-digit floating-point differences, regular-expression flavors, collations and formatting
+  functions. Query errors on one side of a pair skip that world.
+
 ## Known limitations
 
 - **The search is heuristic.** It is not a proof of equivalence or an exhaustive state exploration.

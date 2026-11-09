@@ -10,6 +10,7 @@ ones.
 | SQLite | `--engine sqlite` | `--database FILE`, or `--schema DDL` | In-memory copies; your file is never opened for writing |
 | PostgreSQL | `--engine postgres` | `--schema DDL` | Needs `isitright[postgres]`; a disposable local server is started and stopped for you. About 40 s per case when all 500 attempts are used |
 | PostgreSQL, fast screening | `--engine duckdb` | `--schema DDL` (PostgreSQL) | Needs `isitright[duckdb]`. Emulation: see below |
+| BigQuery, Presto, Trino | `--dialect bigquery\|presto\|trino` (runs on DuckDB) | `--schema DDL` | Emulation, confirmed on your engine with the state inlined: see [BigQuery and Presto/Trino](warehouses.md) |
 
 SQLite takes either a database or DDL. PostgreSQL and DuckDB take DDL only: isitright does not
 connect to your production PostgreSQL, and never modifies your data or systems.

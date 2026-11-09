@@ -5,7 +5,7 @@ site_url = "https://docs.isitright.ai/"
 repo_url = "https://github.com/isitright-ai/isitright"
 repo_name = "isitright-ai/isitright"
 edit_uri = "edit/main/docs/"
-copyright = "MIT licensed. Documentation for isitright 0.6.0.dev0."
+copyright = "MIT licensed. Documentation for isitright 0.7.0.dev0."
 nav = [
   { "Home" = "index.md" },
   { "Get started" = [
@@ -36,6 +36,7 @@ nav = [
     { "Audit a suite" = "sql/audit-a-suite.md" },
     { "Domain constraints" = "sql/domain-constraints.md" },
     { "Engines and large databases" = "sql/engines.md" },
+    { "BigQuery and Presto/Trino" = "sql/warehouses.md" },
     { "Supported SQL" = "sql/supported-sql.md" },
   ] },
   { "Agents" = [

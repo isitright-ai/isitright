@@ -52,6 +52,7 @@ def test_enum_wire_values_are_locked() -> None:
         "positional",
         "by_name",
         "names_and_positions",
+        "contained",
     ]
     assert [item.value for item in OrderingPolicy] == ["auto", "ordered", "unordered"]
     assert [item.value for item in EffectiveOrdering] == ["ordered", "unordered"]
@@ -76,6 +77,10 @@ def test_check_config_defaults_are_locked() -> None:
         "float_mode": "isclose",
         "float_relative_tolerance": 1e-9,
         "float_absolute_tolerance": 1e-12,
+        "column_vectors": False,
+        "null_as_zero": False,
+        "reference_columns": None,
+        "wall_time_seconds": None,
     }
 
 

@@ -29,10 +29,19 @@ from isitright.packs.sql import (
     replay_report,
 )
 from isitright.packs.sql.constraints_file import ConstraintInputError
+from isitright.packs.sql.dialects import resolve_dialect_and_engine
 from isitright.packs.sql.models import (
     ColumnComparisonPolicy,
     FloatComparisonMode,
     OrderingPolicy,
+)
+from isitright.packs.sql.native import (
+    BigQueryHost,
+    ConnectionHost,
+    InlineHost,
+    TrinoHost,
+    load_connection,
+    load_env_file,
 )
 from isitright.packs.sql.reports import ReportFormat, write_case_report, write_suite_report
 from isitright.packs.sql.slicing import (
@@ -46,6 +55,7 @@ from isitright.packs.sql.slicing import (
     slice_database,
 )
 from isitright.packs.sql.suite import SuiteInputError
+from isitright.packs.sql.templates import parse_params
 
 EXIT_INTERNAL_ERROR = 1
 EXIT_INVALID_INPUT = 2
@@ -61,7 +71,9 @@ app = typer.Typer(
     help="Audit agent evals: find valid changes to the world under which a pass no longer holds.",
     no_args_is_help=True,
 )
-sql_app = typer.Typer(help="Audit text-to-SQL programs (SQLite, PostgreSQL, DuckDB).")
+sql_app = typer.Typer(
+    help="Audit text-to-SQL programs (SQLite, PostgreSQL, BigQuery, Presto, Trino)."
+)
 app.add_typer(sql_app, name="sql")
 agents_app = typer.Typer(help="Audit tool-using agents against perturbed worlds over MCP.")
 app.add_typer(agents_app, name="agents")
@@ -74,6 +86,20 @@ class Engine(StrEnum):
     SQLITE = "sqlite"
     POSTGRES = "postgres"
     DUCKDB = "duckdb"
+
+
+class Dialect(StrEnum):
+    SQLITE = "sqlite"
+    POSTGRES = "postgres"
+    BIGQUERY = "bigquery"
+    PRESTO = "presto"
+    TRINO = "trino"
+
+
+class Confirm(StrEnum):
+    BIGQUERY = "bigquery"
+    TRINO = "trino"
+    CONNECTION = "connection"
 
 
 class AgentsFailOn(StrEnum):
@@ -166,6 +192,10 @@ def _config(
     float_mode: FloatComparisonMode,
     float_rtol: float,
     float_atol: float,
+    null_as_zero: bool = False,
+    column_vectors: bool = False,
+    reference_columns: str | None = None,
+    wall_time: float | None = None,
 ) -> CheckConfig:
     return CheckConfig(
         seed=seed,
@@ -178,7 +208,56 @@ def _config(
         float_mode=float_mode,
         float_relative_tolerance=float_rtol,
         float_absolute_tolerance=float_atol,
+        null_as_zero=null_as_zero,
+        column_vectors=column_vectors,
+        reference_columns=_columns(reference_columns),
+        wall_time_seconds=wall_time,
     )
+
+
+def _columns(text: str | None) -> list[int] | None:
+    if text is None:
+        return None
+    try:
+        return [int(part) for part in text.split(",") if part.strip()]
+    except ValueError as error:
+        raise typer.BadParameter("--reference-columns must be integers like 0,2") from error
+
+
+def _resolve(engine: Engine | None, dialect: Dialect | None) -> tuple[Engine, str | None]:
+    """The engine to run on and the dialect name (None keeps the 0.6 meaning of --engine)."""
+    chosen, name = resolve_dialect_and_engine(
+        engine.value if engine else None, dialect.value if dialect else None
+    )
+    return Engine(name), (chosen.name if dialect else None)
+
+
+def _confirm_host(
+    confirm: Confirm | None,
+    *,
+    connection: str | None,
+    trust_code: bool,
+    bq_project: str | None,
+    max_bytes_billed: int,
+    env_file: Path | None,
+    trino: tuple[str, int, str, str, str],
+) -> InlineHost | None:
+    """The native host named by --confirm, or None. No credential is read here: BigQuery's client
+    reads them from the environment when the first query is sent."""
+    if confirm is None:
+        return None
+    if confirm is Confirm.BIGQUERY:
+        if env_file is not None:
+            load_env_file(env_file, ["GOOGLE_APPLICATION_CREDENTIALS"])
+        return BigQueryHost(project=bq_project, max_bytes_billed=max_bytes_billed)
+    if confirm is Confirm.TRINO:
+        host, port, user, catalog, schema = trino
+        return TrinoHost(host=host, port=port, user=user, catalog=catalog, schema=schema)
+    if connection is None:
+        raise SqlInputError("--confirm connection needs --connection module:function")
+    if not trust_code:
+        raise SqlInputError("--connection runs your code: pass --trust-code to allow it")
+    return ConnectionHost(run=load_connection(connection))
 
 
 def _source(engine: Engine, database: Path | None, schema: Path | None) -> dict[str, Any]:
@@ -199,8 +278,30 @@ def check_command(
     reference_sql: Annotated[Path, typer.Option("--reference", exists=True, dir_okay=False)],
     candidate_sql: Annotated[Path, typer.Option("--candidate", exists=True, dir_okay=False)],
     engine: Annotated[
-        Engine, typer.Option(help="sqlite, postgres (native) or duckdb (emulated).")
-    ] = (Engine.SQLITE),
+        Engine | None,
+        typer.Option(help="Where states run: sqlite, postgres (native) or duckdb (emulated)."),
+    ] = None,
+    dialect: Annotated[
+        Dialect | None,
+        typer.Option(help="The SQL the queries are written in; by default it follows --engine."),
+    ] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", help="NAME=VALUE for a <NAME> or {{ NAME }} placeholder."),
+    ] = None,
+    null_as_zero: Annotated[
+        bool, typer.Option(help="Count NULL as 0 when comparing (a benchmark rule).")
+    ] = False,
+    column_vectors: Annotated[
+        bool, typer.Option(help="Compare columns as independent sorted vectors when unordered.")
+    ] = False,
+    reference_columns: Annotated[
+        str | None,
+        typer.Option(help="Compare only these reference columns (0-based, comma separated)."),
+    ] = None,
+    wall_time: Annotated[
+        float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
+    ] = None,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -225,16 +326,63 @@ def check_command(
     output_dir: Annotated[Path, typer.Option()] = Path("artifacts/check"),
     report_format: Annotated[ReportFormat, typer.Option("--format")] = ReportFormat.BOTH,
     fail_on: Annotated[FailOn, typer.Option()] = FailOn.NONE,
+    confirm: Annotated[
+        Confirm | None,
+        typer.Option(
+            help="Confirm findings of a warehouse dialect natively with the state inlined: "
+            "bigquery, trino, or connection (your own function: --connection, --trust-code). "
+            "bigquery and trino need their extras, which isitright[all] does not install."
+        ),
+    ] = None,
+    connection: Annotated[
+        str | None,
+        typer.Option(
+            help="module:function, a callable run(sql) -> (columns, rows) for --confirm connection."
+        ),
+    ] = None,
+    trust_code: Annotated[
+        bool,
+        typer.Option("--trust-code", help="Allow loading and running the --connection function."),
+    ] = False,
+    bq_project: Annotated[
+        str | None, typer.Option(help="BigQuery project that runs the confirmation queries.")
+    ] = None,
+    max_bytes_billed: Annotated[
+        int, typer.Option(min=1, help="Cap on bytes BigQuery may bill for one confirmation query.")
+    ] = 100 * 1024 * 1024,
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="Dotenv-style file; only GOOGLE_APPLICATION_CREDENTIALS is read from it, and "
+            "never printed or written to a report.",
+        ),
+    ] = None,
+    trino_host: Annotated[str, typer.Option(help="Trino host for --confirm trino.")] = "localhost",
+    trino_port: Annotated[int, typer.Option()] = 8080,
+    trino_user: Annotated[str, typer.Option()] = "isitright",
+    trino_catalog: Annotated[str, typer.Option()] = "memory",
+    trino_schema: Annotated[str, typer.Option()] = "default",
     verify_native: Annotated[
         bool,
         typer.Option(
             help="Re-execute findings from the duckdb engine on PostgreSQL when it is installed."
         ),
     ] = True,
+    gold_trusted: Annotated[
+        bool | None,
+        typer.Option(
+            "--gold-trusted/--gold-untrusted",
+            help="Say whether you know the reference (gold) query is right. Recorded in the "
+            "report; a finding on an untrusted reference says so. Default: unknown.",
+        ),
+    ] = None,
 ) -> None:
     """Compare one query pair on perturbed worlds of a database or schema."""
     progress = _CandidateProgress()
     try:
+        engine, dialect_name = _resolve(engine, dialect)
         if engine is not Engine.SQLITE and output_dir.exists():
             raise SqlInputError("output directory already exists; choose a new directory")
         source = _source(engine, database, schema)
@@ -243,8 +391,21 @@ def check_command(
             reference_sql=reference_sql.read_text(encoding="utf-8"),
             candidate_sql=candidate_sql.read_text(encoding="utf-8"),
             engine=engine.value,
+            dialect=dialect_name,
+            params=parse_params(param or []),
+            confirm=_confirm_host(
+                confirm,
+                connection=connection,
+                trust_code=trust_code,
+                bq_project=bq_project,
+                max_bytes_billed=max_bytes_billed,
+                env_file=env_file,
+                trino=(trino_host, trino_port, trino_user, trino_catalog, trino_schema),
+            ),
             constraints_file=constraints,
             verify_native=None if verify_native else False,
+            gold_trusted=gold_trusted,
+            gold_trust_basis="stated on the command line" if gold_trusted is not None else None,
             config=_config(
                 seed,
                 max_attempts,
@@ -256,6 +417,10 @@ def check_command(
                 float_mode,
                 float_rtol,
                 float_atol,
+                null_as_zero,
+                column_vectors,
+                reference_columns,
+                wall_time,
             ),
             _progress=lambda event: progress.update("Candidate states", event),
             **source,
@@ -317,8 +482,30 @@ def slice_command(
 def suite_command(
     cases: Annotated[Path, typer.Option(exists=True, dir_okay=False, readable=True)],
     engine: Annotated[
-        Engine, typer.Option(help="sqlite, postgres (native) or duckdb (emulated).")
-    ] = (Engine.SQLITE),
+        Engine | None,
+        typer.Option(help="Where states run: sqlite, postgres (native) or duckdb (emulated)."),
+    ] = None,
+    dialect: Annotated[
+        Dialect | None,
+        typer.Option(help="The SQL the queries are written in; by default it follows --engine."),
+    ] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option("--param", help="NAME=VALUE for a <NAME> or {{ NAME }} placeholder."),
+    ] = None,
+    null_as_zero: Annotated[
+        bool, typer.Option(help="Count NULL as 0 when comparing (a benchmark rule).")
+    ] = False,
+    column_vectors: Annotated[
+        bool, typer.Option(help="Compare columns as independent sorted vectors when unordered.")
+    ] = False,
+    reference_columns: Annotated[
+        str | None,
+        typer.Option(help="Compare only these reference columns (0-based, comma separated)."),
+    ] = None,
+    wall_time: Annotated[
+        float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
+    ] = None,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -349,6 +536,44 @@ def suite_command(
     quiet: Annotated[
         bool, typer.Option("--quiet", "-q", help="Show only totals and the report directory.")
     ] = False,
+    confirm: Annotated[
+        Confirm | None,
+        typer.Option(
+            help="Confirm findings of a warehouse dialect natively with the state inlined: "
+            "bigquery, trino, or connection (your own function: --connection, --trust-code). "
+            "bigquery and trino need their extras, which isitright[all] does not install."
+        ),
+    ] = None,
+    connection: Annotated[
+        str | None,
+        typer.Option(
+            help="module:function, a callable run(sql) -> (columns, rows) for --confirm connection."
+        ),
+    ] = None,
+    trust_code: Annotated[
+        bool,
+        typer.Option("--trust-code", help="Allow loading and running the --connection function."),
+    ] = False,
+    bq_project: Annotated[
+        str | None, typer.Option(help="BigQuery project that runs the confirmation queries.")
+    ] = None,
+    max_bytes_billed: Annotated[
+        int, typer.Option(min=1, help="Cap on bytes BigQuery may bill for one confirmation query.")
+    ] = 100 * 1024 * 1024,
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="Dotenv-style file; only GOOGLE_APPLICATION_CREDENTIALS is read from it, and "
+            "never printed or written to a report.",
+        ),
+    ] = None,
+    trino_host: Annotated[str, typer.Option(help="Trino host for --confirm trino.")] = "localhost",
+    trino_port: Annotated[int, typer.Option()] = 8080,
+    trino_user: Annotated[str, typer.Option()] = "isitright",
+    trino_catalog: Annotated[str, typer.Option()] = "memory",
+    trino_schema: Annotated[str, typer.Option()] = "default",
     verify_native: Annotated[
         bool,
         typer.Option(
@@ -361,6 +586,7 @@ def suite_command(
         raise typer.BadParameter("--verbose and --quiet cannot be used together")
     progress = _CandidateProgress()
     try:
+        engine, dialect_name = _resolve(engine, dialect)
         if engine is not Engine.SQLITE and output_dir.exists():
             raise SqlInputError("output directory already exists; choose a new directory")
         source = _source(engine, database, schema)
@@ -369,6 +595,17 @@ def suite_command(
         result = check_suite(
             cases=cases,
             engine=engine.value,
+            dialect=dialect_name,
+            params=parse_params(param or []),
+            confirm=_confirm_host(
+                confirm,
+                connection=connection,
+                trust_code=trust_code,
+                bq_project=bq_project,
+                max_bytes_billed=max_bytes_billed,
+                env_file=env_file,
+                trino=(trino_host, trino_port, trino_user, trino_catalog, trino_schema),
+            ),
             constraints_file=constraints,
             verify_native=None if verify_native else False,
             config=_config(
@@ -382,6 +619,10 @@ def suite_command(
                 float_mode,
                 float_rtol,
                 float_atol,
+                null_as_zero,
+                column_vectors,
+                reference_columns,
+                wall_time,
             ),
             _progress=progress.update if not quiet else None,
             **source,
@@ -463,8 +704,12 @@ def _print_case_summary(result: CaseReport, output_dir: Path) -> None:
     tested = result.search.executed
     version = (result.execution_fidelity.engine or "").partition(" ")[2]
     suffix = f" {version}" if version else ""
+    dialect = str(result.extensions.get("sql", {}).get("target_dialect", "postgres"))
+    engine_label = {"postgres": "PostgreSQL", "bigquery": "BigQuery", "presto": "Presto"}.get(
+        dialect, dialect.capitalize()
+    )
     if result.execution_fidelity.found_on == "EMULATED":
-        engine = f"DuckDB{suffix} (emulating PostgreSQL)"
+        engine = f"DuckDB{suffix} (emulating {engine_label})"
     else:
         engine = f"native PostgreSQL{suffix}"
     typer.echo(
@@ -491,7 +736,15 @@ def _print_case_summary(result: CaseReport, output_dir: Path) -> None:
         )
         checker = "DuckDB" if result.execution_fidelity.found_on == "EMULATED" else "PostgreSQL"
         typer.echo(f"{checker} accepted the supported schema; {validity}.")
-        if result.execution_fidelity.found_on == "EMULATED":
+        verification = finding.fidelity.verification
+        if verification is not None and verification.status == "VERIFIED" and dialect != "postgres":
+            typer.echo(f"Confirmed on {verification.engine} with the state inlined.")
+        elif result.execution_fidelity.found_on == "EMULATED" and dialect != "postgres":
+            typer.echo(
+                "DuckDB is an approximation; this difference has not been confirmed on "
+                f"{engine_label} (use --confirm)."
+            )
+        elif result.execution_fidelity.found_on == "EMULATED":
             typer.echo(
                 "DuckDB is an approximation; this difference has not been checked on PostgreSQL."
             )
@@ -501,7 +754,9 @@ def _print_case_summary(result: CaseReport, output_dir: Path) -> None:
         if result.search.budget.get("stopped_by") == "attempts":
             typer.echo("The search stopped at the configured state limit.")
         if result.execution_fidelity.found_on == "EMULATED":
-            typer.echo("DuckDB is an approximation; these results were not checked on PostgreSQL.")
+            typer.echo(
+                f"DuckDB is an approximation; these results were not checked on {engine_label}."
+            )
     else:
         typer.echo("The comparison did not complete; no conclusion can be drawn.")
         message = result.errors[0]["message"] if result.errors else "the result was inconclusive"

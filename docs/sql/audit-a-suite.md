@@ -22,7 +22,17 @@ One JSON object per line, UTF-8:
 | `reference_sql` | Yes | The gold query |
 | `candidate_sql` | Yes | The query your model produced |
 | `question` | No | Shown in the report to help review |
+| `gold_trusted` | No | `true` or `false`: whether you know the reference query is right. Absent means unknown |
+| `gold_trust_basis` | No | How you decided it, in words. Shown with the label |
 | anything else | No | Kept as metadata in the report |
+
+**Gold trusted.** A reference query is not always right: its result can differ from the answer
+the benchmark accepts, or the data can have moved since it was written. isitright never decides
+that; you can say it. With `gold_trusted: false` (or `--gold-untrusted` on `sql check`) the report
+records the label and its basis, adds an assumption, and appends a note to the headline of any
+finding: the defect may be in the reference, not in the candidate. `true` is recorded too.
+Unknown, the default, records nothing. A common basis: the reference's result on your real data
+reproduces the expected answer file.
 
 A suite audits **one database**, so group cases by database and write one file each. If you are
 starting from a benchmark's files, this script splits BIRD-style `dev.json` and a predictions file
@@ -36,7 +46,9 @@ from pathlib import Path
 dev = json.loads(Path("dev.json").read_text(encoding="utf-8"))
 predictions = json.loads(Path("predict_dev.json").read_text(encoding="utf-8"))
 # Optional: audit only cases that passed execution accuracy (one question_id per line).
-passing = set(Path("ex_passing.txt").read_text().split()) if Path("ex_passing.txt").exists() else None
+passing = (
+    set(Path("ex_passing.txt").read_text().split()) if Path("ex_passing.txt").exists() else None
+)
 
 suites = defaultdict(list)
 for index, item in enumerate(dev):
@@ -44,13 +56,15 @@ for index, item in enumerate(dev):
     if passing is not None and case_id not in passing:
         continue
     candidate = predictions[str(index)].split("\t----- bird -----\t")[0]
-    suites[item["db_id"]].append({
-        "case_id": f"{item['db_id']}-{case_id}",
-        "question": item["question"],
-        "reference_sql": item["SQL"],
-        "candidate_sql": candidate,
-        "evidence": item.get("evidence", ""),  # extra fields are kept as metadata
-    })
+    suites[item["db_id"]].append(
+        {
+            "case_id": f"{item['db_id']}-{case_id}",
+            "question": item["question"],
+            "reference_sql": item["SQL"],
+            "candidate_sql": candidate,
+            "evidence": item.get("evidence", ""),  # extra fields are kept as metadata
+        }
+    )
 
 Path("suites").mkdir(exist_ok=True)
 for db_id, cases in suites.items():
