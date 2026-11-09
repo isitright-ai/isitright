@@ -5,7 +5,7 @@
 # has run it: the 23 BigQuery fixtures sent to the owner's smoke test (2026-11-07) and the 15
 # Presto fixtures run on a local Trino 484 (2026-11-08) are `confirmed=True`. Where a fixture had
 # no documented outcome, its `native` is what the engine returned (see `rows_note`). Trino is not
-# Meta's Presto.
+# PrestoDB.
 """Dialect fidelity fixtures for the DuckDB emulation of BigQuery and Presto/Trino.
 
 Each fixture is one query on a small fixed state with the outcome it has on the emulation after
