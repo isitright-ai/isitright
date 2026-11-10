@@ -197,3 +197,32 @@ def test_a_suite_case_carries_gold_trusted() -> None:
     )
     assert report.cases[0].inputs["gold_trusted"]["value"] is False
     assert "gold_trusted" not in report.cases[0].extensions.get("metadata", {})
+
+
+def test_a_finding_verified_only_on_the_unminimized_world_says_so() -> None:
+    """Native confirmation runs on the minimized world first; when only the larger world found
+    before minimizing differs natively, the verification note says the minimal example is not
+    itself confirmed (found in review of the Spider case bq284, where the emulation's
+    ``count_if`` gave NULL on the minimized state)."""
+
+    class OnlyTheSecondWorld(_Client):
+        candidate_calls = 0
+
+        def query(self, sql: str, job_config: dict[str, Any], location: Any = None) -> _Job:
+            if job_config.get("dry_run"):
+                return _Job()
+            if "SAFE_CAST" in sql:
+                return _Job(["id", "n"], [(10, None)])
+            self.candidate_calls += 1
+            return _Job(["id", "n"], [(10, None)], error=self.candidate_calls > 1)
+
+    client = OnlyTheSecondWorld(True)
+    host = BigQueryHost(client_factory=lambda: client, config_factory=lambda **kw: kw)
+    report = check(
+        reference_sql=SAFE, candidate_sql=PLAIN, dialect="bigquery", ddl=DDL, confirm=host
+    )
+    finding = report.findings[0]
+    worlds = [c["world"] for c in finding.divergence["native_confirmation"]]
+    assert worlds == ["minimized", "unminimized divergent"]
+    assert finding.fidelity.verification.status == "VERIFIED"
+    assert "not itself confirmed" in finding.fidelity.verification.note

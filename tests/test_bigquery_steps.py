@@ -319,7 +319,7 @@ def test_the_smoke_step_compares_every_bigquery_fixture_with_its_documented_outc
             if fixture.native == "ERROR":
                 from isitright.packs.sql.sqlite_sandbox import QueryExecutionError
 
-                raise QueryExecutionError("simulated native error")
+                raise QueryExecutionError(f"simulated native error: {fixture.native_error}")
             from isitright.packs.sql.models import (
                 CanonicalValue,
                 CanonicalValueKind,

@@ -6,11 +6,18 @@ the fixtures' recorded outcomes.
 Usage (a Trino server on localhost:8080, for example `docker run -d -p 127.0.0.1:8080:8080
 trinodb/trino`, and `uv pip install "trino>=0.330,<1"`):
 
-    python examples/sql/trino/smoke.py OUT.json
+    python examples/sql/trino/smoke.py OUT.json [tests/warehouse_native_observations.json]
+
+With the second argument, the observations (outcome, error, Trino version, date) are merged into
+that file, which the fidelity tests read. Only a query error counts as the expected ERROR, and
+only when it carries the fixture's ``native_error`` name; a connection failure or any other
+exception stops the run.
 """
 
+import datetime
 import json
 import sys
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -42,8 +49,6 @@ for f in FIXTURES:
         detail = ""
     except QueryExecutionError as e:
         observed, detail = ERROR, str(e)[:300]
-    except Exception as e:  # keep going, record the failure
-        observed, detail = ERROR, f"{type(e).__name__}: {str(e)[:300]}"
 
     def norm(v, ordered=f.ordered):
         return sorted(v, key=repr) if isinstance(v, list) and not ordered else v
@@ -52,6 +57,8 @@ for f in FIXTURES:
         outcome = "no documented outcome"
     elif norm(observed) == norm(f.native):
         outcome = "confirmed"
+        if observed == ERROR and f.native_error and f.native_error not in detail:
+            outcome = "DIFFERS (another error)"
     else:
         outcome = "DIFFERS"
     rows.append(
@@ -69,12 +76,31 @@ for f in FIXTURES:
 counts = {}
 for r in rows:
     counts[r["outcome"]] = counts.get(r["outcome"], 0) + 1
+with urllib.request.urlopen("http://127.0.0.1:8080/v1/info", timeout=10) as info:
+    version = str(json.load(info)["nodeVersion"]["version"])
+today = datetime.date.today().isoformat()
 out = {
     "fixtures": rows,
     "counts": counts,
-    "note": "Trino version: read it from the server (/v1/info)",
+    "trino_version": version,
+    "date": today,
 }
 Path(sys.argv[1]).write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")
+if len(sys.argv) > 2:
+    target = Path(sys.argv[2])
+    book = json.loads(target.read_text(encoding="utf-8"))
+    kept = {r["id"]: r for r in book["records"]}
+    for r in rows:
+        kept[r["id"]] = {
+            "id": r["id"],
+            "engine": "trino",
+            "engine_version": version,
+            "date": today,
+            "observed": r["observed_native"],
+            "error": r["detail"] if r["observed_native"] == ERROR else "",
+        }
+    book["records"] = list(kept.values())
+    target.write_text(json.dumps(book, indent=1) + "\n", encoding="utf-8", newline="\n")
 print(counts)
 for r in rows:
     print(

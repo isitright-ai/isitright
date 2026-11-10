@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +114,7 @@ def test_a_runaway_program_times_out_and_the_next_run_gets_a_new_process(
         host.close()
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="macOS has no RLIMIT_AS: not enforced")
 def test_a_memory_limit_stops_a_program_that_allocates_too_much(world: tuple[Any, Any]) -> None:
     host = make_host(world, memory_mb=300)
     try:

@@ -145,6 +145,8 @@ def smoke(host: Any, fixtures: list[Any] | None = None) -> dict[str, Any]:
             outcome = "no documented outcome"
         elif same_rows(observed) == same_rows(expected):
             outcome = "confirmed"
+            if observed == ERROR and fixture.native_error and fixture.native_error not in detail:
+                outcome = "DIFFERS (another error)"
         else:
             outcome = "DIFFERS"
         rows.append(
@@ -576,6 +578,9 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
                     if finding and finding.fidelity.verification
                     else None,
                     "emulation_artifacts": report.extensions["sql"].get("emulation_artifact_count"),
+                    "native_confirmation": finding.divergence.get("native_confirmation")
+                    if finding
+                    else None,
                 }
             )
     verified = sum(1 for e in out if e["verified_on"] == "NATIVE_INLINE")

@@ -69,13 +69,19 @@ def _execute_duckdb(
     timeout_seconds: float,
     max_rows: int,
     warehouse: Dialect | None = None,
+    *,
+    time_zone: str = "UTC",
+    result_rules: bool = True,
 ) -> tuple[QueryResult, QueryResult, str]:
+    """``time_zone`` and ``result_rules=False`` exist for the fidelity fixtures, which run a plain
+    transpile in a non-UTC session without the dialect's result rules to show what a rewrite or
+    a rule is for."""
     duckdb = importlib.import_module("duckdb")
     catalog = catalog_of(schema.database)
     with duckdb.connect(":memory:", config={"enable_external_access": "false"}) as connection:
         if warehouse is not None:
             # BigQuery and Presto read timestamps in UTC; DuckDB would use the machine's zone.
-            connection.execute("SET TimeZone = 'UTC'")
+            connection.execute(f"SET TimeZone = '{time_zone}'")
         for table in _ordered_schema_tables(schema.database):
             if warehouse is not None:
                 assert table.engine_ddl is not None
@@ -111,7 +117,11 @@ def _execute_duckdb(
                         connection.execute(translate_for_duckdb(query, catalog).sql), max_rows
                     )
                 try:
-                    return _result(connection.execute(query), max_rows, dialect=warehouse)
+                    return _result(
+                        connection.execute(query),
+                        max_rows,
+                        dialect=warehouse if result_rules else None,
+                    )
                 except QueryDataError as error:
                     if tolerate:
                         return error_result(str(error))
