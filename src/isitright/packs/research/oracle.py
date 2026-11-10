@@ -277,7 +277,10 @@ def _invariant(check: Any, report: Report) -> OracleResult:
     messages = [*check.l0_failures, *check.l1_failures]
     if messages:
         return OracleResult(name, "INVARIANT", Outcome.NOT_MET, messages)
-    return OracleResult(name, "INVARIANT", Outcome.MET, [f"level {check.level} reached"])
+    note = f"level {check.level} reached"
+    if check.unquoted:
+        note += f" ({check.unquoted} citation(s) give no quote: the quote is not checked)"
+    return OracleResult(name, "INVARIANT", Outcome.MET, [note])
 
 
 def _constructive(

@@ -271,12 +271,14 @@ class CitationCheck:
     uncited_claims: int = 0
     l0_failures: list[str] = field(default_factory=list)
     l1_failures: list[str] = field(default_factory=list)
+    unquoted: int = 0
+    """Citations that give no quote (a recorded format without quotes): L0 only, never L1."""
 
     @property
     def level(self) -> Literal["NONE", "L0", "L1"]:
         if self.cited == 0 or self.l0_failures:
             return "NONE"
-        return "L0" if self.l1_failures else "L1"
+        return "L0" if self.l1_failures or self.unquoted else "L1"
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -285,6 +287,7 @@ class CitationCheck:
             "uncited_claims": self.uncited_claims,
             "l0_failures": self.l0_failures,
             "l1_failures": self.l1_failures,
+            "unquoted_citations": self.unquoted,
             "l2": "not judged: needs a judge, and no model judge is run",
         }
 
@@ -299,6 +302,8 @@ def check_citations(report: Report, documents: Mapping[str, Entity]) -> Citation
             doc = documents.get(citation.doc_id)
             if doc is None:
                 check.l0_failures.append(f"{citation.doc_id}: no such document")
+            elif not citation.quote.strip():
+                check.unquoted += 1  # an empty quote is "in" every text: it proves nothing
             elif squash(citation.quote) not in squash(str(doc["text"])):
                 check.l1_failures.append(f"{citation.doc_id}: quote not in the document")
     return check

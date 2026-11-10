@@ -113,6 +113,7 @@ flowchart LR
     M --> E[Counterexample<br/>replay, add to evals]
 ```
 
-Two packs ship today, on one shared core: one for text-to-SQL (SQLite, PostgreSQL, and DuckDB as
-labeled emulation), one for tool-using agents over MCP. [How an audit works](concepts/how-it-works.md)
+Four packs ship today, on one shared core: text-to-SQL (SQLite, PostgreSQL, BigQuery and
+Presto/Trino, with DuckDB as labeled emulation), tool-using agents over MCP, data-analysis agents,
+and research agents that answer from a frozen corpus with citations. [How an audit works](concepts/how-it-works.md)
 explains the loop in order.

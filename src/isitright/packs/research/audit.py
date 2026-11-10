@@ -221,7 +221,14 @@ def stand_in_subject(agent: Agent, task: ResearchTask, stats: FrozenStats) -> Su
 
 
 class ResearchAudit:
-    def __init__(self, state: State, task: ResearchTask, config: AuditConfig | None = None) -> None:
+    def __init__(
+        self,
+        state: State,
+        task: ResearchTask,
+        config: AuditConfig | None = None,
+        *,
+        stats: FrozenStats | None = None,
+    ) -> None:
         self.config = config or AuditConfig()
         self.task = task
         if task.cutoff and "cutoff" not in state.params:
@@ -233,7 +240,10 @@ class ResearchAudit:
         if validity.status is not ValidityStatus.VALID:
             raise ResearchInputError("the corpus is not valid: " + "; ".join(validity.problems[:3]))
         self.base_validity = validity
-        self.stats = FrozenStats.from_documents(state.entities(COLLECTION))
+        # ``stats`` lets a caller whose state is a restricted world of a larger corpus (a
+        # benchmark task) give the statistics of the whole corpus: ranks do not depend on the
+        # restriction.
+        self.stats = stats or FrozenStats.from_documents(state.entities(COLLECTION))
         self.artifacts: dict[str, ReplayArtifact] = {}
         self.exports: dict[str, Any] = {}
         self.baseline_runs: list[RecordedRun] = []

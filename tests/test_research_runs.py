@@ -170,3 +170,15 @@ def test_a_cited_document_id_is_not_a_statement_that_sources_contradict() -> Non
     assert report.flagged("conflict") is False
     said = Report(answer="1965; sources contradict each other", claims=report.claims)
     assert said.flagged("conflict") is True
+
+
+def test_a_citation_without_a_quote_reaches_level_zero_not_one() -> None:
+    """An empty string is inside every text, so an empty quote must not count as a match."""
+    docs = documents_of(corpus())
+    report = Report(
+        answer="1962",
+        claims=[Claim(text="x", citations=[Citation(doc_id="bridge-eastgate", quote="")])],
+    )
+    check = check_citations(report, docs)
+    assert check.level == "L0" and check.unquoted == 1 and check.l1_failures == []
+    assert check.to_json()["unquoted_citations"] == 1
