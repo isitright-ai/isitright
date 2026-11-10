@@ -3,7 +3,7 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
-## 0.7.0.dev0 - Warehouse dialects
+## 0.7.0 - Warehouse dialects
 
 BigQuery and Presto/Trino queries are audited from table definitions alone, without moving data.
 The search runs on DuckDB; findings are confirmed on your own engine with the state written into
