@@ -1,0 +1,9 @@
+{
+  "id": "halvorsen-completed",
+  "question": "When was the Halvorsen Bridge completed?",
+  "answer_type": "number",
+  "gold": "1962",
+  "gold_basis": "taken from the constructed corpus by its author; not checked against anything else",
+  "reader_pattern": "completed in (\\d{4})",
+  "cutoff": "2024-12-31"
+}

@@ -195,7 +195,8 @@ class Finding(Closed):
     minimization: dict[str, Any] = Field(default_factory=dict)
     mode: Literal["frozen_program", "frozen_trace", "live_agent"] | None = None
     """Added in 0.6. ``frozen_program``: a recorded program on a world. ``frozen_trace`` (0.8): a
-    recorded run replayed, its report not regenerated. ``live_agent``: the agent's own runs. ``None``: not stated (0.4 and 0.5 reports, and packs without the distinction)."""
+    recorded run replayed, its report not regenerated. ``live_agent``: the agent's own runs.
+    ``None``: not stated (0.4 and 0.5 reports, and packs without the distinction)."""
     live: LiveRecord | None = None
     headline: str
 
