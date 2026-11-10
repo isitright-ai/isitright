@@ -859,7 +859,7 @@ class ResearchAudit:
             findings,
             [recorded],
             [],
-            {},
+            check_citations(recorded.report, documents_of(self.state)).to_json(),
             hints,
             budget,
             gate,
@@ -1054,7 +1054,7 @@ class ResearchAudit:
         if status_c == "NOT_DISCRIMINATING":
             summary += "; controls never reached (NOT_DISCRIMINATING)"
         level = base_citations.get("level_reached")
-        if level in ("NONE", "L0"):
+        if level in ("NONE", "L0") and not baseline_runs[0].report.abstained():
             summary += f"; the baseline report's own citations reach only level {level}"
         first = findings[0] if findings else None
         base_valid = validity_record(self.base_validity)

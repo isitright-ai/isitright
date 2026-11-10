@@ -157,3 +157,10 @@ def test_roles_are_computed_per_world_not_assumed() -> None:
     assert roles["supersede"] == Role.CONTROL.value and roles["plant"] == Role.TRAP.value
     assert roles["retract"] == Role.CONTROL.value and roles["reorder"] == Role.TRAP.value
     assert task().gold == "1962"
+
+
+def test_frozen_report_states_the_citation_level_of_the_recorded_report() -> None:
+    _, run = recorded_careful()
+    _, report = frozen(run)
+    citations = report.extensions["research"]["baseline"]["citations"]
+    assert citations["level_reached"] == "L1" and citations["l0_failures"] == []

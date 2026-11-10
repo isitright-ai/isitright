@@ -161,8 +161,9 @@ A recorded run's finding says "this recorded report on this world", never "this 
 ## Costs and safety
 
 The tools run no model and make no call. A stand-in audit of the constructed corpus takes seconds.
-A real agent costs what it costs: see the runbook (`RUNBOOK-research-agents.md` in the release
-notes) for estimates and hard caps. Never put credentials in a command line; use the environment.
+A real agent costs what it costs: a research run is many searches over a growing context, so set
+`--max-runs`, `--seconds` and (for an agent that reports its cost) `--max-money` before a paid
+sweep. Never put credentials in a command line; use the environment.
 `--trust-code` is required for any agent that runs code or a command, and agents are not
 sandboxed.
 
@@ -183,6 +184,19 @@ flip that is right, such as moving to a newer edition, is not counted as an erro
 of the change, the three-way separation above, minimization to a few documents, replay and an
 exportable eval case. Numbers produced here are not comparable with theirs: different corpus,
 agents and planted text.
+
+## A demo on published runs
+
+`examples/research/browsecomp_plus/` has scripts (no benchmark data) that replay the published
+BM25 + gpt-5 runs of BrowseComp-Plus frozen on mutated corpora. On 25 tasks chosen by a rule fixed
+before any audit, with the world of each task restricted to the documents its run saw and the
+statistics of the whole corpus (100,195 documents), the recorded reports were not regenerated, so
+nothing here says what the agent would do. What it measures is exposure under this tool's BM25:
+all 15 supersede worlds and all 38 contradict worlds put the added document in the results of a
+recorded query; 10 of 19 plants did and 9 did not (UNOBSERVABLE); 20 of 25 out-of-scope digests were
+not retrieved by any recorded query. The simulated retriever reproduced the recorded top-5 set for
+95 of 492 recorded queries and the recorded first result for 270, so exposure is about this scorer,
+not the benchmark's. The recorded runs carry no quotes, so their citations reach level L0 only.
 
 ## Quick start
 
