@@ -1035,7 +1035,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             return "ARTIFACTS_EXCLUDED"
         return "NATIVE_UNVERIFIED"
 
-    def _verification(self, native: tuple[str, Any, Any, Any]) -> VerificationRecord | None:
+    def _verification(
+        self, native: tuple[str, Any, Any, Any], *, only_unminimized: bool = False
+    ) -> VerificationRecord | None:
         """What native re-execution said about a finding found on an emulating engine."""
         if self.engine != "duckdb":
             return None
@@ -1043,6 +1045,17 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         if self.dialect.warehouse:
             host = self._confirm_host
             label = host.engine if host is not None else None
+            if status == "differ" and only_unminimized:
+                return VerificationRecord(
+                    status="VERIFIED",
+                    engine=label,
+                    note=(
+                        f"re-executed on {label} with the state inlined; the results differ on "
+                        "the larger world found before minimizing, but the minimized world shown "
+                        "here does not differ there (see native_confirmation): the minimal "
+                        "example is not itself confirmed"
+                    ),
+                )
             if status == "differ":
                 return VerificationRecord(
                     status="VERIFIED",
@@ -1157,6 +1170,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         before = minimized.atoms_before
         native_final = native(final_state)
         confirmation: list[dict[str, Any]] = []
+        only_unminimized = False
         if self.dialect.warehouse:
             confirmation.append(
                 {"world": "minimized", "result": native_final[0], "note": native_final[3]}
@@ -1169,6 +1183,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 )
                 if second[0] == "differ":
                     native_final = second
+                    only_unminimized = True
         return Finding(
             finding_id=f"{case.case_id or 'case'}:1",
             world_id=generator or "baseline",
@@ -1189,7 +1204,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 **self._native_results(native_final),
                 **({"native_confirmation": confirmation} if confirmation else {}),
             },
-            fidelity=self._fidelity(self._verification(native_final)),
+            fidelity=self._fidelity(
+                self._verification(native_final, only_unminimized=only_unminimized)
+            ),
             replay=ReplayRecord(artifact=fixture),
             minimization={
                 "complete": minimized.complete,

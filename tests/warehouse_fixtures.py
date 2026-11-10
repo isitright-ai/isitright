@@ -47,6 +47,15 @@ class Fixture:
     rows_note: str = ""
     confirmed: bool = False
     detected_text: str = ""
+    error_text: str = ""
+    """For an expected ``ERROR``: text the emulated error message must contain, so that an
+    unrelated failure (a parse, bind or connection error) cannot pass as the data error."""
+    native_error: str = ""
+    """For an expected ``ERROR``: the engine's own error name (Trino) that the native run must
+    report; empty where no native error was recorded."""
+    types: tuple[str, ...] | None = None
+    """Canonical value kinds of the first row's cells, where the type is the behavior (an
+    integer, not a float; a date, not a timestamp). ``None``: values only."""
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -172,6 +181,8 @@ BIGQUERY: tuple[Fixture, ...] = (
         "translated",
         "E5 (OFFSET produces an error if the index is out of range); DuckDB gives NULL",
         confirmed=True,
+        error_text="array index out of bounds",
+        native_error="out of bounds",
     ),
     Fixture(
         "bq-array-offset-in-range",
@@ -203,6 +214,8 @@ BIGQUERY: tuple[Fixture, ...] = (
         "translated",
         "E7 (divide by zero operations return an error); DuckDB returns infinity",
         confirmed=True,
+        error_text="division by zero",
+        native_error="division by zero",
     ),
     Fixture(
         "bq-division-by-zero-column",
@@ -213,6 +226,8 @@ BIGQUERY: tuple[Fixture, ...] = (
         "translated",
         "E7",
         confirmed=True,
+        error_text="division by zero",
+        native_error="division by zero",
     ),
     Fixture(
         "bq-integer-division-is-float",
@@ -224,6 +239,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "not fetched: the operators page read does not quote the INT64 / INT64 result type",
         rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
         confirmed=True,
+        types=("float",),
     ),
     Fixture(
         "bq-safe-divide",
@@ -245,6 +261,8 @@ BIGQUERY: tuple[Fixture, ...] = (
         "agrees",
         "E8 (all operators throw an error if the computation result overflows)",
         confirmed=True,
+        error_text="Overflow in addition",
+        native_error="Integer Overflow",
     ),
     Fixture(
         "bq-dayofweek",
@@ -277,6 +295,7 @@ BIGQUERY: tuple[Fixture, ...] = (
         "not fetched: BigQuery returns a DATE; DuckDB returns a timestamp",
         rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
         confirmed=True,
+        types=("date",),
     ),
     Fixture(
         "bq-timestamp-is-utc",
@@ -286,22 +305,40 @@ BIGQUERY: tuple[Fixture, ...] = (
         [[23, "2021-01-06"]],
         "translated",
         "not fetched: BigQuery reads a TIMESTAMP in UTC; DuckDB uses the machine's zone unless "
-        "the session is set to UTC (it is)",
+        "the session is set to UTC (the host sets it). The raw run in the test uses a session "
+        "in America/New_York, which gives hour 18 and date 2021-01-06 for 23:30 UTC",
         rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
-        extra={"state_does_not_discriminate": "UTC session: a plain transpile agrees here"},
+        extra={"raw_session_time_zone": "Asia/Tokyo"},
         confirmed=True,
     ),
     Fixture(
         "bq-array-agg-ignore-nulls",
         "bigquery",
-        "SELECT ARRAY_AGG(e IGNORE NULLS ORDER BY e) FROM t, UNNEST(arr) AS e",
-        [[[1, 2]]],
-        [[[1, 2]]],
+        "SELECT ARRAY_AGG(x IGNORE NULLS ORDER BY x) FROM t",
+        [[[5, 9]]],
+        [[[5, 9]]],
         "translated",
-        "not fetched: IGNORE NULLS is dropped by SQLGlot and a NULLS FIRST is added; rewritten "
-        "as FILTER (WHERE e IS NOT NULL)",
-        rows_note="native observed in the BigQuery smoke test, 2026-11-07; not documented",
-        extra={"state_does_not_discriminate": "no NULL element: a plain transpile agrees"},
+        "the ARRAY_AGG page: IGNORE NULLS removes NULL values from the input before aggregating "
+        "(from memory of the page, not fetched); SQLGlot drops IGNORE NULLS, so a plain transpile "
+        "keeps the NULL, which BigQuery would reject in a result. Rewritten as "
+        "FILTER (WHERE x IS NOT NULL)",
+        rows_note="the earlier version of this fixture (an array without NULL elements) was "
+        "confirmed in the BigQuery smoke test of 2026-11-07 but did not discriminate; this "
+        "version uses the nullable column x; native observed on BigQuery, 2026-11-09",
+        confirmed=True,
+    ),
+    Fixture(
+        "bq-countif-all-null-is-zero",
+        "bigquery",
+        "SELECT COUNTIF(x > 100) FROM t WHERE id = 1",
+        [[0]],
+        [[0]],
+        "translated",
+        "the COUNTIF page: 0 if there are zero input rows, or if the expression is FALSE or NULL "
+        "for all rows (from memory of the page, not fetched); DuckDB's count_if is NULL here",
+        rows_note="found in review of case bq284 (2026-11-09); native observed on BigQuery, "
+        "2026-11-09",
+        types=("integer",),
         confirmed=True,
     ),
     Fixture(
@@ -313,6 +350,8 @@ BIGQUERY: tuple[Fixture, ...] = (
         "checked",
         "E4 (an error if the query result has an array which contains NULL elements)",
         confirmed=True,
+        error_text="array with NULL elements",
+        native_error="null element",
     ),
     Fixture(
         "bq-null-array-in-result-is-empty",
@@ -387,6 +426,7 @@ PRESTO: tuple[Fixture, ...] = (
         "translated",
         "E16 (integer division performs truncation); DuckDB's / is floating point",
         confirmed=True,
+        types=("integer",),
     ),
     Fixture(
         "pr-integer-division-column",
@@ -410,6 +450,8 @@ PRESTO: tuple[Fixture, ...] = (
         "recollection)",
         rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
         confirmed=True,
+        error_text="division by zero",
+        native_error="DIVISION_BY_ZERO",
     ),
     Fixture(
         "pr-array-subscript-out-of-bounds",
@@ -420,6 +462,8 @@ PRESTO: tuple[Fixture, ...] = (
         "translated",
         "E14 (the subscript fails where element_at returns NULL); DuckDB gives NULL",
         confirmed=True,
+        error_text="array index out of bounds",
+        native_error="INVALID_FUNCTION_ARGUMENT",
     ),
     Fixture(
         "pr-array-subscript-in-bounds",
@@ -450,6 +494,8 @@ PRESTO: tuple[Fixture, ...] = (
         "translated",
         "E15 (the operator throws an error if the key is not contained in the map)",
         confirmed=True,
+        error_text="key not present",
+        native_error="INVALID_FUNCTION_ARGUMENT",
     ),
     Fixture(
         "pr-map-element-at-missing-key",
@@ -479,6 +525,20 @@ PRESTO: tuple[Fixture, ...] = (
         [[1, 1], [1, 2], [2, None], [3, None]],
         "agrees",
         "E17 (LEFT JOIN is preferable to avoid losing the row)",
+        confirmed=True,
+    ),
+    Fixture(
+        "pr-count-if-all-null-is-zero",
+        "presto",
+        "SELECT count_if(x > 100) FROM t WHERE id = 1",
+        [[0]],
+        [[0]],
+        "translated",
+        "count_if is count(CASE WHEN x THEN 1 END), so 0 when no input is TRUE (from memory of "
+        "the aggregate functions page, not fetched); DuckDB's count_if is NULL here",
+        rows_note="found in review of case bq284 (2026-11-09); native observed on Trino 484, "
+        "2026-11-09",
+        types=("integer",),
         confirmed=True,
     ),
     Fixture(
@@ -514,6 +574,7 @@ PRESTO: tuple[Fixture, ...] = (
         "DuckDB returns a timestamp",
         rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
         confirmed=True,
+        types=("date",),
     ),
     Fixture(
         "pr-null-elements-in-result-arrays",
@@ -527,6 +588,19 @@ PRESTO: tuple[Fixture, ...] = (
         confirmed=True,
     ),
     Fixture(
+        "pr-decimal-division-is-listed",
+        "presto",
+        "SELECT CAST(1 AS DECIMAL(10, 2)) / 3",
+        [[0.3333333333333333]],
+        [["0.3333333333333"]],
+        "listed",
+        "not fetched: Presto and Trino divide a DECIMAL by an integer in decimal arithmetic (a "
+        "DECIMAL with 13 fractional digits here); DuckDB divides in floating point. Not "
+        "translated (docs/sql/supported-sql.md)",
+        rows_note="native observed on Trino 484 (local container), 2026-11-09; not documented",
+        confirmed=True,
+    ),
+    Fixture(
         "pr-cast-varchar-to-integer-fails",
         "presto",
         "SELECT CAST('abc' AS INTEGER)",
@@ -536,6 +610,8 @@ PRESTO: tuple[Fixture, ...] = (
         "not fetched: invalid casts fail in both",
         rows_note="native observed on Trino 484 (local container), 2026-11-08; not documented",
         confirmed=True,
+        error_text="Could not convert string",
+        native_error="INVALID_CAST_ARGUMENT",
     ),
 )
 

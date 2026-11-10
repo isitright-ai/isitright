@@ -212,9 +212,18 @@ class DuckdbHost(SqlHost):
     fidelity = Fidelity.EMULATED
     engine = "duckdb"
 
-    def __init__(self, schema: Schema, warehouse: Dialect | None = None) -> None:
+    def __init__(
+        self,
+        schema: Schema,
+        warehouse: Dialect | None = None,
+        *,
+        time_zone: str = "UTC",
+        result_rules: bool = True,
+    ) -> None:
         self.schema = schema
         self.warehouse = warehouse
+        self.time_zone = time_zone
+        self.result_rules = result_rules
 
     def run_pair(
         self,
@@ -233,6 +242,8 @@ class DuckdbHost(SqlHost):
             timeout_seconds,
             max_result_rows,
             self.warehouse,
+            time_zone=self.time_zone,
+            result_rules=self.result_rules,
         )
         self.version = version
         return left, right
