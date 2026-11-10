@@ -44,7 +44,7 @@ Versions before 1.0 may break the API, the CLI and the report schema.
 - A baseline run that did not complete is skipped when pairing instead of ending the world's runs
   with the sequential test undecided.
 
-## 0.6.0.dev0 - The data-analysis pack
+## 0.6.0 - The data-analysis pack
 
 0.6 adds a third domain on the same core: agents that write and run Python over data files. A new
 domain mostly reuses the core; `docs/data.md` describes what it adds.
