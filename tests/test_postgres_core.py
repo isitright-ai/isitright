@@ -230,7 +230,7 @@ def test_cli_requires_fresh_output_directory(tmp_path: Path) -> None:
     assert "counterexample.sql" in result.output
     report = json.loads((output / "case_report.json").read_text())
     assert report["cases"][0]["divergence_status"] == "COUNTEREXAMPLE_FOUND"
-    assert report["schema_version"] == "0.6"
+    assert report["schema_version"] == "0.8"
     assert (output / "counterexample.sql").is_file()
     assert CliRunner().invoke(app, args).exit_code == 2
 

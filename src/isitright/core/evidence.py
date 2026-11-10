@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from isitright.core.stochastic import Stability
 
-SCHEMA_VERSION: Literal["0.6"] = "0.6"
+SCHEMA_VERSION: Literal["0.8"] = "0.8"
 _BANNED = re.compile(r"\b(pass|passed|fail|failed|failure|correct|incorrect|wrong)\b", re.I)
 
 
@@ -193,9 +193,9 @@ class Finding(Closed):
     replay: ReplayRecord = Field(default_factory=ReplayRecord)
     export: str | None = None
     minimization: dict[str, Any] = Field(default_factory=dict)
-    mode: Literal["frozen_program", "live_agent"] | None = None
-    """Added in 0.6. ``frozen_program``: a recorded program on a world. ``live_agent``: the agent's
-    own runs. ``None``: not stated (0.4 and 0.5 reports, and packs without the distinction)."""
+    mode: Literal["frozen_program", "frozen_trace", "live_agent"] | None = None
+    """Added in 0.6. ``frozen_program``: a recorded program on a world. ``frozen_trace`` (0.8): a
+    recorded run replayed, its report not regenerated. ``live_agent``: the agent's own runs. ``None``: not stated (0.4 and 0.5 reports, and packs without the distinction)."""
     live: LiveRecord | None = None
     headline: str
 
@@ -281,7 +281,7 @@ class Totals(Closed):
 class AuditReport(Closed):
     """The report of one audit: a single check, a suite, or an agent scenario."""
 
-    schema_version: Literal["0.4", "0.5", "0.6"] = SCHEMA_VERSION
+    schema_version: Literal["0.4", "0.5", "0.6", "0.8"] = SCHEMA_VERSION
     """0.4 and 0.5 reports stay readable: every field added since is optional."""
     pack: str
     kind: Literal["case", "suite", "scenario"]
