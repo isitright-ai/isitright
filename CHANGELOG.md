@@ -41,7 +41,7 @@ offline, without a model, an account or a real research agent.
   Replay artifacts of version 0.4 to 0.6 still load; new ones are written as 0.8.
 - `isitright --version` reports 0.8.0.dev0.
 
-## 0.7.0.dev0 - Warehouse dialects
+## 0.7.0 - Warehouse dialects
 
 BigQuery and Presto/Trino queries are audited from table definitions alone, without moving data.
 The search runs on DuckDB; findings are confirmed on your own engine with the state written into
@@ -119,7 +119,7 @@ the query text. See `docs/sql/warehouses.md`.
 - A baseline run that did not complete is skipped when pairing instead of ending the world's runs
   with the sequential test undecided.
 
-## 0.6.0.dev0 - The data-analysis pack
+## 0.6.0 - The data-analysis pack
 
 0.6 adds a third domain on the same core: agents that write and run Python over data files. A new
 domain mostly reuses the core; `docs/data.md` describes what it adds.

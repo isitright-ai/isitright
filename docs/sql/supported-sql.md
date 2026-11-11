@@ -62,7 +62,9 @@ The supported subset for the warehouse dialects is described on
   expression of unknown type. SQLGlot's "unsupported" warnings are errors.
 - **Known emulation divergences, listed not translated**: `numeric / integer` division in Presto,
   last-digit floating-point differences, regular-expression flavors, collations and formatting
-  functions. Query errors on one side of a pair skip that world.
+  functions. On SQLite and PostgreSQL, a query error on one side of a pair skips that world;
+  for BigQuery, Presto and Trino, a candidate's data-dependent error is a finding (see
+  [warehouses](warehouses.md#candidate-errors)).
 
 ## Known limitations
 

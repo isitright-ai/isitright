@@ -44,6 +44,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
 
   verify-testpypi:
     needs: publish-testpypi
@@ -75,11 +76,11 @@ jobs:
       - name: Install the exact TestPyPI release
         shell: bash
         run: |
-          for attempt in 1 2 3 4 5; do
+          for attempt in $(seq 1 20); do
             python -m pip install \
-              --index-url https://test.pypi.org/simple/ \
+              --no-cache-dir --index-url https://test.pypi.org/simple/ \
               --no-deps "isitright==$PACKAGE_VERSION" && break
-            if [ "$attempt" = 5 ]; then exit 1; fi
+            if [ "$attempt" = 20 ]; then exit 1; fi
             sleep 15
           done
       - run: python -c "import isitright, os; assert isitright.__version__ == os.environ['PACKAGE_VERSION']"

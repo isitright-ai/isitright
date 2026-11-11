@@ -153,8 +153,10 @@ def to_duckdb(tree: exp.Query, dialect: Dialect, db: DatabaseSchema) -> Translat
         _bigquery_subscripts(work, notes)
         _guard_division(work, notes)
         _extract_dayofweek(work, notes)
+        _countif_zero(work, notes)
         _date_trunc(work, dialect, db, notes)
     elif dialect.family == "presto":
+        _countif_zero(work, notes)
         _presto_subscripts(work, db, notes)
         _truncate_integer_division(work, dialect, db, notes)
         _date_trunc(work, dialect, db, notes)
@@ -296,6 +298,19 @@ def _guard_division(tree: exp.Expression, notes: dict[str, int]) -> None:
         zero = exp.EQ(this=divisor.copy(), expression=exp.Literal.number(0))
         node.replace(exp.Case(ifs=[exp.If(this=zero, true=failure)], default=node.copy()))
         _bump(notes, "checked_division")
+
+
+def _countif_zero(tree: exp.Expression, notes: dict[str, int]) -> None:
+    """``COUNTIF`` (BigQuery) and ``count_if`` (Presto) are 0 when no input is TRUE, including
+    when every input is NULL or there is no row; DuckDB's ``count_if`` is NULL then."""
+    for node in list(tree.find_all(exp.CountIf)):
+        target: exp.Expression = node
+        if isinstance(node.parent, exp.Window) and node.parent.this is node:
+            target = node.parent
+        target.replace(
+            exp.Coalesce(this=target.copy(), expressions=[exp.Literal.number(0)]),
+        )
+        _bump(notes, "countif_zero")
 
 
 def _extract_dayofweek(tree: exp.Expression, notes: dict[str, int]) -> None:

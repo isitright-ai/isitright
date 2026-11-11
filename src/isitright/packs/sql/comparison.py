@@ -321,9 +321,11 @@ def _compare_vectors(
         if not any(
             _vectors_match(vector, other, ordered=ordered, tolerance=tolerance) for other in pool
         ):
-            return ComparisonOutcome(
-                False,
-                f"reference column {names[index]} has no matching candidate column",
-                ordered,
+            candidate_names = ", ".join(column.name for column in candidate.columns)
+            where = (
+                f"no candidate column holds the same values (candidate columns: {candidate_names})"
+                if contained
+                else "its values differ from the candidate's column in the same position"
             )
+            return ComparisonOutcome(False, f"reference column {names[index]}: {where}", ordered)
     return ComparisonOutcome(True, None, ordered)
