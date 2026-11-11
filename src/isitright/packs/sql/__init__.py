@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from isitright.core.evidence import AuditReport, CaseReport
-from isitright.packs.sql.audit import Engine, InputError, SqlAudit, SqlCase
+from isitright.packs.sql.audit import InputError, SqlAudit, SqlCase
 from isitright.packs.sql.constraints_file import ConstraintInputError, load_constraint_schema
 from isitright.packs.sql.errors import SqlInputError
 from isitright.packs.sql.models import (
@@ -25,6 +25,7 @@ from isitright.packs.sql.models import (
     OrderingPolicy,
     SuiteCase,
 )
+from isitright.packs.sql.native import BigQueryHost, ConnectionHost, InlineHost, TrinoHost
 from isitright.packs.sql.replaying import (
     export_eval_cases,
     replay_artifact,
@@ -56,7 +57,8 @@ def check(
     *,
     reference_sql: str,
     candidate_sql: str,
-    engine: Engine = "sqlite",
+    engine: str | None = None,
+    dialect: str | None = None,
     database: str | PathLike[str] | None = None,
     ddl: str | None = None,
     question: str | None = None,
@@ -66,27 +68,42 @@ def check(
     config: CheckConfig | None = None,
     validator: CandidateStateValidator | None = None,
     verify_native: bool | None = None,
+    params: dict[str, str] | None = None,
+    confirm: InlineHost | None = None,
+    gold_trusted: bool | None = None,
+    gold_trust_basis: str | None = None,
     _server: tuple[Any, str] | None = None,
     _progress: Any = None,
 ) -> CaseReport:
     """Compare two read-only queries on perturbed worlds; the user's data is never modified."""
     with SqlAudit(
         engine=engine,
+        dialect=dialect,
         database=database,
         ddl=ddl,
         domain_schema=_constraints(constraints, constraints_file),
         validator=validator,
         verify_native=verify_native,
+        params=params,
+        confirm=confirm,
         _server=_server,
     ) as audit:
-        case = SqlCase(reference_sql, candidate_sql, case_id, question)
+        case = SqlCase(
+            reference_sql,
+            candidate_sql,
+            case_id,
+            question,
+            gold_trusted=gold_trusted,
+            gold_trust_basis=gold_trust_basis,
+        )
         return audit.check(case, config, _progress)
 
 
 def check_suite(
     *,
     cases: str | PathLike[str] | list[SuiteCase],
-    engine: Engine = "sqlite",
+    engine: str | None = None,
+    dialect: str | None = None,
     database: str | PathLike[str] | None = None,
     ddl: str | None = None,
     constraints: dict[str, Any] | None = None,
@@ -94,16 +111,21 @@ def check_suite(
     config: CheckConfig | None = None,
     validator: CandidateStateValidator | None = None,
     verify_native: bool | None = None,
+    params: dict[str, str] | None = None,
+    confirm: InlineHost | None = None,
     _progress: Any = None,
 ) -> AuditReport:
     """Analyze a JSONL suite (or a list of `SuiteCase`), isolating per-case failures."""
     audit = SqlAudit(
         engine=engine,
+        dialect=dialect,
         database=database,
         ddl=ddl,
         domain_schema=_constraints(constraints, constraints_file),
         validator=validator,
         verify_native=verify_native,
+        params=params,
+        confirm=confirm,
     )
     try:
         items = load_suite_cases(Path(cases)) if isinstance(cases, str | PathLike) else list(cases)
@@ -119,19 +141,23 @@ def check_suite(
 
 
 __all__ = [
+    "BigQueryHost",
     "CandidateStateValidator",
     "CandidateStateView",
     "CanonicalValue",
     "CanonicalValueKind",
     "CheckConfig",
     "ColumnComparisonPolicy",
+    "ConnectionHost",
     "EffectiveOrdering",
     "FloatComparisonMode",
+    "InlineHost",
     "InputError",
     "OrderingPolicy",
     "SqlAudit",
     "SqlInputError",
     "SuiteCase",
+    "TrinoHost",
     "ValidationFinding",
     "ValidatorResult",
     "ValidatorStatus",

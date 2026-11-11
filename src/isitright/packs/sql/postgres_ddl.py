@@ -121,7 +121,10 @@ def _ordered_schema_tables(schema: DatabaseSchema) -> list[TableSchema]:
         ready = [
             table
             for table in pending.values()
-            if not any(key.referenced_table in pending for key in table.foreign_keys)
+            if not any(
+                key.referenced_table in pending and key.on_update != "NOT ENFORCED"
+                for key in table.foreign_keys
+            )
         ]
         if not ready:
             raise SqlInputError("cyclic foreign-key dependencies are unsupported")

@@ -31,7 +31,7 @@ Three packs ship on one shared core:
 | You have | Use | World | Where it runs |
 |---|---|---|---|
 | A tool-using agent that talks MCP | `isitright agents run` | An entity state behind MCP tools | An MCP server per run (`SIMULATED`) |
-| Text-to-SQL output (reference and candidate queries) | `isitright sql check` / `suite` | A database | SQLite or PostgreSQL (`NATIVE_ISOLATED`), DuckDB (`EMULATED`) |
+| Text-to-SQL output (reference and candidate queries) | `isitright sql check` / `suite` | A database, or DDL for a warehouse | SQLite or PostgreSQL (`NATIVE_ISOLATED`), DuckDB (`EMULATED`); BigQuery and Presto/Trino searched on DuckDB and confirmed on your engine with the state inlined (`NATIVE_INLINE`) |
 | A data-analysis agent that writes Python over data files | `isitright data check` (recorded programs), `data audit` (the agent) | Tables, one row per entity | A limited child process (`NATIVE_ISOLATED`), not a sandbox |
 
 **What a finding means.** isitright runs your subject (the agent or the generated query) and an
@@ -53,8 +53,16 @@ python -m pip install "isitright[mcp]"          # + MCP agent pack
 python -m pip install "isitright[postgres]"     # + native PostgreSQL (disposable local server)
 python -m pip install "isitright[duckdb]"       # + DuckDB emulation
 python -m pip install "isitright[data]"         # + data-analysis pack (pandas)
-python -m pip install "isitright[all]"
+python -m pip install "isitright[bigquery]"     # + BigQuery client, to confirm findings (NOT in [all])
+python -m pip install "isitright[trino]"        # + Trino client, to confirm findings (NOT in [all])
+python -m pip install "isitright[all]"          # all of the above except bigquery and trino
 ```
+
+`isitright[all]` does **not** include `bigquery` or `trino`. Those two extras install a cloud
+client (about thirty packages for BigQuery) that you need only to confirm a finding on your own
+engine, so you install them on purpose: `pip install "isitright[bigquery]"` or
+`pip install "isitright[trino]"`. Searching and reporting for BigQuery, Presto and Trino
+queries needs neither.
 
 The quick starts below use files from `examples/`, which the package does not ship:
 

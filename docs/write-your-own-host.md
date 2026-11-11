@@ -14,13 +14,22 @@ A host makes a world available to the thing under test and says how faithfully. 
     from isitright.core.constraints import Range
     from isitright.core.spec import WorldSpec
 
-    SCHEMA = EntitySchema(collections=[CollectionSpec(
-        name="sales", key="id",
-        fields=[FieldSpec(name="id", type="int"),
-                FieldSpec(name="region", type="text"),
-                FieldSpec(name="amount", type="float", nullable=True)])])
-    SPEC = WorldSpec(id="sales", schema=SCHEMA,
-                     constraints=[Range(path="sales.amount", min=0, max=1000)])
+    SCHEMA = EntitySchema(
+        collections=[
+            CollectionSpec(
+                name="sales",
+                key="id",
+                fields=[
+                    FieldSpec(name="id", type="int"),
+                    FieldSpec(name="region", type="text"),
+                    FieldSpec(name="amount", type="float", nullable=True),
+                ],
+            )
+        ]
+    )
+    SPEC = WorldSpec(
+        id="sales", schema=SCHEMA, constraints=[Range(path="sales.amount", min=0, max=1000)]
+    )
     ```
 
 2. **A host.** An object with a `fidelity` and a `prepare(spec, world)` context manager that loads the state into whatever the tool reads and yields a handle to run it. The example writes the entities to `data.csv` in a temporary directory and yields a handle whose `run()` starts the program and reads `out.csv`.
@@ -46,8 +55,9 @@ A host makes a world available to the thing under test and says how faithfully. 
 
 ```python
 found = search(SPEC, base, HINTS, default_mutators(), evaluate, budget=Budget(attempts=200))
-minimized = minimize_world(SPEC, found.findings[0].candidate.world, base.state,
-                           disagrees, referenced=["sales"])
+minimized = minimize_world(
+    SPEC, found.findings[0].candidate.world, base.state, disagrees, referenced=["sales"]
+)
 ```
 
 On the example, a program with a truncating mean (`--integer-mean`) is found and shrinks to three rows or fewer. The same program without the defect is not found in 200 worlds, which is not a statement that it is correct.

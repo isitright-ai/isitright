@@ -1,0 +1,282 @@
+{
+ "bq001": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq001_a.csv",
+  "trusted": true
+ },
+ "bq003": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 2 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq004": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 3 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq006": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq006_a.csv",
+  "trusted": true
+ },
+ "bq011": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq011_a.csv",
+  "trusted": true
+ },
+ "bq018": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq018_a.csv",
+  "trusted": true
+ },
+ "bq025": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq025_a.csv",
+  "trusted": true
+ },
+ "bq032": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq032_a.csv",
+  "trusted": true
+ },
+ "bq042": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq042_a.csv",
+  "trusted": true
+ },
+ "bq045": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 4 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq049": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq049_a.csv",
+  "trusted": true
+ },
+ "bq059": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq059_a.csv",
+  "trusted": true
+ },
+ "bq060": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq060_a.csv",
+  "trusted": true
+ },
+ "bq061": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq061_a.csv",
+  "trusted": true
+ },
+ "bq066": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 1 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq077": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq077_a.csv",
+  "trusted": true
+ },
+ "bq081": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq081_a.csv",
+  "trusted": true
+ },
+ "bq088": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq088_d.csv",
+  "trusted": true
+ },
+ "bq097": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq097_a.csv",
+  "trusted": true
+ },
+ "bq110": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 1 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq113": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq113_c.csv",
+  "trusted": true
+ },
+ "bq114": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq114_a.csv",
+  "trusted": true
+ },
+ "bq115": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq115_a.csv",
+  "trusted": true
+ },
+ "bq119": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq119_a.csv",
+  "trusted": true
+ },
+ "bq120": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq120_d.csv",
+  "trusted": true
+ },
+ "bq123": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 3 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq126": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq126_b.csv",
+  "trusted": true
+ },
+ "bq144": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq144_a.csv",
+  "trusted": true
+ },
+ "bq161": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq161_a.csv",
+  "trusted": true
+ },
+ "bq172": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq172_a.csv",
+  "trusted": true
+ },
+ "bq198": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq198_a.csv",
+  "trusted": true
+ },
+ "bq199": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq199_e.csv",
+  "trusted": true
+ },
+ "bq218": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 4 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq228": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq228_a.csv",
+  "trusted": true
+ },
+ "bq232": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq232_a.csv",
+  "trusted": true
+ },
+ "bq235": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq235_b.csv",
+  "trusted": true
+ },
+ "bq268": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq268_a.csv",
+  "trusted": true
+ },
+ "bq269": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq269_a.csv",
+  "trusted": true
+ },
+ "bq279": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq279_a.csv",
+  "trusted": true
+ },
+ "bq280": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq280_a.csv",
+  "trusted": true
+ },
+ "bq281": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq281_b.csv",
+  "trusted": true
+ },
+ "bq282": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq282_a.csv",
+  "trusted": true
+ },
+ "bq284": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq284_a.csv",
+  "trusted": true
+ },
+ "bq285": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq285_b.csv",
+  "trusted": true
+ },
+ "bq286": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq286_a.csv",
+  "trusted": true
+ },
+ "bq290": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 4 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq301": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq301_a.csv",
+  "trusted": true
+ },
+ "bq302": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq302_a.csv",
+  "trusted": true
+ },
+ "bq303": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq303_a.csv",
+  "trusted": true
+ },
+ "bq328": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq328_a.csv",
+  "trusted": true
+ },
+ "bq338": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq338_a.csv",
+  "trusted": true
+ },
+ "bq339": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq339_a.csv",
+  "trusted": true
+ },
+ "bq383": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq383_a.csv",
+  "trusted": true
+ },
+ "bq394": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq394_b.csv",
+  "trusted": true
+ },
+ "bq395": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq395_b.csv",
+  "trusted": true
+ },
+ "bq396": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq396_d.csv",
+  "trusted": true
+ },
+ "bq398": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq398_a.csv",
+  "trusted": true
+ },
+ "bq400": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq400_a.csv",
+  "trusted": true
+ },
+ "bq402": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 2 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq403": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq403_a.csv",
+  "trusted": true
+ },
+ "bq413": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq413_b.csv",
+  "trusted": true
+ },
+ "bq414": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 1 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "bq442": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file bq442_a.csv",
+  "trusted": true
+ },
+ "ga001": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file ga001_a.csv",
+  "trusted": true
+ },
+ "ga002": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file ga002_a.csv",
+  "trusted": true
+ },
+ "ga008": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 2 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "ga010": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file ga010_d.csv",
+  "trusted": true
+ },
+ "ga012": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 4 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ },
+ "ga017": {
+  "basis": "the gold SQL's result on the real data equals Spider's result file ga017_a.csv",
+  "trusted": true
+ },
+ "ga019": {
+  "basis": "the gold SQL's result on the real data equals none of Spider's 4 result files (the data may have changed since the files were made, or the gold SQL is not the query behind them)",
+  "trusted": false
+ }
+}

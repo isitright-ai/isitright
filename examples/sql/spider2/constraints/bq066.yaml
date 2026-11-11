@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  county_natality_by_maternal_morbidity:
+    items:
+      properties:
+        Births:
+          minimum: 0

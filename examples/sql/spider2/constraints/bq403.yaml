@@ -1,0 +1,13 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  irs_990_2013:
+    items:
+      properties:
+        f8282cnt:
+          minimum: 0
+        nocontractor100kcnt:
+          minimum: 0
+        noemplyeesw3cnt:
+          minimum: 0
+        totnooforgscnt:
+          minimum: 0

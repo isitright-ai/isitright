@@ -1,0 +1,8 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  accident:
+    x-unique:
+    - - consecutive_number
+  accident_2016:
+    x-unique:
+    - - consecutive_number

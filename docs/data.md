@@ -42,6 +42,7 @@ The gold program is a reference implementation of the question. It runs on each 
 
 ```python
 import pandas as pd
+
 df = pd.read_csv("orders.csv")
 north = df[df["region"] == "north"]["amount"].dropna()
 result = {"north_mean": round(float(north.mean()), 2)}
@@ -71,7 +72,7 @@ A program is replayed only if it reads only the task's files, uses no network an
 
 Each run goes to a separate process with a fresh temporary directory, a scrubbed environment (no API keys or other variables are inherited), a wall-clock timeout and a memory limit (an address-space limit on POSIX, a Job Object on Windows). Nothing runs in the audit process, and nothing runs without `--trust-code` (`trust_code=True` in the API).
 
-The Windows limit caps the memory one process may commit. The runner puts itself in the Job Object before it runs any program, because a virtualenv's `python.exe` can be a launcher (for example when uv made the environment from a Microsoft Store Python) whose child, the process that runs your code, would not be in a job the audit process creates. If the limit cannot be set the runner exits and the run is reported as an error, never as an unlimited run. A program that exceeds the limit ends with the status `memory`.
+The Windows limit caps the memory one process may commit. The runner puts itself in the Job Object before it runs any program, because a virtualenv's `python.exe` can be a launcher (for example when uv made the environment from a Microsoft Store Python) whose child, the process that runs your code, would not be in a job the audit process creates. If the limit cannot be set the runner exits and the run is reported as an error, never as an unlimited run. A program that exceeds the limit ends with the status `memory`. **macOS has no address-space limit** (`RLIMIT_AS` is not supported there), so the memory limit is not enforced on macOS: a warning says so, and only the timeout and the other containment apply. Do not run untrusted code on macOS expecting a memory cap.
 
 By default every run starts a new process (`--reuse 1`). `--reuse N` keeps a process for N runs. That is several times faster, but modules a program imported stay loaded, so one run can affect the next. The report records which was used.
 
@@ -117,6 +118,7 @@ Domain rules use the core constraint language (`range`, `one_of`, `not_null`, `u
 
 ```python
 from isitright.packs.data.pandera_import import constraints_from_pandera
+
 rules, notes = constraints_from_pandera("orders", schema)
 ```
 

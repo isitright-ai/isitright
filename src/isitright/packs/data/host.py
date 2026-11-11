@@ -27,6 +27,7 @@ import sys
 import tempfile
 import threading
 import time
+import warnings
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -103,6 +104,15 @@ class _Limits:
 
     def preexec(self) -> Any:
         if sys.platform == "win32" or not self.memory_bytes:
+            return None
+        if sys.platform == "darwin":
+            # macOS does not support RLIMIT_AS: setrlimit fails in the child and the process
+            # never starts. The memory limit is not enforced there (the time limit still is).
+            warnings.warn(
+                "the memory limit is not enforced on macOS (no RLIMIT_AS); the timeout still is",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return None
         import resource
 

@@ -71,7 +71,10 @@ rows or tables, pass a trusted validator in Python:
 ```python
 from isitright import check
 from isitright.packs.sql.validation import (
-    CandidateStateView, ValidationFinding, ValidatorResult, ValidatorStatus,
+    CandidateStateView,
+    ValidationFinding,
+    ValidatorResult,
+    ValidatorStatus,
 )
 
 
@@ -97,8 +100,12 @@ class CollectedWithinOwed:
         )
 
 
-report = check(database="example.sqlite", reference_sql=ref, candidate_sql=cand,
-               validator=CollectedWithinOwed())
+report = check(
+    database="example.sqlite",
+    reference_sql=ref,
+    candidate_sql=cand,
+    validator=CollectedWithinOwed(),
+)
 ```
 
 `state.rows(table)` yields one mapping per row. Each value is a `CanonicalValue`; read the Python
@@ -110,6 +117,25 @@ It is check-only: it rejects worlds but cannot steer generation, so a tight vali
 on rejected candidates (see `search.rejected`). If it raises an exception, or returns
 `INDETERMINATE`, every candidate is rejected and the case reports that no generated state satisfied
 the rules. The Python API is for validators; the CLI takes only a constraints file.
+
+## Uniqueness without a key
+
+A warehouse table often has no primary key, but a column can still be an identifier. Declare it with
+`x-unique`, a list of column groups on the table or `true` on a column. Without it the search may build
+two rows with the same value, which the domain may forbid (see
+[BigQuery and Presto/Trino](warehouses.md#why-declaring-uniqueness-matters)).
+
+```yaml
+properties:
+  orders:
+    x-unique: [[order_id], [customer, day]]
+    items:
+      properties:
+        order_id: {x-unique: true}      # same as listing [order_id] above
+```
+
+A unique rule is a domain rule: it lifts a finding that needs duplicates out of the
+`STRUCTURAL` tier only when the rule holds in your data.
 
 ## Check your rules
 

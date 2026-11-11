@@ -1,0 +1,22 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  inpatient_charges:
+    items:
+      properties:
+        total_discharges:
+          minimum: 0
+  inpatient_charges_2014:
+    items:
+      properties:
+        total_discharges:
+          minimum: 0
+  outpatient_charges:
+    items:
+      properties:
+        outpatient_services:
+          minimum: 0
+  outpatient_charges_2014:
+    items:
+      properties:
+        outpatient_services:
+          minimum: 0

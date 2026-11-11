@@ -1,0 +1,560 @@
+{
+ "note": "What the engines returned for the fidelity fixtures, with the state inlined. Written by examples/sql/trino/smoke.py (Trino) and the BigQuery smoke step; tests/test_warehouse_fidelity.py checks each confirmed fixture against its record.",
+ "records": [
+  {
+   "id": "pr-integer-division",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     2
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-integer-division-column",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     null
+    ],
+    [
+     0
+    ],
+    [
+     0
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-division-by-zero",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "TrinoUserError: TrinoUserError(type=USER_ERROR, name=DIVISION_BY_ZERO, message=\"Division by zero\", query_id=20261110_021023_00019_8a934)"
+  },
+  {
+   "id": "pr-array-subscript-out-of-bounds",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_FUNCTION_ARGUMENT, message=\"Array subscript must be less than or equal to array length: 5 > 2\", query_id=20261110_021025_00020_8a934)"
+  },
+  {
+   "id": "pr-array-subscript-in-bounds",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     2
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-element-at-out-of-bounds",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-map-subscript-missing-key",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_FUNCTION_ARGUMENT, message=\"Key not present in map: zz\", query_id=20261110_021031_00023_8a934)"
+  },
+  {
+   "id": "pr-map-element-at-missing-key",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-unnest-cross-null-and-empty",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     2
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-unnest-left-join-keeps-row",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     2
+    ],
+    [
+     2,
+     null
+    ],
+    [
+     3,
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-null-order-asc",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     5
+    ],
+    [
+     9
+    ],
+    [
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-null-order-desc",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     9
+    ],
+    [
+     5
+    ],
+    [
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-date-trunc-week-is-a-date",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     "2021-01-04"
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-null-elements-in-result-arrays",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     [
+      1,
+      null
+     ]
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-cast-varchar-to-integer-fails",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "TrinoUserError: TrinoUserError(type=USER_ERROR, name=INVALID_CAST_ARGUMENT, message=\"Cannot cast 'abc' to INT\", query_id=20261110_021052_00033_8a934)"
+  },
+  {
+   "id": "pr-count-if-all-null-is-zero",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     0
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "pr-decimal-division-is-listed",
+   "engine": "trino",
+   "engine_version": "484",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     "0.3333333333333"
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-array-agg-ignore-nulls",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     [
+      5,
+      9
+     ]
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-countif-all-null-is-zero",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     0
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-null-order-asc",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     null
+    ],
+    [
+     5
+    ],
+    [
+     9
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-null-order-desc",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     9
+    ],
+    [
+     5
+    ],
+    [
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-unnest-cross-empty-array",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     2
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-unnest-left-empty-array",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     1
+    ],
+    [
+     1,
+     2
+    ],
+    [
+     2,
+     null
+    ],
+    [
+     3,
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-unnest-with-offset",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     1,
+     0
+    ],
+    [
+     1,
+     2,
+     1
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-unnest-with-offset-no-element-alias",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     0
+    ],
+    [
+     1,
+     1
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-array-offset-out-of-range",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "BadRequest: 400 Array index 5 is out of bounds (overflow); reason: invalidQuery, location: query, message: Array index 5 is out of bounds (overflow)\n\nLocation: US\nJob ID: 24919536-61b4-44ec-9b82-75ef1"
+  },
+  {
+   "id": "bq-array-offset-in-range",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1,
+     2
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-array-safe-offset-out-of-range",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     null,
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-division-by-zero",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "BadRequest: 400 division by zero: 1 / 0; reason: invalidQuery, location: query, message: division by zero: 1 / 0\n\nLocation: US\nJob ID: b156da22-7ad9-463f-89ae-46f9983303e5\n"
+  },
+  {
+   "id": "bq-division-by-zero-column",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "BadRequest: 400 division by zero: 5 / 0; reason: invalidQuery, location: query, message: division by zero: 5 / 0\n\nLocation: US\nJob ID: 2ba123ab-10b5-46a2-8e44-125383b04e33\n"
+  },
+  {
+   "id": "bq-integer-division-is-float",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     0.5
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-safe-divide",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     1.0
+    ],
+    [
+     1.0
+    ],
+    [
+     null
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-integer-overflow",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "BadRequest: 400 Integer Overflow; reason: invalidQuery, location: query, message: Integer Overflow\n\nLocation: US\nJob ID: c3db1098-6558-4e79-a97b-43b4194213ca\n"
+  },
+  {
+   "id": "bq-dayofweek",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     4
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-date-trunc-week",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     "2021-01-03"
+    ],
+    [
+     "2021-01-10"
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-date-trunc-month-is-a-date",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     "2021-01-01"
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-timestamp-is-utc",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     23,
+     "2021-01-06"
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-array-agg-null-element-in-result",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": "ERROR",
+   "error": "BadRequest: 400 Array cannot have a null element; error in writing field f0_; reason: invalidQuery, location: query, message: Array cannot have a null element; error in writing field f0_\n\nLocation: US"
+  },
+  {
+   "id": "bq-null-array-in-result-is-empty",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     []
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-null-and-empty-arrays-differ-inside-a-query",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     true,
+     true
+    ]
+   ],
+   "error": ""
+  },
+  {
+   "id": "bq-cast-rounds-half-away",
+   "engine": "bigquery",
+   "engine_version": "BigQuery service (no version number)",
+   "date": "2026-11-09",
+   "observed": [
+    [
+     3,
+     -3
+    ]
+   ],
+   "error": ""
+  }
+ ]
+}

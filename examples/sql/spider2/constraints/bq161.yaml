@@ -1,0 +1,7 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  Filtered_clinical_PANCAN_patient_with_followup:
+    items:
+      properties:
+        days_to_initial_pathologic_diagnosis:
+          minimum: 0

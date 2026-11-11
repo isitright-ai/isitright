@@ -1,0 +1,11 @@
+# Proposed fixture: pending owner review (declared from column descriptions)
+properties:
+  icoads_core:
+    items:
+      properties:
+        deck:
+          minimum: 0
+        source_id:
+          minimum: 0
+    x-unique:
+    - - unique_report_id
