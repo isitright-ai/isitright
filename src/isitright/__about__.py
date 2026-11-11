@@ -1,3 +1,3 @@
 """Package metadata kept independent from runtime imports."""
 
-__version__ = "0.7.0.dev0"
+__version__ = "0.7.0"
