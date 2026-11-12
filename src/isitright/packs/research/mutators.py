@@ -171,8 +171,8 @@ class Supersede(_Family):
         args, doc, new, text, sentence = plan
         cutoff = world.state.params.get("cutoff")
         when = later_date(doc.get("date"), cutoff)
-        if when is None:
-            return  # a newer version needs a date to be newer than
+        if when is None or when <= str(doc["date"])[:10]:
+            return  # a newer version needs a date it is strictly newer than (the cutoff may cap it)
         entity = {
             "id": f"supersede-{doc['id']}",
             "title": f"{doc['title']} (revised)",

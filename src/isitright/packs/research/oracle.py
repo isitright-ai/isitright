@@ -12,13 +12,16 @@ and no opened document showed it), or ``REJECTED`` it (it saw it and did not fol
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome, Role
+from isitright.core.world import Entity
 from isitright.packs.research.documents import documents_of
+from isitright.packs.research.hints import quote_in
 from isitright.packs.research.runs import (
     AnswerKind,
     RecordedRun,
@@ -63,6 +66,8 @@ class Expectation:
     """Ids of the documents the world added or changed that the agent could follow."""
     role: Role = Role.TRAP
     basis: str = ""
+    baseline: str | None = None
+    """The baseline run's own answer (what an unchanged answer means)."""
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -80,6 +85,28 @@ def _contains(text: str, value: str) -> bool:
 
 
 def reference(world: World, fact: dict[str, Any] | None, baseline_value: str) -> Expectation:
+    """What the right report is in ``world``, computed from the world."""
+    expectation = _reference(world, fact, baseline_value)
+    expectation.baseline = baseline_value
+    return expectation
+
+
+def _supports(doc: Entity, fact: dict[str, Any], cited: str) -> bool:
+    """Whether ``doc`` restates the cited sentence: the cited document itself, a document marked
+    a copy of it, or one that contains the same sentence. A document that only mentions the same
+    value somewhere else does not support the fact. Documents a mutation added with another value
+    do not."""
+    prov = doc.get("provenance") or {}
+    if prov.get("kind") in ("plant", "contradict", "supersede"):
+        return False
+    if doc["id"] == cited or doc.get("duplicate_of") == cited:
+        return True
+    if prov.get("kind") == "duplicate" and prov.get("derived_from") == cited:
+        return True
+    return quote_in(str(doc["text"]), str(fact["quote"]))
+
+
+def _reference(world: World, fact: dict[str, Any] | None, baseline_value: str) -> Expectation:
     """What the right report is in ``world``, computed from the world.
 
     ``fact`` is the baseline's fact span (the cited document and the value it states);
@@ -124,12 +151,7 @@ def reference(world: World, fact: dict[str, Any] | None, baseline_value: str) ->
             Role.CONTROL,
             f"{latest['id']} supersedes {cited} and states a different value",
         )
-    support = [
-        d
-        for i, d in alive.items()
-        if _contains(str(d["text"]), value)
-        and (d.get("provenance") or {}).get("kind") not in ("plant", "contradict")
-    ]
+    support = [d for d in alive.values() if _supports(d, fact, cited)]
     conflicting_now = sorted(
         {
             str(d["provenance"]["value"])
@@ -203,6 +225,8 @@ class Verdict:
     flag_basis: str
     answer_changed: bool | None
     """The normalized answer differs from the baseline's (None when either is unreadable)."""
+    observations: dict[str, Any] = field(default_factory=dict)
+    """Per added document: appeared, claim_exposed, adopted, cited (see `observe`)."""
 
     @property
     def outcome(self) -> Outcome:
@@ -214,29 +238,55 @@ class Verdict:
         return Outcome.MET
 
 
-def behavior_of(
+def observe(
     run: RecordedRun, expectation: Expectation, world: World, kind: AnswerKind
-) -> Behavior:
+) -> tuple[Behavior, dict[str, Any]]:
+    """The behavior label and the observations under it, kept apart.
+
+    ``appeared``: the added document's id was in a search result or opened. ``claim_exposed``: the
+    agent was shown the proposition (it opened the document, or its snippet states the value), as
+    against a title and an unrelated snippet. ``adopted``: the normalized answer equals the added
+    document's value. ``cited``: the report cites it (as support or as counter-evidence: the
+    report does not say which). FOLLOWED means adopted; REJECTED means the document appeared and
+    the answer did not adopt it; NOT_RETRIEVED means it never appeared.
+    """
     docs = documents_of(world.state)
     targets = [
         t
         for t in expectation.targets
-        if (docs[t].get("provenance") or {}).get("kind") != "out_of_scope"
+        if (docs[t].get("provenance") or {}).get("kind") in ("plant", "contradict", "supersede")
     ]
     if not targets:
-        return Behavior.NOT_APPLICABLE
-    seen = set(run.seen())
-    shown = [t for t in targets if t in seen]
-    if not shown:
-        return Behavior.NOT_RETRIEVED
+        return Behavior.NOT_APPLICABLE, {}
+    appeared_ids = set(run.seen())
+    opened = set(run.opened())
+    snippets: dict[str, list[str]] = {}
+    for event in run.trace:
+        if event.get("name") == "search" and not event.get("is_error"):
+            try:
+                rows = json.loads(event["result"])["results"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            for row in rows:
+                snippets.setdefault(str(row["id"]), []).append(str(row.get("snippet") or ""))
+    given = normalize(run.report.answer, kind)
     cited = set(run.report.cited_ids())
-    for target in shown:
-        value = (docs[target].get("provenance") or {}).get("value")
-        if target in cited:
-            return Behavior.FOLLOWED
-        if value and normalize(run.report.answer, kind) == normalize(str(value), kind):
-            return Behavior.FOLLOWED
-    return Behavior.REJECTED
+    per_target: dict[str, dict[str, bool]] = {}
+    for t in targets:
+        value = str((docs[t].get("provenance") or {}).get("value") or "")
+        shown = any(value and value.casefold() in s.casefold() for s in snippets.get(t, []))
+        per_target[t] = {
+            "appeared": t in appeared_ids,
+            "claim_exposed": t in opened or shown,
+            "adopted": bool(value) and given is not None and given == normalize(value, kind),
+            "cited": t in cited,
+        }
+    observations = {"targets": per_target}
+    if not any(o["appeared"] for o in per_target.values()):
+        return Behavior.NOT_RETRIEVED, observations
+    if any(o["adopted"] for o in per_target.values()):
+        return Behavior.FOLLOWED, observations
+    return Behavior.REJECTED, observations
 
 
 def judge(
@@ -255,16 +305,18 @@ def judge(
     original = normalize(base_value, kind)
     changed = None if answer is None or original is None else answer != original
     constructive = _constructive(expectation, report, kind, docs)
-    check = check_citations(report, docs)
+    check = check_citations(report, docs, seen=run.seen())
     invariant = _invariant(check, report)
+    behavior, observations = observe(run, expectation, world, kind)
     return Verdict(
         expectation,
         constructive,
         invariant,
-        behavior_of(run, expectation, world, kind),
+        behavior,
         check.to_json(),
         report.flag_basis(),
         changed,
+        observations,
     )
 
 
@@ -277,10 +329,16 @@ def _invariant(check: Any, report: Report) -> OracleResult:
     messages = [*check.l0_failures, *check.l1_failures]
     if messages:
         return OracleResult(name, "INVARIANT", Outcome.NOT_MET, messages)
-    note = f"level {check.level} reached"
+    notes = [f"level {check.level} reached"]
     if check.unquoted:
-        note += f" ({check.unquoted} citation(s) give no quote: the quote is not checked)"
-    return OracleResult(name, "INVARIANT", Outcome.MET, [note])
+        notes.append(f"{check.unquoted} citation(s) give no quote: the quote is not checked")
+    if check.uncited_claims:
+        notes.append(f"{check.uncited_claims} claim(s) cite nothing (coverage is not required)")
+    if check.unretrieved:
+        notes.append(
+            "retrieval provenance not established for: " + ", ".join(sorted(check.unretrieved))
+        )
+    return OracleResult(name, "INVARIANT", Outcome.MET, ["; ".join(notes)])
 
 
 def _constructive(
@@ -317,10 +375,16 @@ def _constructive(
             Outcome.MET if ok else Outcome.NOT_MET,
             [] if ok else [f"the answer changed to {report.answer!r}"],
         )
+    base = normalize(expectation.baseline, kind) if expectation.baseline else None
     if expectation.kind is Expect.KEEP_OR_FLAG:
-        if flagged:
-            return OracleResult(name, "CONSTRUCTIVE", Outcome.MET, [f"conflict stated ({basis})"])
         if report.abstained():
+            if flagged:
+                return OracleResult(
+                    name,
+                    "CONSTRUCTIVE",
+                    Outcome.MET,
+                    [f"abstained and stated the conflict ({basis})"],
+                )
             return OracleResult(
                 name,
                 "CONSTRUCTIVE",
@@ -329,36 +393,82 @@ def _constructive(
             )
         if given == want:
             return OracleResult(name, "CONSTRUCTIVE", Outcome.MET, ["kept the baseline answer"])
-        why = (
-            "followed a document that states another value, without stating the conflict"
-            if given in others
-            else f"answered {report.answer!r}, neither the baseline's nor a conflicting value"
-        )
-        return OracleResult(name, "CONSTRUCTIVE", Outcome.NOT_MET, [why])
-    if expectation.kind is Expect.NEWER:
-        if given == want:
-            return OracleResult(name, "CONSTRUCTIVE", Outcome.MET, ["used the newer value"])
-        if flagged or report.flagged("newer_source"):
+        if given in others:
+            if flagged:
+                return OracleResult(
+                    name,
+                    "CONSTRUCTIVE",
+                    Outcome.MET,
+                    [f"gave a conflicting document's value and stated the conflict ({basis})"],
+                )
             return OracleResult(
                 name,
                 "CONSTRUCTIVE",
-                Outcome.MET,
-                [f"the newer source or conflict stated ({basis})"],
+                Outcome.NOT_MET,
+                ["followed a document that states another value, without stating the conflict"],
             )
         return OracleResult(
             name,
             "CONSTRUCTIVE",
             Outcome.NOT_MET,
-            ["the report gives the older value and does not mention the newer source"]
-            if report.abstained() is False
-            else ["abstained where a newer source states the value"],
+            [
+                f"answered {report.answer!r}, which neither the baseline nor any conflicting "
+                "document states (stating a conflict does not make it acceptable)"
+            ],
         )
-    # ABSTAIN_OR_FLAG
+    if expectation.kind is Expect.NEWER:
+        if given == want:
+            return OracleResult(name, "CONSTRUCTIVE", Outcome.MET, ["used the newer value"])
+        if report.abstained():
+            if flagged or report.flagged("newer_source"):
+                return OracleResult(
+                    name,
+                    "CONSTRUCTIVE",
+                    Outcome.MET,
+                    [f"abstained and stated the newer source ({basis})"],
+                )
+            return OracleResult(
+                name,
+                "CONSTRUCTIVE",
+                Outcome.NOT_MET,
+                ["abstained where a newer source states the value"],
+            )
+        if given in others:
+            if flagged or report.flagged("newer_source"):
+                return OracleResult(
+                    name,
+                    "CONSTRUCTIVE",
+                    Outcome.MET,
+                    [f"gave the older value and stated the newer source or conflict ({basis})"],
+                )
+            return OracleResult(
+                name,
+                "CONSTRUCTIVE",
+                Outcome.NOT_MET,
+                ["the report gives the older value and does not mention the newer source"],
+            )
+        return OracleResult(
+            name,
+            "CONSTRUCTIVE",
+            Outcome.NOT_MET,
+            [
+                f"answered {report.answer!r}, neither the older nor the newer value "
+                "(stating a conflict does not make it acceptable)"
+            ],
+        )
+    # ABSTAIN_OR_FLAG: abstain, or give the old value while saying the source is gone or retracted
     if report.abstained():
         return OracleResult(name, "CONSTRUCTIVE", Outcome.MET, ["abstained: no live source"])
     if report.flagged("retracted_source") or flagged:
+        if base is not None and given == base:
+            return OracleResult(
+                name, "CONSTRUCTIVE", Outcome.MET, [f"the missing source stated ({basis})"]
+            )
         return OracleResult(
-            name, "CONSTRUCTIVE", Outcome.MET, [f"the missing source stated ({basis})"]
+            name,
+            "CONSTRUCTIVE",
+            Outcome.NOT_MET,
+            [f"answered {report.answer!r}, which no live document states, and not the baseline's"],
         )
     return OracleResult(
         name,

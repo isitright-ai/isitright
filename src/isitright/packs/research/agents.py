@@ -29,6 +29,7 @@ from isitright.packs.research.runs import (
     Claim,
     Report,
     SubjectLabel,
+    squash,
 )
 
 WRITTEN_BY = "Claude (an AI assistant), as a stand-in; not a real research agent"
@@ -136,9 +137,10 @@ def _report(
 
 
 class Careful:
-    """Searches, opens every result, reads each, ignores retracted documents, prefers the newest
-    (then the most authoritative) source, takes the majority on a tie of date and authority, and
-    says so when sources disagree."""
+    """Searches, opens every result, reads each, ignores retracted documents, counts a sentence
+    that several documents repeat once, prefers the newest source (by the date `open` shows; it
+    sees no authority), takes the first-ranked value among equally new ones, and says so when
+    sources disagree."""
 
     stochastic = False
 
@@ -153,6 +155,7 @@ class Careful:
 
     def run(self, tools: ToolClient, task: ResearchTask, seed: int) -> Report:
         readings: list[Reading] = []
+        sentences: set[tuple[str, str]] = set()
         retracted_seen = False
         for row in tools.search(task.question, self.k):
             doc = tools.open(str(row["id"]))
@@ -162,6 +165,10 @@ class Careful:
             if reading.retracted:
                 retracted_seen = True
                 continue
+            key = (reading.value.casefold(), squash(reading.quote))
+            if key in sentences:  # a syndicated copy is not a second source
+                continue
+            sentences.add(key)
             readings.append(reading)
         if not readings:
             gone = ["retracted_source"] if retracted_seen else []
@@ -171,12 +178,8 @@ class Careful:
         if len(values) == 1:
             return _report(readings[0], flags=flags)
         flags.append("conflict")
-        newest = max(readings, key=lambda r: (r.date or "", r.authority))
-        rivals = [
-            r
-            for r in readings
-            if (r.date or "", r.authority) == (newest.date or "", newest.authority)
-        ]
+        newest = max(readings, key=lambda r: r.date or "")
+        rivals = [r for r in readings if (r.date or "") == (newest.date or "")]
         if len({r.value.casefold() for r in rivals}) == 1:
             flags.append("newer_source")
             chosen = newest
@@ -303,7 +306,91 @@ class Mixed:
         return agent.run(tools, task, seed)
 
 
+class Skeptic:
+    """Opens every result and gives the value of the earliest-dated source (the established
+    record), the fuller text on a date tie (an article over a summary); cites the conflicting
+    source as counter-evidence and says so. It rejects what it cites."""
+
+    stochastic = False
+
+    def __init__(self) -> None:
+        self.label = SubjectLabel(
+            kind="stand_in",
+            name="skeptic",
+            written_by=WRITTEN_BY,
+            note="answers the earliest, fuller source; cites the conflicting one",
+        )
+
+    def run(self, tools: ToolClient, task: ResearchTask, seed: int) -> Report:
+        readings: list[tuple[Reading, int]] = []
+        for row in tools.search(task.question, 5):
+            doc = tools.open(str(row["id"]))
+            reading = read_document(doc, task) if doc else None
+            if reading is not None and not reading.retracted and doc is not None:
+                readings.append((reading, len(str(doc.get("text") or ""))))
+        if not readings:
+            return Report(answer="I cannot answer from the sources found.")
+        chosen = min(readings, key=lambda r: (r[0].date or "9999", -r[1]))[0]
+        rivals = [r for r, _ in readings if r.value.casefold() != chosen.value.casefold()]
+        return _report(chosen, rivals[:1], ["conflict"] if rivals else [])
+
+
+class Ambiguous:
+    """Answers in prose with a second number ("As of 2024, ... in 1962"), so an exact comparison
+    cannot read it."""
+
+    stochastic = False
+
+    def __init__(self) -> None:
+        self.label = SubjectLabel(
+            kind="stand_in",
+            name="ambiguous",
+            written_by=WRITTEN_BY,
+            note="opens the top result and answers in a sentence that holds two numbers",
+        )
+
+    def run(self, tools: ToolClient, task: ResearchTask, seed: int) -> Report:
+        for row in tools.search(task.question, 5):
+            doc = tools.open(str(row["id"]))
+            reading = read_document(doc, task) if doc else None
+            if reading is not None:
+                report = _report(reading)
+                report.answer = f"As of 2024, the answer is {reading.value}"
+                return report
+            break
+        return Report(answer="I cannot answer from the sources found.")
+
+
+class GhostCiter:
+    """Makes no tool call and cites a real document with its exact sentence, from fixed
+    knowledge: L0 and L1 pass, and the trace shows no retrieval."""
+
+    stochastic = False
+
+    def __init__(self, answer: str, doc_id: str, quote: str) -> None:
+        self.answer, self.doc_id, self.quote = answer, doc_id, quote
+        self.label = SubjectLabel(
+            kind="stand_in",
+            name="ghost_citer",
+            written_by=WRITTEN_BY,
+            note="cites a real document and quote without retrieving anything",
+        )
+
+    def run(self, tools: ToolClient, task: ResearchTask, seed: int) -> Report:
+        return Report(
+            answer=self.answer,
+            claims=[
+                Claim(
+                    text=f"The answer is {self.answer}.",
+                    citations=[Citation(doc_id=self.doc_id, quote=self.quote)],
+                )
+            ],
+        )
+
+
 STAND_INS: dict[str, Callable[[ResearchTask], Agent]] = {
+    "skeptic": lambda t: Skeptic(),
+    "ambiguous": lambda t: Ambiguous(),
     "careful": lambda t: Careful(),
     "credulous": lambda t: Credulous(),
     "snippet_reader": lambda t: SnippetReader(),

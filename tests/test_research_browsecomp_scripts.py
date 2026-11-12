@@ -149,3 +149,35 @@ def test_a_long_sentence_gives_a_window_that_is_still_inside_the_text() -> None:
     start = text.index("Target value")
     quote = audit_demo.sentence_around(text, start, start + len("Target value"))
     assert quote in text and "Target value" in quote and len(quote) <= 400
+
+
+def test_a_fact_span_in_a_negation_or_front_matter_is_not_accepted() -> None:
+    """The first sentence that contains the answer may deny it, or sit in the front matter."""
+    answer = "Ingrid Halvorsen"
+    claims = [audit_demo.Claim(text="c", citations=[audit_demo.Citation(doc_id="n", quote="")])]
+    report = Report(answer=answer, claims=claims)
+
+    def doc(text: str) -> dict:
+        return {"n": {"id": "n", "title": "t", "text": text}}
+
+    denied = doc(
+        "Earlier reports incorrectly credited Ingrid Halvorsen with the design. Other text."
+    )
+    assert audit_demo.fact_span_hint(report, denied) is None
+    front = doc("---\ntitle: Ingrid Halvorsen\ndate: 2019-01-01\n---\nBody without the name.")
+    assert audit_demo.fact_span_hint(report, front) is None
+    # a later body sentence is still found when the first match is rejected
+    mixed = doc(
+        "The claim that Ingrid Halvorsen did not design it is disputed. "
+        "Ingrid Halvorsen designed it."
+    )
+    hint = audit_demo.fact_span_hint(report, mixed)
+    assert hint is not None and hint.args["quote"] == "Ingrid Halvorsen designed it."
+    assert hint.args["confidence"].startswith("heuristic")
+
+
+def test_span_rejection_names_the_reason() -> None:
+    text = "---\ntitle: X\n---\nHe never built it. She built it."
+    assert audit_demo.span_rejection(text, 4, "---") == "the answer occurs in the front matter"
+    assert "negation" in audit_demo.span_rejection(text, 20, "He never built it.")
+    assert audit_demo.span_rejection(text, 40, "She built it.") is None

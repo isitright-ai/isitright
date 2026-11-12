@@ -119,14 +119,28 @@ retrieval cutoff `k`, date and number representation, units, timing.
 - **Relational.** The normalized answer must equal the baseline's.
 - **Invariant.** Citations: L0 the cited id exists; L1 the quote occurs in the cited document
   (whitespace and case normalized; an empty quote is not a match); L2 (support) is not judged. The
-  report says the level reached.
-- **Normalization.** `string`: case-folded, punctuation and articles removed. `number`: the first
-  number, separators removed. `date`: ISO. An answer that cannot be read as the declared kind is
-  `CANNOT_JUDGE`. An abstention is a declared set of phrases.
-- **Three outcomes a flip count conflates.** `FOLLOWED`: the agent was shown the added document
-  and its answer or citation follows it. `NOT_RETRIEVED`: no result it saw showed it. `REJECTED`:
-  it was shown the document and did not follow it. Only `FOLLOWED` can be a counterexample for a
-  plant or a contradiction.
+  report says the level reached. Two things are reported beside the level and never change it:
+  claim coverage (claims that cite nothing) and retrieval provenance (a cited document that exists
+  but that the trace never shows the agent retrieving: a correct-looking citation does not show the
+  agent read it).
+- **Normalization.** `string`: case-folded, punctuation and articles removed. `number`: the one
+  number in the answer, separators removed; an answer with two numbers ("As of 2024, ... 1962") or
+  a negation before its number ("not 1962") is not an exact answer. `date`: ISO. An answer that
+  cannot be read as the declared kind is `CANNOT_JUDGE`. An abstention is a declared set of
+  phrases. Use structured answer fields; do not point this at prose.
+- **A disclosure never rescues an answer.** The answer must be one the expectation recognizes (the
+  baseline's, a conflicting document's, the newer edition's, or an abstention); saying the sources
+  conflict makes a recognized answer acceptable and does nothing for an unrelated one.
+- **Support is the cited sentence.** A document supports the cited fact if it is the cited
+  document, a copy of it, or repeats its sentence. Another document that mentions the same number
+  elsewhere does not.
+- **Three outcomes a flip count conflates.** `FOLLOWED`: the answer adopted the added document's
+  value. `NOT_RETRIEVED`: the document appeared in no result and was not opened. `REJECTED`: it
+  appeared and the answer did not adopt it. Underneath, each added document has its own
+  observations: `appeared` (in a result or opened), `claim_exposed` (opened, or a snippet states
+  the value, as against a title and an unrelated snippet), `adopted`, and `cited` (as support or as
+  counter-evidence: the report does not say which). Citing a document is not adopting it. Only
+  `FOLLOWED` can be a counterexample for a plant or a contradiction.
 - **Flags.** "The report states the conflict" uses the agent's own `flags` when present and a
   keyword rule otherwise; the report says which. Cited ids are removed from the text before the
   rule is applied.
@@ -140,10 +154,17 @@ retrieval cutoff `k`, date and number representation, units, timing.
 | Agent command (`--agent-command ... --trust-code`) | Any program that can use an MCP server; it writes `report.json`. | A real agent, run by you. |
 | Recorded run (`--recorded-run`) | Nothing runs. The queries are re-run on the world, the cited documents re-read, the report is not regenerated. | Whether a cited source is gone or retracted, and what the agent would now be shown. Not what it would do. |
 
+The stand-ins include a careful one (opens everything, newest date wins, a sentence repeated by
+several documents counts once; it sees no authority because `open` does not show it), a skeptic
+(answers the earliest source and cites the conflicting one as counter-evidence), an ambiguous one
+(prose with two numbers: not judged) and a ghost citer (cites a real document and quote without any
+tool call).
+
 Live agents get repeated runs, counts, a baseline repeated `k` times (flakiness is reported first),
 the paired sequential test of the earlier packs, noise-tolerant minimization of the mutation path,
 and budgets in runs, wall time and money (money is refused for an agent that reports no cost).
-`--screen` replays the baseline trace on each candidate first and runs the agent only where the
+`--seconds` is a cooperative budget checked between worlds, not a hard timeout on one run; use
+`--timeout` for an agent command. `--screen` replays the baseline trace on each candidate first and runs the agent only where the
 replay shows a change it could see; it ranks and skips, it never decides.
 
 ## Reading a report
@@ -196,7 +217,11 @@ all 15 supersede worlds and all 38 contradict worlds put the added document in t
 recorded query; 10 of 19 plants did and 9 did not (UNOBSERVABLE); 20 of 25 out-of-scope digests were
 not retrieved by any recorded query. The simulated retriever reproduced the recorded top-5 set for
 95 of 492 recorded queries and the recorded first result for 270, so exposure is about this scorer,
-not the benchmark's. The recorded runs carry no quotes, so their citations reach level L0 only.
+not the benchmark's. The recorded runs carry no quotes, so their citations reach level L0 only. The fact span (the
+sentence the mutations edit) is the first body sentence of a cited document that contains the run's
+own answer, with no negation or correction cue; it is a heuristic, labeled as one, and does not
+check that the sentence entails the answer. Tasks are stratified by how often the simulated
+retrieval returned the recorded first result.
 
 ## Quick start
 

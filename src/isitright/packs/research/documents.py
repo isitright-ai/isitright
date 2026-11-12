@@ -10,6 +10,7 @@ replay needs no side table.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Mapping
 from datetime import date
 from pathlib import Path
@@ -110,11 +111,33 @@ def _not_after_cutoff(state: State) -> list[str]:
     ]
 
 
+_NOTICE = re.compile(
+    rf"\A\W*({RETRACTION_MARKER}\b|retraction notice\b"
+    rf"|this \w+ (has been|was) {RETRACTION_MARKER}\b)",
+    re.IGNORECASE,
+)
+
+
 def _retraction_visible(state: State) -> list[str]:
+    """The notice must open the text: an incidental or negated mention ("was not retracted")
+    does not make a document retracted."""
     return [
-        f"{d['id']} is marked retracted but its text does not say so"
+        f"{d['id']} is marked retracted but its text does not open with a retraction notice"
         for d in state.entities(COLLECTION)
-        if d.get("retracted") and RETRACTION_MARKER not in str(d["text"]).casefold()
+        if d.get("retracted") and not _NOTICE.match(str(d["text"]))
+    ]
+
+
+def _duplicates_match(state: State) -> list[str]:
+    """A document marked a copy has the text of its target (whitespace and case aside) when the
+    target is in the corpus. A dangling ``duplicate_of`` is allowed: the target may be absent."""
+    docs = _by_id(state)
+    return [
+        f"{d['id']} is marked a duplicate of {d['duplicate_of']} but its text differs"
+        for d in docs.values()
+        if d.get("duplicate_of") in docs
+        and " ".join(str(d["text"]).casefold().split())
+        != " ".join(str(docs[d["duplicate_of"]]["text"]).casefold().split())
     ]
 
 
@@ -147,6 +170,11 @@ def rules() -> list[PythonConstraint]:
             "a retracted document's text says it was retracted",
         ),
         PythonConstraint("authority_in_range", _authority_range, "source authority is 0..3"),
+        PythonConstraint(
+            "duplicate_text_matches",
+            _duplicates_match,
+            "a document marked a copy has its target's text",
+        ),
     ]
 
 

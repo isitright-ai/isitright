@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -199,14 +199,17 @@ _MONTHS = {
 }
 _NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 _ARTICLES = re.compile(r"\b(a|an|the)\b")
+_NEGATION = re.compile(r"\b(not|no|never|neither|nor|isn't|wasn't|didn't|n't)\b", re.IGNORECASE)
 
 
 def normalize(value: str | None, kind: AnswerKind) -> str | None:
     """The comparison form of an answer, or None when it cannot be read as ``kind``.
 
     ``string``: case-folded, punctuation removed, articles dropped, whitespace collapsed.
-    ``number``: the first number, thousands separators removed, trailing zeros removed (a unit or
-    currency sign is ignored, which is a stated limit). ``date``: ISO ``YYYY-MM-DD`` (or ``YYYY``
+    ``number``: the one number in the answer, thousands separators removed, trailing zeros removed
+    (a unit or currency sign is ignored, which is a stated limit). An answer with two or more
+    numbers (``As of 2024, the answer is 1962``) or a negation before its number (``not 1962``)
+    is not an exact answer: None, so it is not judged. ``date``: ISO ``YYYY-MM-DD`` (or ``YYYY``
     when the answer is a bare year) from ISO, ``Month D, YYYY`` or ``D Month YYYY``.
     """
     if value is None:
@@ -216,9 +219,10 @@ def normalize(value: str | None, kind: AnswerKind) -> str | None:
         words = re.sub(r"[^\w\s]", " ", text.casefold())
         return " ".join(_ARTICLES.sub(" ", words).split()) or None
     if kind == "number":
-        match = _NUMBER.search(text)
-        if match is None:
+        found = list(_NUMBER.finditer(text))
+        if len(found) != 1 or _NEGATION.search(text[: found[0].start()]):
             return None
+        match = found[0]
         try:
             number = Decimal(match.group().replace(",", ""))
         except InvalidOperation:
@@ -273,6 +277,12 @@ class CitationCheck:
     l1_failures: list[str] = field(default_factory=list)
     unquoted: int = 0
     """Citations that give no quote (a recorded format without quotes): L0 only, never L1."""
+    unretrieved: list[str] = field(default_factory=list)
+    """Cited ids that exist but that the trace does not show the agent retrieving (None when the
+    trace was not given). A correct-looking citation proves a document exists, not that the agent
+    read it."""
+    traced: bool = False
+    claims: int = 0
 
     @property
     def level(self) -> Literal["NONE", "L0", "L1"]:
@@ -288,12 +298,30 @@ class CitationCheck:
             "l0_failures": self.l0_failures,
             "l1_failures": self.l1_failures,
             "unquoted_citations": self.unquoted,
+            "claims": self.claims,
+            "claim_coverage": (
+                None if not self.claims else (self.claims - self.uncited_claims) / self.claims
+            ),
+            "cited_without_retrieval": sorted(self.unretrieved),
+            "retrieval_provenance": (
+                "not checked: no trace given"
+                if not self.traced
+                else "established for every cited document"
+                if not self.unretrieved
+                else "not established for some cited documents"
+            ),
             "l2": "not judged: needs a judge, and no model judge is run",
         }
 
 
-def check_citations(report: Report, documents: Mapping[str, Entity]) -> CitationCheck:
+def check_citations(
+    report: Report, documents: Mapping[str, Entity], seen: Sequence[str] | None = None
+) -> CitationCheck:
+    """L0 and L1 per citation, plus claim coverage and (with ``seen``, the ids the trace shows the
+    agent retrieving) retrieval provenance. Coverage and provenance never change the level."""
     check = CitationCheck()
+    check.claims = len(report.claims)
+    check.traced = seen is not None
     for claim in report.claims:
         if not claim.citations:
             check.uncited_claims += 1
@@ -306,4 +334,11 @@ def check_citations(report: Report, documents: Mapping[str, Entity]) -> Citation
                 check.unquoted += 1  # an empty quote is "in" every text: it proves nothing
             elif squash(citation.quote) not in squash(str(doc["text"])):
                 check.l1_failures.append(f"{citation.doc_id}: quote not in the document")
+            if (
+                seen is not None
+                and doc is not None
+                and citation.doc_id not in seen
+                and citation.doc_id not in check.unretrieved
+            ):
+                check.unretrieved.append(citation.doc_id)
     return check

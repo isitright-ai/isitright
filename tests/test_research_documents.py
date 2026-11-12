@@ -69,7 +69,7 @@ def test_nothing_may_be_dated_after_the_cutoff() -> None:
 
 def test_a_retracted_document_must_say_so() -> None:
     state = _with(corpus(), key="bridge-eastgate", retracted=True)
-    assert "marked retracted but its text does not say so" in _problem(state)
+    assert "does not open with a retraction notice" in _problem(state)
 
 
 def test_authority_is_zero_to_three() -> None:
@@ -143,3 +143,33 @@ def test_make_state_keeps_text_opaque_and_keys_documents_by_id() -> None:
     state = make_state([{"id": "a", "text": "free text with 1962 and {braces}"}])
     assert state.atoms() == [(COLLECTION, "a")]
     assert state.entities(COLLECTION)[0]["text"] == "free text with 1962 and {braces}"
+
+
+def test_a_negated_or_incidental_mention_does_not_make_a_document_retracted() -> None:
+    for text in (
+        "This article was not retracted. The Eastgate Bridge was completed in 1975.",
+        "The Eastgate Bridge was completed in 1975. A retracted claim is discussed below.",
+    ):
+        state = _with(corpus(), key="bridge-eastgate", retracted=True, text=text)
+        assert "does not open with a retraction notice" in _problem(state)
+    notice = (
+        "Retraction notice: withdrawn by the publisher. The Eastgate Bridge was completed in 1975."
+    )
+    state = _with(corpus(), key="bridge-eastgate", retracted=True, text=notice)
+    assert _spec().validate(state).status is ValidityStatus.VALID
+
+
+def test_a_document_marked_a_copy_has_its_targets_text() -> None:
+    state = _with(corpus(), key="tolls-norrvik-2022-reprint", text="Different text entirely.")
+    assert "is marked a duplicate of tolls-norrvik-2022 but its text differs" in _problem(state)
+    # whitespace and case do not matter, and a dangling target is allowed
+    same = _with(
+        corpus(), key="tolls-norrvik-2022-reprint", text=corpus_text("tolls-norrvik-2022").upper()
+    )
+    assert _spec().validate(same).status is ValidityStatus.VALID
+    dangling = _with(corpus(), key="tolls-norrvik-2022-reprint", duplicate_of="gone", text="Other.")
+    assert _spec().validate(dangling).status is ValidityStatus.VALID
+
+
+def corpus_text(doc_id: str) -> str:
+    return str(next(d for d in corpus().entities(COLLECTION) if d["id"] == doc_id)["text"])

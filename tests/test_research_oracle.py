@@ -114,13 +114,17 @@ def test_a_stated_conflict_meets_the_expectation_even_if_the_answer_flipped() ->
     )
     assert verdict(Plant(), flagged).constructive.outcome is Outcome.MET
     keyword = run_of(
-        "1965 (but another source says 1962, so the sources disagree)",
+        "1965",
         seen=(plant,),
         cite=plant,
         quote="The Halvorsen Bridge was completed in 1965.",
     )
+    keyword.report.claims[0].text = "Another source says 1962, so the sources disagree."
     v = verdict(Plant(), keyword)
     assert v.constructive.outcome is Outcome.MET and v.flag_basis == "keyword rule"
+    # a prose answer holding two numbers is not an exact answer: it is not judged at all
+    prose = run_of("1965 (but another source says 1962, so the sources disagree)", seen=(plant,))
+    assert verdict(Plant(), prose).constructive.outcome is Outcome.CANNOT_JUDGE
 
 
 def test_an_answer_that_is_neither_value_is_not_met_and_an_abstention_is_not_judged() -> None:
@@ -247,3 +251,143 @@ def test_contradict_copy_is_a_conflicting_document() -> None:
     _mutations, worlds = one(Contradict())
     e = reference(worlds[0], FACT, "1962")
     assert e.kind is Expect.KEEP_OR_FLAG and e.conflicting == ["1965"]
+
+
+# -- fixtures review: answer validity, behavior observations, support, provenance ---------------
+
+
+def test_a_conflict_flag_does_not_make_an_unrelated_answer_acceptable() -> None:
+    """1999 is stated by neither the original nor the planted document. Saying the sources
+    conflict does not make it right, in a planted-conflict world or a newer-edition world."""
+    plant = "plant-" + HISTORY
+    flagged = run_of("1999", seen=(plant, HISTORY), flags=["conflict"])
+    v = verdict(Plant(), flagged)
+    assert (
+        v.constructive.outcome is Outcome.NOT_MET
+        and "neither the baseline" in v.constructive.messages[0]
+    )
+    newer = verdict(Supersede(), run_of("1999", flags=["conflict", "newer_source"]))
+    assert newer.constructive.outcome is Outcome.NOT_MET
+    # the disclosure still counts where the answer is one the expectation recognizes
+    ok = verdict(Plant(), run_of("1965", seen=(plant,), flags=["conflict"]))
+    assert ok.constructive.outcome is Outcome.MET
+
+
+def test_a_retraction_flag_does_not_excuse_an_unrelated_answer() -> None:
+    v = verdict(Retract(), run_of("1999", flags=["retracted_source"]))
+    assert v.constructive.outcome is Outcome.NOT_MET
+    assert (
+        verdict(Retract(), run_of("1962", flags=["retracted_source"])).constructive.outcome
+        is Outcome.MET
+    )
+
+
+def test_citing_the_added_document_is_not_adopting_it() -> None:
+    """The agent answers the original value, cites the planted document as counter-evidence and
+    says the sources conflict: it was shown the claim and rejected it."""
+    plant = "plant-" + HISTORY
+    run = run_of(
+        "1962",
+        seen=(plant, HISTORY),
+        cite=plant,
+        quote="The Halvorsen Bridge was completed in 1965.",
+        flags=["conflict"],
+    )
+    v = verdict(Plant(), run)
+    assert v.behavior is Behavior.REJECTED and v.constructive.outcome is Outcome.MET
+    seen = v.observations["targets"][plant]
+    assert seen == {"appeared": True, "claim_exposed": False, "adopted": False, "cited": True}
+
+
+def test_appearing_in_a_result_is_not_being_shown_the_claim() -> None:
+    plant = "plant-" + HISTORY
+
+    def with_snippet(snippet: str) -> RecordedRun:
+        run = run_of("1962", seen=(HISTORY,))
+        rows = [{"id": plant, "title": "Summary", "snippet": snippet}]
+        run.trace[0]["result"] = json.dumps({"results": rows})
+        return run
+
+    title_only = verdict(Plant(), with_snippet("An unrelated line."))
+    stated = verdict(Plant(), with_snippet("The Halvorsen Bridge was completed in 1965."))
+    assert title_only.behavior is Behavior.REJECTED
+    assert title_only.observations["targets"][plant]["claim_exposed"] is False
+    assert stated.observations["targets"][plant]["claim_exposed"] is True
+    opened = run_of("1962", seen=(HISTORY,))
+    opened.trace.append(
+        {"index": 1, "name": "open", "arguments": {"id": plant}, "is_error": False, "result": "{}"}
+    )
+    assert verdict(Plant(), opened).observations["targets"][plant]["appeared"] is True
+
+
+def test_an_unrelated_document_with_the_same_number_does_not_support_the_fact() -> None:
+    """Retract the original; a document about something else mentions 1962. Raw substring support
+    would keep the answer expected; the right expectation is still abstain or flag."""
+    from isitright.core.mutations import AddEntity, Mutation
+
+    (_,), (retracted,) = one(Retract())
+    other = Mutation(
+        family="x",
+        description="d",
+        edits=[
+            AddEntity(
+                collection="documents",
+                entity={
+                    "id": "zz",
+                    "title": "t",
+                    "text": "The Westgate Bridge underwent maintenance in 1962.",
+                },
+            )
+        ],
+    )
+    e = reference(retracted.apply(other), FACT, "1962")
+    assert e.kind is Expect.ABSTAIN_OR_FLAG and e.role is Role.CONTROL
+
+
+def test_a_document_that_repeats_the_cited_sentence_does_support_the_fact() -> None:
+    """A syndicated copy restates the same sentence, so retracting the original leaves support."""
+    from isitright.core.mutations import SetField
+
+    (_,), (dup,) = one(Duplicate())
+    retract = SetField(collection="documents", key=HISTORY, path=["retracted"], value=True)
+    text = "Retracted: this item has been retracted by the publisher. " + str(
+        next(d for d in dup.state.entities("documents") if d["id"] == HISTORY)["text"]
+    )
+    from isitright.core.mutations import Mutation
+
+    both = Mutation(
+        family="r",
+        description="d",
+        edits=[retract, SetField(collection="documents", key=HISTORY, path=["text"], value=text)],
+    )
+    e = reference(dup.apply(both), FACT, "1962")
+    assert e.kind is Expect.KEEP  # the copy still states the cited sentence
+
+
+def test_a_correct_looking_citation_without_retrieval_is_unverified_provenance() -> None:
+    from isitright.packs.research.agents import GhostCiter, ToolClient
+
+    _, (dup,) = one(Duplicate())
+    agent = GhostCiter("1962", HISTORY, QUOTE)
+    from tests.research_fixtures import audit
+
+    a = audit()
+    report = agent.run(ToolClient(a.host(dup)), a.task, 0)
+    run = RecordedRun(subject=agent.label, task_id="t", question="q", trace=[], report=report)
+    v = judge(dup, run, BASE, FACT, "number")
+    assert v.citations["level_reached"] == "L1"  # the document and the quote are real
+    assert v.citations["cited_without_retrieval"] == [HISTORY]
+    assert v.citations["retrieval_provenance"] == "not established for some cited documents"
+    assert "retrieval provenance not established" in v.invariant.messages[0]
+    assert v.invariant.outcome is Outcome.MET  # provenance is reported, it does not change L0 or L1
+
+
+def test_citation_coverage_is_reported_separately() -> None:
+    run = run_of("1962")
+    run.report.claims.append(Claim(text="a second claim with no citation"))
+    v = judge(world(), run, BASE, FACT, "number")
+    assert v.citations["claims"] == 2 and v.citations["claim_coverage"] == 0.5
+    assert (
+        v.invariant.outcome is Outcome.MET and "1 claim(s) cite nothing" in v.invariant.messages[0]
+    )
+    assert v.citations["cited_without_retrieval"] == []

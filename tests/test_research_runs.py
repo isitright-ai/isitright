@@ -182,3 +182,14 @@ def test_a_citation_without_a_quote_reaches_level_zero_not_one() -> None:
     check = check_citations(report, docs)
     assert check.level == "L0" and check.unquoted == 1 and check.l1_failures == []
     assert check.to_json()["unquoted_citations"] == 1
+
+
+# ---- appended by the fixtures review ----
+
+
+def test_number_normalization_reads_exact_answers_only() -> None:
+    assert normalize("not 1962", "number") is None
+    assert normalize("As of 2024, the answer is 1962", "number") is None
+    assert normalize("it was never 1962", "number") is None
+    assert normalize("1962", "number") == "1962" and normalize("about 1,962", "number") == "1962"
+    assert same_answer("As of 2024, 1962", "1962", "number") is None  # not a mismatch: not judged

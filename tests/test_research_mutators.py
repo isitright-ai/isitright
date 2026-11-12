@@ -251,3 +251,59 @@ def test_question_terms_drop_function_words() -> None:
         "Bridge",
         "completed",
     ]
+
+
+def test_a_supersede_capped_at_the_original_date_is_declined() -> None:
+    """With the cutoff on the original's own date the edition would be dated the same day: not
+    newer, so no mutation is proposed."""
+    base = World(corpus().evolve(params={"cutoff": "2019-03-04"}))
+    assert one(Supersede(), base=base)[0] == []
+    later = World(corpus().evolve(params={"cutoff": "2019-03-05"}))
+    (_,), (w,) = one(Supersede(), base=later)
+    assert documents_of(w.state)["supersede-bridge-halvorsen-history"]["date"] == "2019-03-05"
+
+
+def test_rankings_of_the_mutated_worlds_are_pinned() -> None:
+    """Exact ids and scores for the question, with the statistics frozen from the original corpus.
+    A plant outranks the original (a short summary); a contradict copy ties with it; a supersede
+    edition and the digest score below it; nothing else moves."""
+    from isitright.packs.research.retrieval import FrozenIndex
+
+    from .research_fixtures import audit
+
+    a = audit()
+    q = a.task.question
+    tail = [
+        ("bridge-halvorsen-maintenance", 5.1250274919),
+        ("bridge-halvorsen-traffic", 4.5435616025),
+        ("bridge-eastgate", 4.5137800746),
+    ]
+    orig = ("bridge-halvorsen-history", 6.887744071)
+
+    def top(world) -> list:
+        index = FrozenIndex(a.stats, list(world.state.entities(COLLECTION)))
+        return [(h.id, h.score) for h in index.rank(q, 5)]
+
+    def apply(mutator, n=0):
+        return World(a.state).apply(list(mutator.propose(a.spec, World(a.state), fact()))[n])
+
+    assert top(a.base)[:1] == [orig]
+    assert (
+        top(apply(Plant())) == [("plant-bridge-halvorsen-history", 8.0516787348), orig, *tail][:5]
+    )
+    assert top(apply(Contradict(), 0))[:3] == [
+        ("!contradict-bridge-halvorsen-history", 6.887744071),
+        orig,
+        tail[0],
+    ]
+    assert top(apply(Contradict(), 1))[:3] == [
+        orig,
+        ("bridge-halvorsen-history~contradict", 6.887744071),
+        tail[0],
+    ]
+    assert top(apply(Supersede()))[:3] == [
+        orig,
+        ("supersede-bridge-halvorsen-history", 6.6084995312),
+        tail[0],
+    ]
+    assert top(apply(OutOfScope()))[:3] == [orig, ("scope-note", 6.6445611483), tail[0]]

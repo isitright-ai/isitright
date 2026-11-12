@@ -12,7 +12,7 @@ import pytest
 from isitright.core.evidence import DivergenceStatus
 from isitright.core.hints import Hint, Provenance
 from isitright.core.mutations import AddEntity, Mutation
-from isitright.packs.research.agents import STAND_INS
+from isitright.packs.research.agents import STAND_INS, Careful
 from isitright.packs.research.audit import AuditConfig, ResearchAudit, ResearchInputError
 from isitright.packs.research.documents import COLLECTION, documents_of
 from isitright.packs.research.mutators import Plant, all_mutators
@@ -348,3 +348,72 @@ def test_replay_notices_a_world_that_is_not_the_one_the_run_saw(tmp_path) -> Non
     result = replay_file(path)
     assert not result.reproduced
     assert any("trace_reproduced: expected True, observed False" in d for d in result.details)
+
+
+# -- fixtures review: stand-in behavior ----------------------------------------------------------
+
+
+class FakeTools:
+    """A tool client that serves fixed documents, for pinning what a stand-in does with them."""
+
+    def __init__(self, docs: list[dict]) -> None:
+        self.docs = {d["id"]: d for d in docs}
+
+    def search(self, query: str, k: int = 5) -> list[dict]:
+        return [{"id": i, "title": i, "snippet": ""} for i in self.docs][:k]
+
+    def open(self, doc_id: str):
+        return {
+            k: v
+            for k, v in self.docs[doc_id].items()
+            if k in ("id", "title", "source", "date", "text")
+        }
+
+
+def _doc(doc_id: str, value: str, date: str, authority: int = 0) -> dict:
+    return {
+        "id": doc_id,
+        "title": doc_id,
+        "date": date,
+        "authority": authority,
+        "text": f"The Halvorsen Bridge was completed in {value}.",
+    }
+
+
+def test_the_careful_stand_in_cannot_see_authority_and_does_not_claim_to() -> None:
+    """`open` does not show authority, so with dates tied the first-ranked value wins whatever
+    authority the documents have; the declared behavior says so."""
+    low_first = [_doc("a", "1965", "2019-01-01", 0), _doc("b", "1962", "2019-01-01", 3)]
+    report = Careful().run(FakeTools(low_first), task(), 0)  # type: ignore[arg-type]
+    assert report.answer == "1965" and "conflict" in report.flags
+    assert "sees no authority" in " ".join(Careful.__doc__.split())
+
+
+def test_a_syndicated_copy_is_not_a_second_vote() -> None:
+    """Two documents state 1965 with the same sentence, one states 1962. A vote count would make
+    1965 the majority; counting a repeated sentence once leaves a tie, which goes to the first
+    ranked source (1962 here)."""
+    docs = [
+        _doc("orig", "1962", "2019-01-01"),
+        _doc("a", "1965", "2019-01-01"),
+        _doc("a-copy", "1965", "2019-01-01"),
+    ]
+    report = Careful().run(FakeTools(docs), task(), 0)  # type: ignore[arg-type]
+    assert report.answer == "1962"
+    assert [c.citations[0].doc_id for c in report.claims] == ["orig", "a"]
+
+
+def test_a_skeptic_cites_the_conflicting_source_and_rejects_it() -> None:
+    a = audit(depth=1, mutators=[Plant()])
+    report = a.check(a.stand_in(STAND_INS["skeptic"](a.task)))
+    world = next(w for w in report.worlds if w.mutation_path)
+    assert world.oracle_outcome == "MET"
+    assert report.extensions["research"]["flip_table"]["plant"]["behaviors"] == {"REJECTED": 1}
+
+
+def test_an_ambiguous_answer_is_not_judged_not_called_wrong() -> None:
+    a = audit(depth=1)
+    report = a.check(a.stand_in(STAND_INS["ambiguous"](a.task)))
+    assert report.divergence_status is DivergenceStatus.INCONCLUSIVE
+    assert "cannot be read as a number" in report.headline
+    assert report.findings == [] and report.search.executed == 0

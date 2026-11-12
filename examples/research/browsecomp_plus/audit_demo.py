@@ -86,9 +86,28 @@ def sentence_around(text: str, start: int, end: int) -> str:
     return sentence
 
 
+_CUES = re.compile(
+    r"\b(not|no longer|never|incorrectly|falsely|mistakenly|erroneously|wrongly|rumou?red?|"
+    r"claimed|alleged|myth|denied|disputed)\b",
+    re.IGNORECASE,
+)
+
+
+def span_rejection(text: str, start: int, sentence: str) -> str | None:
+    """Why a sentence that contains the answer is not taken as the fact: the match sits in the
+    front matter, or the sentence carries a negation or a correction cue. A heuristic: it keeps a
+    sentence that merely contains the answer, and it is not an entailment check."""
+    block = _FRONT.match(text)
+    if block and start < block.end():
+        return "the answer occurs in the front matter"
+    if _CUES.search(sentence):
+        return "the sentence carries a negation or correction cue"
+    return None
+
+
 def fact_span_hint(report: Report, docs: dict[str, dict[str, Any]]) -> Hint | None:
-    """From the baseline trace: the first cited document that contains the run's own answer, and
-    the sentence that contains it. The gold answer is not used."""
+    """From the baseline trace: the first cited document with a body sentence that contains the
+    run's own answer. The gold answer is not used. The span is labeled a heuristic."""
     answer = report.answer
     if not answer:
         return None
@@ -96,21 +115,24 @@ def fact_span_hint(report: Report, docs: dict[str, dict[str, Any]]) -> Hint | No
         doc = docs.get(doc_id)
         if doc is None:
             continue
-        match = re.search(re.escape(answer.strip()), str(doc["text"]), re.IGNORECASE)
-        if match:
-            quote = sentence_around(str(doc["text"]), match.start(), match.end())
+        text = str(doc["text"])
+        for match in re.finditer(re.escape(answer.strip()), text, re.IGNORECASE):
+            quote = sentence_around(text, match.start(), match.end())
             value = match.group()
-            if value in quote:
-                return Hint(
-                    kind="fact_span",
-                    provenance=Provenance.HARVESTED_TRACE,
-                    args={
-                        "doc_id": doc_id,
-                        "quote": quote,
-                        "value": value,
-                        "answer_type": "string",
-                    },
-                )
+            if value not in quote or span_rejection(text, match.start(), quote):
+                continue
+            return Hint(
+                kind="fact_span",
+                provenance=Provenance.HARVESTED_TRACE,
+                args={
+                    "doc_id": doc_id,
+                    "quote": quote,
+                    "value": value,
+                    "answer_type": "string",
+                    "confidence": "heuristic: a body sentence that contains the answer, with no "
+                    "negation or correction cue; entailment is not checked",
+                },
+            )
     return None
 
 
@@ -173,7 +195,9 @@ def fidelity(audit: ResearchAudit, run: RecordedRun, decoded: dict[str, Any]) ->
         same_set += set(ours) == set(recorded)
         same_top += bool(ours) and bool(recorded) and ours[0] == recorded[0]
         overlap += len(set(ours) & set(recorded)) / max(1, len(recorded))
+    top1 = same_top / total if total else 0.0
     return {
+        "class": "high" if top1 >= 0.8 else "medium" if top1 >= 0.5 else "low",
         "queries": total,
         "same_top5_set": same_set,
         "same_top1": same_top,
