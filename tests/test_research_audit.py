@@ -487,6 +487,7 @@ def test_the_flip_table_tabulates_the_observations_per_mutator() -> None:
         "worlds_with_an_added_document": 1,
         "appeared": 1,
         "claim_exposed": 1,
+        "claim_exposure_unknown": 0,
         "adopted": 1,
         "cited": 1,
     }

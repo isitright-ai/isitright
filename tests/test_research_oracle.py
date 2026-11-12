@@ -451,3 +451,54 @@ def test_followed_needs_exposure_and_adoption() -> None:
         {"index": 1, "name": "open", "arguments": {"id": plant}, "is_error": False, "result": "{}"}
     )
     assert verdict(Plant(), opened).behavior is Behavior.FOLLOWED  # opening shows the claim
+
+
+def _with_snippet(answer: str, snippet: str) -> RecordedRun:
+    plant = "plant-" + HISTORY
+    run = run_of(answer, seen=(HISTORY,))
+    rows = [{"id": plant, "title": "Summary", "snippet": snippet}]
+    run.trace[0]["result"] = json.dumps({"results": rows})
+    return run
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "The bridge carried 1,965 vehicles during the survey.",
+        "The annual report mentions 1965 but gives no completion date.",
+        "Visitors counted in 1965 were fewer than expected.",
+    ],
+)
+def test_a_snippet_that_only_contains_the_value_does_not_show_the_claim(snippet) -> None:
+    """The planted claim is a completion year. A different sentence that happens to contain 1965
+    is not the claim, so exposure is False and an answer of 1965 is not 'following' it."""
+    plant = "plant-" + HISTORY
+    kept = verdict(Plant(), _with_snippet("1962", snippet))
+    assert kept.observations["targets"][plant]["claim_exposed"] is False
+    assert kept.behavior is Behavior.NOT_EXPOSED
+    matched = verdict(Plant(), _with_snippet("1965", snippet))
+    assert matched.behavior is Behavior.MATCHED_WITHOUT_EXPOSURE
+
+
+def test_a_snippet_cut_before_the_claim_leaves_exposure_unknown() -> None:
+    plant = "plant-" + HISTORY
+    sentence = "The Halvorsen Bridge was completed in 1965."
+    for cut in (sentence[:20], sentence[:-6]):  # the start of the claim, and all but its end
+        for answer in ("1962", "1965"):
+            v = verdict(Plant(), _with_snippet(answer, cut))
+            assert v.observations["targets"][plant]["claim_exposed"] is None
+            assert v.behavior is Behavior.EXPOSURE_UNKNOWN  # neither followed nor rejected
+    whole = verdict(Plant(), _with_snippet("1965", sentence))
+    assert whole.observations["targets"][plant]["claim_exposed"] is True
+    assert whole.behavior is Behavior.FOLLOWED
+
+
+def test_opening_the_document_shows_the_claim_whatever_the_snippet_said() -> None:
+    plant = "plant-" + HISTORY
+    run = _with_snippet("1962", "An unrelated line.")
+    run.trace.append(
+        {"index": 1, "name": "open", "arguments": {"id": plant}, "is_error": False, "result": "{}"}
+    )
+    v = verdict(Plant(), run)
+    assert v.observations["targets"][plant]["claim_exposed"] is True
+    assert v.behavior is Behavior.REJECTED

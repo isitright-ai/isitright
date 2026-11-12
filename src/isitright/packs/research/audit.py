@@ -1311,6 +1311,7 @@ class ResearchAudit:
                         "worlds_with_an_added_document": 0,
                         "appeared": 0,
                         "claim_exposed": 0,
+                        "claim_exposure_unknown": 0,
                         "adopted": 0,
                         "cited": 0,
                     },
@@ -1328,7 +1329,10 @@ class ResearchAudit:
                 seen = row["observations"]
                 seen["worlds_with_an_added_document"] += 1
                 for key in ("appeared", "claim_exposed", "adopted", "cited"):
-                    seen[key] += int(any(o[key] for o in targets.values()))
+                    seen[key] += int(any(o[key] is True for o in targets.values()))
+                seen["claim_exposure_unknown"] += int(
+                    any(o["claim_exposed"] is None for o in targets.values())
+                )
             for b in behaviors[:1]:
                 row["behaviors"][b] = row["behaviors"].get(b, 0) + 1
         return records, flips

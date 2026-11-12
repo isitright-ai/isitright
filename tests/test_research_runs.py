@@ -208,6 +208,10 @@ def test_number_normalization_reads_exact_answers_only() -> None:
         ("completed on March 3, 1962 (March 3, 1962 per the plaque)", "1962-03-03"),
         ("1962", "1962"),
         ("completed in 1962", "1962"),
+        ("March 3, 1962 or 1963", None),
+        ("1962-03-03 or 1963", None),
+        ("3 March 1962 (built 1958)", None),
+        ("March 3, 1962, so in 1962", "1962-03-03"),
     ],
 )
 def test_date_answers_follow_the_same_exactness_rules_as_numbers(text, expected) -> None:

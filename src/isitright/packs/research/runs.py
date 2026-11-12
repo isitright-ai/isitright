@@ -242,22 +242,32 @@ def _normalize_date(text: str) -> str | None:
     """One date, not negated. Two different dates ("March 3, 1962 or April 4, 1963"), a date
     after a negation ("not March 3, 1962") and an impossible date are not exact answers: None."""
     found: list[tuple[int, str | None]] = []
+    spans: list[tuple[int, int]] = []
     for m in re.finditer(r"\b(\d{4})-(\d{2})-(\d{2})\b", text):
         found.append((m.start(), _ymd(m[1], int(m[2]), m[3])))
+        spans.append(m.span())
     low = text.casefold().replace(",", " ")  # same offsets as ``text``
     for m in re.finditer(r"\b([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})\b", low):
         if m[1] in _MONTHS:
             found.append((m.start(), _ymd(m[3], _MONTHS[m[1]], m[2])))
+            spans.append(m.span())
     for m in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})\.?\s+(\d{4})\b", low):
         if m[2] in _MONTHS:
             found.append((m.start(), _ymd(m[3], _MONTHS[m[2]], m[1])))
+            spans.append(m.span())
     if found:
         values = {v for _, v in found}
         if len(values) != 1 or None in values:
             return None
         if _NEGATION.search(text[: min(s for s, _ in found)]):
             return None
-        return next(iter(values))
+        value = next(iter(values))
+        assert value is not None
+        for m in re.finditer(r"\b\d{4}\b", text):
+            inside = any(lo <= m.start() < hi for lo, hi in spans)
+            if not inside and m[0] != value[:4]:
+                return None  # "March 3, 1962 or 1963": a second, different year
+        return value
     year = re.fullmatch(r"\D*(\d{4})\D*", text)
     if year and not _NEGATION.search(text[: year.start(1)]):
         return year[1]

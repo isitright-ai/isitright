@@ -126,7 +126,8 @@ retrieval cutoff `k`, date and number representation, units, timing.
 - **Normalization.** `string`: case-folded, punctuation and articles removed. `number`: the one
   number in the answer, separators removed; an answer with two numbers ("As of 2024, ... 1962") or
   a negation before its number ("not 1962") is not an exact answer. `date`: ISO, with the same exactness
-  rules (two different dates, or a date after a negation, is not an exact answer). An answer that
+  rules (two different dates, a date and a second different year, or a date after a negation, is not an
+  exact answer). An answer that
   cannot be read as the declared kind is `CANNOT_JUDGE`. An abstention is a declared set of
   phrases. Use structured answer fields; do not point this at prose.
 - **A disclosure never rescues an answer.** The answer must be one the expectation recognizes (the
@@ -140,7 +141,10 @@ retrieval cutoff `k`, date and number representation, units, timing.
   and did not adopt it. `NOT_EXPOSED`: the document appeared as an id and a title only, the claim
   was never shown, and the answer did not match it: nothing can be said about rejecting it.
   `MATCHED_WITHOUT_EXPOSURE`: the answer equals a claim it was never shown (coincidence or prior
-  knowledge), which is not following it. `NOT_RETRIEVED`: the document appeared in no result and
+  knowledge), which is not following it. `EXPOSURE_UNKNOWN`: the snippet was cut before the claim,
+  so neither following nor rejecting can be said. The claim is the mutation's own sentence: a
+  snippet that merely contains the claim's value in another sentence ("the report mentions 1965")
+  does not show it. `NOT_RETRIEVED`: the document appeared in no result and
   was not opened. Underneath, each added document has its own
   observations: `appeared` (in a result or opened), `claim_exposed` (opened, or a snippet states
   the value, as against a title and an unrelated snippet), `adopted`, and `cited` (as support or as
