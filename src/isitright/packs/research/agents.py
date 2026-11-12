@@ -139,8 +139,8 @@ def _report(
 class Careful:
     """Searches, opens every result, reads each, ignores retracted documents, counts a sentence
     that several documents repeat once, prefers the newest source (by the date `open` shows; it
-    sees no authority), takes the first-ranked value among equally new ones, and says so when
-    sources disagree."""
+    sees no authority), takes the value that most of the equally new distinct sentences give
+    (the first-ranked value on a tie), and says so when sources disagree."""
 
     stochastic = False
 
@@ -400,5 +400,12 @@ STAND_INS: dict[str, Callable[[ResearchTask], Agent]] = {
 }
 
 StandInName = Literal[
-    "careful", "credulous", "snippet_reader", "non_retrieving", "refusing", "mixed"
+    "careful",
+    "credulous",
+    "snippet_reader",
+    "non_retrieving",
+    "refusing",
+    "mixed",
+    "skeptic",
+    "ambiguous",
 ]

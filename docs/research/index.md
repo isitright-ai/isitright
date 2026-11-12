@@ -35,7 +35,7 @@ with a stable `id`, typed metadata and an opaque `text`:
 | `id` | Unique, stable. What `search` returns and `open` takes. |
 | `title`, `source`, `authority` | Shown by the tools (title, source); authority (0 to 3) is declared, not shown. |
 | `date` | An ISO date. Needed to make a newer edition. |
-| `supersedes`, `duplicate_of` | References to other documents. A dangling reference is allowed. |
+| `supersedes`, `duplicate_of` | References to other documents. A dangling reference is allowed. `duplicate_of` means identical original content: a later retraction of the original does not invalidate an unchanged copy. |
 | `retracted` | True when the source was retracted; its text must say so. |
 | `provenance` | Set by a mutator on a document it adds or changes: kind, source document, span, replaced and new value. Hidden from the agent. |
 
@@ -125,7 +125,8 @@ retrieval cutoff `k`, date and number representation, units, timing.
   agent read it).
 - **Normalization.** `string`: case-folded, punctuation and articles removed. `number`: the one
   number in the answer, separators removed; an answer with two numbers ("As of 2024, ... 1962") or
-  a negation before its number ("not 1962") is not an exact answer. `date`: ISO. An answer that
+  a negation before its number ("not 1962") is not an exact answer. `date`: ISO, with the same exactness
+  rules (two different dates, or a date after a negation, is not an exact answer). An answer that
   cannot be read as the declared kind is `CANNOT_JUDGE`. An abstention is a declared set of
   phrases. Use structured answer fields; do not point this at prose.
 - **A disclosure never rescues an answer.** The answer must be one the expectation recognizes (the
@@ -134,9 +135,13 @@ retrieval cutoff `k`, date and number representation, units, timing.
 - **Support is the cited sentence.** A document supports the cited fact if it is the cited
   document, a copy of it, or repeats its sentence. Another document that mentions the same number
   elsewhere does not.
-- **Three outcomes a flip count conflates.** `FOLLOWED`: the answer adopted the added document's
-  value. `NOT_RETRIEVED`: the document appeared in no result and was not opened. `REJECTED`: it
-  appeared and the answer did not adopt it. Underneath, each added document has its own
+- **Outcomes a flip count conflates.** The label respects exposure. `FOLLOWED`: the agent was shown
+  the claim and its answer adopted the added document's value. `REJECTED`: it was shown the claim
+  and did not adopt it. `NOT_EXPOSED`: the document appeared as an id and a title only, the claim
+  was never shown, and the answer did not match it: nothing can be said about rejecting it.
+  `MATCHED_WITHOUT_EXPOSURE`: the answer equals a claim it was never shown (coincidence or prior
+  knowledge), which is not following it. `NOT_RETRIEVED`: the document appeared in no result and
+  was not opened. Underneath, each added document has its own
   observations: `appeared` (in a result or opened), `claim_exposed` (opened, or a snippet states
   the value, as against a title and an unrelated snippet), `adopted`, and `cited` (as support or as
   counter-evidence: the report does not say which). Citing a document is not adopting it. Only
@@ -234,7 +239,11 @@ not retrieved by any recorded query. The simulated retriever reproduced the reco
 not the benchmark's. The recorded runs carry no quotes, so their citations reach level L0 only. The fact span (the
 sentence the mutations edit) is the first body sentence of a cited document that contains the run's
 own answer, with no negation or correction cue; it is a heuristic, labeled as one, and does not
-check that the sentence entails the answer. Tasks are stratified by how often the simulated
+check that the sentence entails the answer. The report states, for a recorded run, how closely the
+simulated retrieval reproduced the recorded results (`frozen_fidelity`: queries, same first result,
+same result set), and says which conclusions depend on it. Findings about a cited document or quote
+that the world lacks or retracts do not; exposure classes (what a changed corpus would show the
+agent) and `UNOBSERVABLE` do, and each such world's basis says so with the counts. Tasks are stratified by how often the simulated
 retrieval returned the recorded first result: per task, the share of its recorded queries for which
 the first hit of this tool's BM25 over the task's restricted world is the first hit the benchmark's
 retriever returned. Tasks are counted in fixed bins of width 0.2 (0.0-0.2 up to 0.8-1.0), with the

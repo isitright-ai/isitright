@@ -248,6 +248,7 @@ class ResearchAudit:
         self.exports: dict[str, Any] = {}
         self.baseline_runs: list[RecordedRun] = []
         self.cannot_judge_rows: list[dict[str, Any]] = []
+        self._frozen_fidelity: dict[str, Any] = {}
         """Every run the constructive oracle could not judge, with its full answer: written
         beside the report as cannot-judge.jsonl, not inside it (answers can be long)."""
 
@@ -822,6 +823,11 @@ class ResearchAudit:
         fact = _fact_args(hints)
         budget = Budget(attempts=config.attempts, seconds=config.seconds)
         results: dict[str, WorldResult] = {}
+        fidelity = self.frozen_fidelity(recorded)
+        qualification = (
+            f"ranking-dependent: the simulated retrieval returned the recorded first result in "
+            f"{fidelity['same_top1']} of {fidelity['queries']} recorded queries"
+        )
 
         def evaluate(candidate: Candidate, validity: Validity) -> Evaluation:
             world = candidate.world
@@ -830,6 +836,8 @@ class ResearchAudit:
             if fact is None:
                 return Evaluation(Verdict.INCONCLUSIVE, validity, reason="no fact span")
             wr.screening, wr.screening_basis = self.screen(world, recorded, fact)
+            if wr.screening in ("STALE", "UNSCREENABLE", "RIGHT_IF_UNCHANGED"):
+                wr.screening_basis += f" ({qualification})"
             lists = self.replay_queries(world, recorded.queries())
             wr.observed_ids = sorted({i for ids in lists for i in ids})
             verdict = judge(world, recorded, recorded, fact, task.answer_type)
@@ -875,6 +883,7 @@ class ResearchAudit:
             self._frozen_finding(i, f.candidate.world, f.validity, recorded, fact, results)
             for i, f in enumerate(result.findings[: config.max_findings], start=1)
         ]
+        self._frozen_fidelity = fidelity
         return self._report(
             subject,
             started,
@@ -889,6 +898,37 @@ class ResearchAudit:
             gate,
             mode="frozen",
         )
+
+    def frozen_fidelity(self, recorded: RecordedRun) -> dict[str, Any]:
+        """How closely the simulated retrieval reproduces the recorded results: for each recorded
+        query, whether the first result and the whole result set match what the agent was shown.
+        Citation findings do not depend on it; exposure classes (what a changed corpus would show
+        the agent) do. Reported as counts and a share, with no threshold."""
+        recorded_lists = recorded.queries()
+        ours = self.replay_queries(self.base, recorded_lists)
+        total = len(recorded_lists)
+        same_top = sum(
+            1 for q, mine in zip(recorded_lists, ours, strict=True) if mine[:1] == q["ids"][:1]
+        )
+        same_set = sum(
+            1 for q, mine in zip(recorded_lists, ours, strict=True) if set(mine) == set(q["ids"])
+        )
+        overlap = sum(
+            len(set(mine) & set(q["ids"])) / max(1, len(q["ids"]))
+            for q, mine in zip(recorded_lists, ours, strict=True)
+        )
+        return {
+            "queries": total,
+            "same_top1": same_top,
+            "same_top5_set": same_set,
+            "mean_overlap_at_5": round(overlap / total, 3) if total else None,
+            "top1_share": round(same_top / total, 3) if total else None,
+            "depends_on_it": [
+                "exposure classes (STALE, UNSCREENABLE, RIGHT_IF_UNCHANGED)",
+                "UNOBSERVABLE",
+            ],
+            "does_not_depend_on_it": ["a cited document or quote that the world lacks or retracts"],
+        }
 
     def _frozen_finding(
         self,
@@ -953,6 +993,7 @@ class ResearchAudit:
                 "reference_trust": f"gold {self.task.gold!r}: {self.task.gold_basis}"
                 if self.task.gold is not None
                 else "no gold answer was given; the recorded answer is the reference",
+                "depends_on_simulated_ranking": False,
                 "reproduces_on_shown_world": bool(reproduces(final)),
                 "found_on_world": world.fingerprint(),
                 "shown_world": final.fingerprint(),
@@ -1180,6 +1221,7 @@ class ResearchAudit:
                         "opened": baseline_runs[0].opened(),
                     },
                     "flip_table": flips,
+                    **({"frozen_fidelity": self._frozen_fidelity} if mode == "frozen" else {}),
                     "cannot_judge": self._cannot_judge_summary(),
                     "unobservable_changes": unobservable,
                     "proposed_classification": [

@@ -128,16 +128,27 @@ def _retraction_visible(state: State) -> list[str]:
     ]
 
 
+def _without_notice(doc: Entity) -> str:
+    """A document's text without the retraction notice a later retraction put in front of it."""
+    text = str(doc["text"])
+    if doc.get("retracted") and _NOTICE.match(text):
+        _, sep, rest = text.partition(". ")
+        return rest if sep else ""
+    return text
+
+
 def _duplicates_match(state: State) -> list[str]:
-    """A document marked a copy has the text of its target (whitespace and case aside) when the
-    target is in the corpus. A dangling ``duplicate_of`` is allowed: the target may be absent."""
+    """``duplicate_of`` means identical original content: a document marked a copy has the text of
+    its target (whitespace and case aside, and ignoring a retraction notice put on the target
+    later) when the target is in the corpus. Retracting the original does not invalidate an
+    unchanged copy. A dangling ``duplicate_of`` is allowed: the target may be absent."""
     docs = _by_id(state)
     return [
         f"{d['id']} is marked a duplicate of {d['duplicate_of']} but its text differs"
         for d in docs.values()
         if d.get("duplicate_of") in docs
-        and " ".join(str(d["text"]).casefold().split())
-        != " ".join(str(docs[d["duplicate_of"]]["text"]).casefold().split())
+        and " ".join(_without_notice(d).casefold().split())
+        != " ".join(_without_notice(docs[d["duplicate_of"]]).casefold().split())
     ]
 
 

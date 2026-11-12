@@ -164,3 +164,40 @@ def test_frozen_report_states_the_citation_level_of_the_recorded_report() -> Non
     _, report = frozen(run)
     citations = report.extensions["research"]["baseline"]["citations"]
     assert citations["level_reached"] == "L1" and citations["l0_failures"] == []
+
+
+def test_frozen_report_states_retrieval_fidelity_and_what_depends_on_it() -> None:
+    _, run = recorded_careful()
+    _, report = frozen(run)
+    fid = report.extensions["research"]["frozen_fidelity"]
+    assert fid["queries"] == fid["same_top1"] == fid["same_top5_set"] and fid["top1_share"] == 1.0
+    assert (
+        "a cited document or quote that the world lacks or retracts" in fid["does_not_depend_on_it"]
+    )
+    assert all(f.divergence["depends_on_simulated_ranking"] is False for f in report.findings)
+    exposed = [w for w in report.worlds if w.screening and w.screening.screening_class == "STALE"]
+    assert exposed and all(
+        "ranking-dependent: the simulated retrieval returned" in w.screening.basis for w in exposed
+    )
+    objective = [
+        w
+        for w in report.worlds
+        if w.screening and w.screening.screening_class == "WRONG_IF_UNCHANGED"
+    ]
+    assert objective and all("ranking-dependent" not in w.screening.basis for w in objective)
+
+
+def test_a_recorded_run_whose_results_differ_from_ours_lowers_the_reported_fidelity() -> None:
+    import json
+
+    _, run = recorded_careful()
+    for event in run.trace:
+        if event["name"] == "search":
+            rows = json.loads(event["result"])["results"]
+            event["result"] = json.dumps({"results": list(reversed(rows))})
+    _, report = frozen(run)
+    fid = report.extensions["research"]["frozen_fidelity"]
+    assert fid["same_top1"] < fid["queries"] and fid["top1_share"] < 1.0
+    assert fid["same_top5_set"] == fid["queries"]  # the same documents, in another order
+    stale = next(w for w in report.worlds if w.screening and w.screening.screening_class == "STALE")
+    assert f"in {fid['same_top1']} of {fid['queries']} recorded queries" in stale.screening.basis

@@ -497,3 +497,27 @@ def test_the_flip_table_tabulates_the_observations_per_mutator() -> None:
     # a family that adds no conflicting document has no worlds with an added document
     reorder = careful.extensions["research"]["flip_table"]["reorder"]["observations"]
     assert reorder["worlds_with_an_added_document"] == 0
+
+
+def test_careful_takes_the_majority_of_equally_new_sentences_and_the_first_on_a_tie() -> None:
+    """The documented rule: majority among equally dated distinct sentences, else first-ranked."""
+    two_vs_one = [
+        _doc("a", "1965", "2019-01-01"),
+        {
+            **_doc("b", "1965", "2019-01-01"),
+            "text": "The Halvorsen Bridge was completed in 1965, say others.",
+        },
+        _doc("c", "1962", "2019-01-01"),
+    ]
+    report = Careful().run(FakeTools(two_vs_one), task(), 0)  # type: ignore[arg-type]
+    assert report.answer == "1965"  # two distinct sentences beat one
+    tie = [_doc("c", "1962", "2019-01-01"), _doc("a", "1965", "2019-01-01")]
+    assert Careful().run(FakeTools(tie), task(), 0).answer == "1962"  # first ranked on a tie
+
+
+def test_every_registered_stand_in_is_in_the_stand_in_name_type() -> None:
+    import typing
+
+    from isitright.packs.research.agents import StandInName
+
+    assert set(typing.get_args(StandInName)) == set(STAND_INS)

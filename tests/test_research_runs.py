@@ -193,3 +193,22 @@ def test_number_normalization_reads_exact_answers_only() -> None:
     assert normalize("it was never 1962", "number") is None
     assert normalize("1962", "number") == "1962" and normalize("about 1,962", "number") == "1962"
     assert same_answer("As of 2024, 1962", "1962", "number") is None  # not a mismatch: not judged
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("not 1962", None),
+        ("not March 3, 1962", None),
+        ("never completed on 1962-03-03", None),
+        ("March 3, 1962 or April 4, 1963", None),
+        ("1962-03-03 or 1962-03-04", None),
+        ("31 February 1962", None),
+        ("March 3, 1962", "1962-03-03"),
+        ("completed on March 3, 1962 (March 3, 1962 per the plaque)", "1962-03-03"),
+        ("1962", "1962"),
+        ("completed in 1962", "1962"),
+    ],
+)
+def test_date_answers_follow_the_same_exactness_rules_as_numbers(text, expected) -> None:
+    assert normalize(text, "date") == expected

@@ -231,25 +231,37 @@ def normalize(value: str | None, kind: AnswerKind) -> str | None:
     return _normalize_date(text)
 
 
-def _normalize_date(text: str) -> str | None:
-    iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", text)
-    if iso:
-        try:
-            return date(int(iso[1]), int(iso[2]), int(iso[3])).isoformat()
-        except ValueError:
-            return None
-    low = text.casefold().replace(",", " ")
-    named = re.search(r"\b([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})\b", low)
-    day_first = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})\.?\s+(\d{4})\b", low)
+def _ymd(year: str, month: int, day: str) -> str | None:
     try:
-        if named and named[1] in _MONTHS:
-            return date(int(named[3]), _MONTHS[named[1]], int(named[2])).isoformat()
-        if day_first and day_first[2] in _MONTHS:
-            return date(int(day_first[3]), _MONTHS[day_first[2]], int(day_first[1])).isoformat()
+        return date(int(year), month, int(day)).isoformat()
     except ValueError:
         return None
+
+
+def _normalize_date(text: str) -> str | None:
+    """One date, not negated. Two different dates ("March 3, 1962 or April 4, 1963"), a date
+    after a negation ("not March 3, 1962") and an impossible date are not exact answers: None."""
+    found: list[tuple[int, str | None]] = []
+    for m in re.finditer(r"\b(\d{4})-(\d{2})-(\d{2})\b", text):
+        found.append((m.start(), _ymd(m[1], int(m[2]), m[3])))
+    low = text.casefold().replace(",", " ")  # same offsets as ``text``
+    for m in re.finditer(r"\b([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})\b", low):
+        if m[1] in _MONTHS:
+            found.append((m.start(), _ymd(m[3], _MONTHS[m[1]], m[2])))
+    for m in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3,9})\.?\s+(\d{4})\b", low):
+        if m[2] in _MONTHS:
+            found.append((m.start(), _ymd(m[3], _MONTHS[m[2]], m[1])))
+    if found:
+        values = {v for _, v in found}
+        if len(values) != 1 or None in values:
+            return None
+        if _NEGATION.search(text[: min(s for s, _ in found)]):
+            return None
+        return next(iter(values))
     year = re.fullmatch(r"\D*(\d{4})\D*", text)
-    return year[1] if year else None
+    if year and not _NEGATION.search(text[: year.start(1)]):
+        return year[1]
+    return None
 
 
 def same_answer(left: str | None, right: str | None, kind: AnswerKind) -> bool | None:

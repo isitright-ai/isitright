@@ -173,3 +173,25 @@ def test_a_document_marked_a_copy_has_its_targets_text() -> None:
 
 def corpus_text(doc_id: str) -> str:
     return str(next(d for d in corpus().entities(COLLECTION) if d["id"] == doc_id)["text"])
+
+
+def test_retracting_the_original_does_not_invalidate_an_unchanged_syndicated_copy() -> None:
+    """Duplicate, then retract the original: the copy keeps the original content and the world is
+    valid. `duplicate_of` means identical original content, not identical current text."""
+    from isitright.core.mutations import World
+    from isitright.packs.research.mutators import Duplicate, Retract
+
+    from .test_research_mutators import fact
+
+    start = World(corpus().evolve(params={"cutoff": "2024-12-31"}))
+    (dup,) = list(Duplicate().propose(_spec(), start, fact()))
+    both = start.apply(dup)
+    (retract,) = list(Retract().propose(_spec(), both, fact()))
+    world = both.apply(retract)
+    originals = {d["id"]: d for d in world.state.entities(COLLECTION)}
+    assert originals["bridge-halvorsen-history"]["retracted"] is True
+    assert not originals["syndicated-bridge-halvorsen-history"].get("retracted")
+    assert _spec().validate_world(world.state, world.path).status is ValidityStatus.VALID
+    # a copy whose own content differs is still invalid
+    edited = _with(world.state, key="syndicated-bridge-halvorsen-history", text="Other content.")
+    assert "but its text differs" in _problem(edited)

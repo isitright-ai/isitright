@@ -27,9 +27,9 @@ from common import decode_run, iter_queries, iter_runs, parse_final
 from isitright.core.hints import Hint, Provenance
 from isitright.packs.research.agents import ResearchTask
 from isitright.packs.research.audit import AuditConfig, ResearchAudit
-from isitright.packs.research.documents import COLLECTION, make_state
+from isitright.packs.research.documents import make_state
 from isitright.packs.research.replaying import write_outputs
-from isitright.packs.research.retrieval import FrozenIndex, FrozenStats
+from isitright.packs.research.retrieval import FrozenStats
 from isitright.packs.research.runs import Citation, Claim, RecordedRun, Report, SubjectLabel
 
 TIME_CAP_SECONDS = 600.0
@@ -183,28 +183,6 @@ def recorded_run(
     )
 
 
-def fidelity(audit: ResearchAudit, run: RecordedRun, decoded: dict[str, Any]) -> dict[str, Any]:
-    """How often our BM25 over the restricted world returns the recorded top-5 set and top-1."""
-    index = FrozenIndex(audit.stats, list(audit.state.entities(COLLECTION)))
-    same_set = same_top = 0
-    overlap = 0.0
-    total = len(decoded["searches"])
-    for search in decoded["searches"]:
-        recorded = [h["docid"] for h in search["hits"]]
-        ours = [h.id for h in index.rank(search["query"], 5)]
-        same_set += set(ours) == set(recorded)
-        same_top += bool(ours) and bool(recorded) and ours[0] == recorded[0]
-        overlap += len(set(ours) & set(recorded)) / max(1, len(recorded))
-    top1 = same_top / total if total else 0.0
-    return {
-        "top1_share": round(top1, 3),
-        "queries": total,
-        "same_top5_set": same_set,
-        "same_top1": same_top,
-        "mean_overlap_at_5": round(overlap / total, 3) if total else None,
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, required=True)
@@ -306,7 +284,7 @@ def main() -> None:
                 per_family={k: dict(v) for k, v in per_family.items()},
                 skipped=report.search.families_skipped,
                 baseline_citations=ext["baseline"]["citations"],
-                fidelity=fidelity(audit, run, decoded),
+                fidelity=ext["frozen_fidelity"],
                 headline=report.headline,
             )
         except Exception as error:  # a task the pack cannot handle is accounted, with the reason
