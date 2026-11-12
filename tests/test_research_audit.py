@@ -7,13 +7,15 @@ implementation it would catch in a comment where that is not obvious.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from isitright.core.evidence import DivergenceStatus
 from isitright.core.hints import Hint, Provenance
 from isitright.core.mutations import AddEntity, Mutation
 from isitright.packs.research.agents import STAND_INS, Careful
-from isitright.packs.research.audit import AuditConfig, ResearchAudit, ResearchInputError
+from isitright.packs.research.audit import AuditConfig, ResearchAudit, ResearchInputError, Subject
 from isitright.packs.research.documents import COLLECTION, documents_of
 from isitright.packs.research.mutators import Plant, all_mutators
 from isitright.packs.research.replaying import replay_file, write_outputs
@@ -417,3 +419,81 @@ def test_an_ambiguous_answer_is_not_judged_not_called_wrong() -> None:
     assert report.divergence_status is DivergenceStatus.INCONCLUSIVE
     assert "cannot be read as a number" in report.headline
     assert report.findings == [] and report.search.executed == 0
+
+
+# -- runs that cannot be judged are counted, shown and listed --------------------------------------
+
+
+def _hedging_subject(a: ResearchAudit, long_tail: int = 0) -> Subject:
+    """Careful on the original corpus; in a mutated world it answers in prose with two numbers,
+    as an agent that notices a conflict might."""
+    from isitright.packs.research.audit import in_process_executor
+
+    inner = in_process_executor(Careful(), a.task, a.stats)
+
+    def execute(world, seed):
+        run = inner(world, seed)
+        if world.path:
+            note = " (not 1962 as my previous answer stated)" + " and more text" * long_tail
+            run.report.answer = f"1965{note}"
+        return run
+
+    return Subject(Careful().label, False, execute)
+
+
+def test_unjudged_runs_are_counted_per_mutator_with_examples_and_a_full_list(tmp_path) -> None:
+    a = audit(depth=1)
+    report = a.check(_hedging_subject(a, long_tail=60))
+    ext = report.extensions["research"]
+    cj = ext["cannot_judge"]
+    assert cj["runs"] == len(a.cannot_judge_rows) > 0
+    assert set(cj["by_mutator"]) >= {"plant", "supersede", "contradict"}
+    assert f"{cj['runs']} run(s) not judged (CANNOT_JUDGE)" in report.headline
+    plant = ext["flip_table"]["plant"]
+    assert plant["cannot_judge"] == 1 and plant["not_met"] == 0  # not judged is not right or wrong
+    example = cj["examples"]["plant"][0]
+    assert example["answer"].startswith("1965 (not 1962") and example["answer"].endswith("...")
+    assert len(example["answer"]) == cj["answers_truncated_at"] + 3
+    assert "cannot be read as a number" in example["reason"]
+    # the full answer is in the sidecar file, not in the report
+    write_outputs(tmp_path, report, a.artifacts, a.exports, a.cannot_judge_rows)
+    rows = [
+        json.loads(x) for x in (tmp_path / "cannot-judge.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert len(rows) == cj["runs"]
+    plant_row = next(r for r in rows if r["family"] == "plant")
+    assert len(plant_row["answer"]) > cj["answers_truncated_at"] + 3
+    assert plant_row["seed"] is not None and plant_row["mutations"]
+    assert "## Runs not judged (CANNOT_JUDGE)" in (tmp_path / "findings-cases.md").read_text(
+        "utf-8"
+    )
+
+
+def test_no_sidecar_file_when_every_run_was_judged(tmp_path) -> None:
+    a, report = run_stand_in("careful", depth=1)
+    assert report.extensions["research"]["cannot_judge"]["runs"] == 0
+    assert report.extensions["research"]["cannot_judge"]["full_list"] is None
+    write_outputs(tmp_path, report, a.artifacts, a.exports, a.cannot_judge_rows)
+    assert not (tmp_path / "cannot-judge.jsonl").exists()
+
+
+def test_the_flip_table_tabulates_the_observations_per_mutator() -> None:
+    """For each mutator, in how many worlds the added document appeared, its claim was exposed, the
+    answer adopted it and the report cited it: four different facts under one 'followed'."""
+    _, credulous = run_stand_in("credulous", depth=1)
+    _, careful = run_stand_in("careful", depth=1)
+    plant = credulous.extensions["research"]["flip_table"]["plant"]["observations"]
+    assert plant == {
+        "worlds_with_an_added_document": 1,
+        "appeared": 1,
+        "claim_exposed": 1,
+        "adopted": 1,
+        "cited": 1,
+    }
+    skeptic = audit(depth=1, mutators=[Plant()])
+    rep = skeptic.check(skeptic.stand_in(STAND_INS["skeptic"](skeptic.task)))
+    obs = rep.extensions["research"]["flip_table"]["plant"]["observations"]
+    assert obs["appeared"] == 1 and obs["adopted"] == 0 and obs["cited"] == 1  # cited, not adopted
+    # a family that adds no conflicting document has no worlds with an added document
+    reorder = careful.extensions["research"]["flip_table"]["reorder"]["observations"]
+    assert reorder["worlds_with_an_added_document"] == 0

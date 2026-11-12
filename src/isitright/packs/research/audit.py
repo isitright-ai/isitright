@@ -247,6 +247,9 @@ class ResearchAudit:
         self.artifacts: dict[str, ReplayArtifact] = {}
         self.exports: dict[str, Any] = {}
         self.baseline_runs: list[RecordedRun] = []
+        self.cannot_judge_rows: list[dict[str, Any]] = []
+        """Every run the constructive oracle could not judge, with its full answer: written
+        beside the report as cannot-judge.jsonl, not inside it (answers can be long)."""
 
     # -- plumbing ----------------------------------------------------------------------------
 
@@ -404,6 +407,8 @@ class ResearchAudit:
                 return RunOutcome(None, error=True)
             verdict = judge(world, run, baseline, fact, self.task.answer_type)
             result.judged.append(verdict)
+            if label not in ("min", "confirm"):
+                self._note_cannot_judge(world, run, verdict, trial)
             return RunOutcome(
                 verdict.outcome,
                 violated=verdict.invariant.outcome is Outcome.NOT_MET,
@@ -411,6 +416,24 @@ class ResearchAudit:
             )
 
         return run_trial
+
+    def _note_cannot_judge(
+        self, world: World, run: RecordedRun, verdict: Judged, trial: int
+    ) -> None:
+        if verdict.constructive.outcome is not Outcome.CANNOT_JUDGE:
+            return
+        self.cannot_judge_rows.append(
+            {
+                "world": world.fingerprint(),
+                "mutations": [m.description for m in world.path],
+                "family": "+".join(m.family for m in world.path) or "baseline",
+                "trial": trial,
+                "seed": run.seed,
+                "answer": run.report.answer,
+                "reason": "; ".join(verdict.constructive.messages),
+                "expectation": verdict.expectation.kind.value,
+            }
+        )
 
     def _evaluate_live(
         self,
@@ -811,6 +834,7 @@ class ResearchAudit:
             wr.observed_ids = sorted({i for ids in lists for i in ids})
             verdict = judge(world, recorded, recorded, fact, task.answer_type)
             wr.judged = [verdict]
+            self._note_cannot_judge(world, recorded, verdict, 0)
             wr.role, wr.role_basis = verdict.expectation.role, verdict.expectation.basis
             wr.runs = [recorded]
             docs = documents_of(world.state)
@@ -1051,6 +1075,8 @@ class ResearchAudit:
         )
         if unobservable:
             summary += f"; {len(unobservable)} change(s) no query can retrieve (UNOBSERVABLE)"
+        if self.cannot_judge_rows:
+            summary += f"; {len(self.cannot_judge_rows)} run(s) not judged (CANNOT_JUDGE)"
         if status_c == "NOT_DISCRIMINATING":
             summary += "; controls never reached (NOT_DISCRIMINATING)"
         level = base_citations.get("level_reached")
@@ -1154,6 +1180,7 @@ class ResearchAudit:
                         "opened": baseline_runs[0].opened(),
                     },
                     "flip_table": flips,
+                    "cannot_judge": self._cannot_judge_summary(),
                     "unobservable_changes": unobservable,
                     "proposed_classification": [
                         {"finding": f.finding_id, **_classify(f)} for f in findings
@@ -1165,6 +1192,36 @@ class ResearchAudit:
                 }
             },
         )
+
+    def _cannot_judge_summary(self, per_family: int = 3, width: int = 300) -> dict[str, Any]:
+        """Counts per mutator and a few truncated examples; the full list is cannot-judge.jsonl.
+
+        A run is not judged when its answer cannot be read as the declared kind (prose with two
+        numbers, a negation) or when the expected behavior is undefined. Unparseable answers can
+        correlate with the mutation (an agent that notices a conflict may hedge in prose), so the
+        count per mutator is shown: a high count in one family means the finding is incomplete
+        there, not that the agent was right.
+        """
+        by_family: dict[str, int] = {}
+        examples: dict[str, list[dict[str, Any]]] = {}
+        for row in self.cannot_judge_rows:
+            family = row["family"]
+            by_family[family] = by_family.get(family, 0) + 1
+            if len(examples.setdefault(family, [])) < per_family:
+                answer = row["answer"]
+                shown = answer if answer is None or len(answer) <= width else answer[:width] + "..."
+                examples[family].append(
+                    {"answer": shown, "reason": row["reason"], "mutations": row["mutations"]}
+                )
+        return {
+            "runs": len(self.cannot_judge_rows),
+            "by_mutator": dict(sorted(by_family.items())),
+            "examples": examples,
+            "answers_truncated_at": width,
+            "full_list": "cannot-judge.jsonl, written beside the report"
+            if self.cannot_judge_rows
+            else None,
+        }
 
     def _world_records(
         self, results: dict[str, WorldResult]
@@ -1205,14 +1262,31 @@ class ResearchAudit:
                     "worlds": 0,
                     "answer_changed": 0,
                     "not_met": 0,
+                    "cannot_judge": 0,
                     "unobservable": 0,
                     "behaviors": {},
+                    "observations": {
+                        "worlds_with_an_added_document": 0,
+                        "appeared": 0,
+                        "claim_exposed": 0,
+                        "adopted": 0,
+                        "cited": 0,
+                    },
                 },
             )
             row["worlds"] += 1
             row["answer_changed"] += int(any(j.answer_changed for j in judged))
             row["not_met"] += int(any(j.outcome is Outcome.NOT_MET for j in judged))
             row["unobservable"] += int(wr.unobservable)
+            row["cannot_judge"] += int(
+                any(j.constructive.outcome is Outcome.CANNOT_JUDGE for j in judged)
+            )
+            targets = (judged[0].observations or {}).get("targets") or {}
+            if targets:
+                seen = row["observations"]
+                seen["worlds_with_an_added_document"] += 1
+                for key in ("appeared", "claim_exposed", "adopted", "cited"):
+                    seen[key] += int(any(o[key] for o in targets.values()))
             for b in behaviors[:1]:
                 row["behaviors"][b] = row["behaviors"].get(b, 0) + 1
         return records, flips

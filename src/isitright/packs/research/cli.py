@@ -159,7 +159,7 @@ def check_command(
             case = audit.check(subject)
     except (ExternalError, CorpusError, ResearchInputError, ValueError, OSError) as error:
         raise _fail(f"Input error: {error}") from error
-    written = write_outputs(output, case, audit.artifacts, audit.exports)
+    written = write_outputs(output, case, audit.artifacts, audit.exports, audit.cannot_judge_rows)
     if record_runs is not None:
         record_runs.mkdir(parents=True, exist_ok=True)
         for i, run in enumerate(audit.baseline_runs, start=1):

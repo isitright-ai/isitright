@@ -173,9 +173,23 @@ replay shows a change it could see; it ranks and skips, it never decides.
 the subject and who wrote it, the retrieval and its fidelity, the gold answer and whether it was
 checked, the baseline queries, opened documents and citation level, a per-mutator table (worlds,
 answers changed, expectations not met, behaviors), the unobservable changes, and the proposed
-classification. `findings-cases.md` puts, for each finding, the question, the documents, both
+classification. The flip table has, per mutator, how many worlds were run, how many answers changed,
+how many expectations were not met, how many runs were not judged, and the observations behind the
+three behavior labels: in how many worlds the added document appeared, its claim was exposed, the
+answer adopted it and the report cited it. `findings-cases.md` puts, for each finding, the question, the documents, both
 reports and the verdict side by side. A finding is shown on its minimized world; the confirmation
 and the oracle outcome are on that same world.
+
+**Runs that cannot be judged.** A run is `CANNOT_JUDGE` when its answer cannot be read as the
+declared kind (prose holding two numbers, a negation) or when no right answer is defined in that
+world. It is counted per mutator under `extensions.research.cannot_judge`, with up to three
+examples per mutator (answers cut at 300 characters), and the headline says how many there were.
+Every such run with its full answer, seed and mutation path is in `cannot-judge.jsonl` beside the
+report, and `findings-cases.md` lists the examples. Not judged is not right: an agent that hedges
+in prose when it notices a conflict would leave exactly the interesting worlds unjudged, so a high
+count in one mutator means the audit is incomplete there. isitright does not ask the agent for a
+different answer format; read the examples and decide whether your agent's answers need parsing in
+its adapter.
 
 A recorded run's finding says "this recorded report on this world", never "this agent".
 
@@ -221,7 +235,10 @@ not the benchmark's. The recorded runs carry no quotes, so their citations reach
 sentence the mutations edit) is the first body sentence of a cited document that contains the run's
 own answer, with no negation or correction cue; it is a heuristic, labeled as one, and does not
 check that the sentence entails the answer. Tasks are stratified by how often the simulated
-retrieval returned the recorded first result.
+retrieval returned the recorded first result: per task, the share of its recorded queries for which
+the first hit of this tool's BM25 over the task's restricted world is the first hit the benchmark's
+retriever returned (high at 0.8 or more, medium from 0.5, low below). It describes how closely the
+simulated results follow what the agent actually saw, not how good either retriever is.
 
 ## Quick start
 

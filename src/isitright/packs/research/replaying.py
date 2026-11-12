@@ -116,8 +116,10 @@ def write_outputs(
     report: CaseReport,
     artifacts: dict[str, ReplayArtifact],
     exports: dict[str, dict[str, Any]],
+    cannot_judge: list[dict[str, Any]] | None = None,
 ) -> list[Path]:
-    """Write the report, a replay artifact and an eval case per finding, and findings-cases.md."""
+    """Write the report, a replay artifact and an eval case per finding, findings-cases.md, and
+    (when any run could not be judged) cannot-judge.jsonl with every such run's full answer."""
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for finding in report.findings:
@@ -149,7 +151,15 @@ def write_outputs(
     )
     cases = out_dir / "findings-cases.md"
     cases.write_text(cases_markdown(report), encoding="utf-8")
-    return [report_path, cases, *written]
+    extra: list[Path] = []
+    if cannot_judge:
+        listing = out_dir / "cannot-judge.jsonl"
+        listing.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in cannot_judge),
+            encoding="utf-8",
+        )
+        extra.append(listing)
+    return [report_path, cases, *written, *extra]
 
 
 def _doc_block(doc: dict[str, Any]) -> str:
@@ -206,6 +216,22 @@ def cases_markdown(report: CaseReport) -> str:
         lines.append("")
     if not report.findings:
         lines.append("No findings.")
+    skipped = ext.get("cannot_judge") or {}
+    if skipped.get("runs"):
+        lines += [
+            "## Runs not judged (CANNOT_JUDGE)",
+            "",
+            f"{skipped['runs']} run(s) could not be judged: the answer could not be read as the "
+            "declared kind, or no right answer is defined in that world. Counts per mutator: "
+            f"{json.dumps(skipped['by_mutator'])}. Not judged is not right: a high count in one "
+            "family means the audit is incomplete there. Full list with every answer: "
+            "`cannot-judge.jsonl` beside this file.",
+            "",
+        ]
+        for family, rows in skipped["examples"].items():
+            for row in rows:
+                lines.append(f"- {family}: `{row['answer']}` -- {row['reason']}")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
