@@ -122,7 +122,11 @@ retrieval cutoff `k`, date and number representation, units, timing.
   report says the level reached. Two things are reported beside the level and never change it:
   claim coverage (claims that cite nothing) and retrieval provenance (a cited document that exists
   but that the trace never shows the agent retrieving: a correct-looking citation does not show the
-  agent read it).
+  agent read it). `cited_quote_exposed` goes one step further: whether the cited sentence itself
+  appeared in any tool output (a snippet or an opened document), as true, false (the agent was shown
+  only an id and title, or other sentences) or unknown (a snippet cut before the quote). It is a
+  fact about the trace, not about what the agent attended to, and an opened document is treated as
+  shown in full.
 - **Normalization.** `string`: case-folded, punctuation and articles removed. `number`: the one
   number in the answer, separators removed; an answer with two numbers ("As of 2024, ... 1962") or
   a negation before its number ("not 1962") is not an exact answer. `date`: ISO, with the same exactness
@@ -183,7 +187,8 @@ the subject and who wrote it, the retrieval and its fidelity, the gold answer an
 checked, the baseline queries, opened documents and citation level, a per-mutator table (worlds,
 answers changed, expectations not met, behaviors), the unobservable changes, and the proposed
 classification. The flip table has, per mutator, how many worlds were run, how many answers changed,
-how many expectations were not met, how many runs were not judged, and the observations behind the
+how many expectations were not met, how many runs were judged and how many were not (so a family
+with 2 judged and 18 unjudged runs does not look like one with 20 judged), and the observations behind the
 three behavior labels: in how many worlds the added document appeared, its claim was exposed, the
 answer adopted it and the report cited it. `findings-cases.md` puts, for each finding, the question, the documents, both
 reports and the verdict side by side. A finding is shown on its minimized world; the confirmation

@@ -17,7 +17,7 @@ from isitright.core.mutations import AddEntity, Mutation
 from isitright.packs.research.agents import STAND_INS, Careful
 from isitright.packs.research.audit import AuditConfig, ResearchAudit, ResearchInputError, Subject
 from isitright.packs.research.documents import COLLECTION, documents_of
-from isitright.packs.research.mutators import Plant, all_mutators
+from isitright.packs.research.mutators import Plant, Snippets, all_mutators
 from isitright.packs.research.replaying import replay_file, write_outputs
 
 from .research_fixtures import audit, corpus, run_stand_in, single, task
@@ -522,3 +522,96 @@ def test_every_registered_stand_in_is_in_the_stand_in_name_type() -> None:
     from isitright.packs.research.agents import StandInName
 
     assert set(typing.get_args(StandInName)) == set(STAND_INS)
+
+
+# -- a correct citation is not evidence the agent was shown the cited sentence ---------------
+
+
+class SearchOnlyCiter:
+    """Test-only. Searches, never opens a document, and returns the correct answer with an exact
+    citation of the top result: it reads only what the search results show."""
+
+    stochastic = False
+
+    def __init__(self) -> None:
+        from isitright.packs.research.runs import SubjectLabel
+
+        self.label = SubjectLabel(
+            kind="stand_in", name="search_only_citer", written_by="Claude (test-only stand-in)"
+        )
+
+    def run(self, tools, task, seed):
+        from isitright.packs.research.runs import Citation, Claim, Report
+
+        rows = tools.search(task.question, 5)
+        quote = "The Halvorsen Bridge was completed in 1962."
+        return Report(
+            answer=task.gold,
+            claims=[
+                Claim(
+                    text=f"The answer is {task.gold}.",
+                    citations=[Citation(doc_id=rows[0]["id"], quote=quote)],
+                )
+            ],
+        )
+
+
+def test_a_valid_citation_does_not_show_the_agent_was_shown_the_cited_sentence() -> None:
+    """The snippets response edit leaves ids and titles and drops the sentences. The agent still
+    answers correctly and its citation passes L0 and L1, and the document id appeared in the
+    results; but the cited sentence never appeared in any tool output, which the report says."""
+    from isitright.core.hints import Hints
+    from isitright.core.oracles import Outcome
+    from isitright.packs.research.oracle import judge
+
+    a = audit(depth=1, mutators=[Snippets()])
+    subject = a.stand_in(SearchOnlyCiter())  # type: ignore[arg-type]
+    base_run = subject.execute(a.base, 0)
+    base = judge(a.base, base_run, base_run, FACT.args, "number")
+    assert base.citations["cited_quote_exposed"] is True  # the snippet carried the sentence
+
+    (mutation,) = list(Snippets().propose(a.spec, a.base, Hints()))
+    world = a.base.apply(mutation)
+    run = subject.execute(world, 0)
+    v = judge(world, run, base_run, FACT.args, "number")
+    # everything the existing checks look at passes
+    assert run.report.answer == "1962"
+    assert v.constructive.outcome is Outcome.MET and v.invariant.outcome is Outcome.MET
+    assert v.citations["level_reached"] == "L1"
+    assert v.citations["cited_without_retrieval"] == []  # the id did appear in the results
+    assert v.citations["retrieval_provenance"] == "established for every cited document"
+    # but the sentence never reached the agent: a separate diagnostic, not L0 or L1
+    assert v.citations["cited_quote_exposed"] is False
+    assert v.citations["cited_quote_exposure"] == [
+        {"doc_id": "bridge-halvorsen-history", "exposed": False}
+    ]
+    assert "the agent was not shown that sentence" in v.invariant.messages[0]
+
+
+def test_a_ghost_citer_has_no_exposure_either() -> None:
+    from isitright.packs.research.agents import GhostCiter
+    from isitright.packs.research.oracle import judge
+
+    a = audit(depth=1)
+    ghost = GhostCiter(
+        "1962", "bridge-halvorsen-history", "The Halvorsen Bridge was completed in 1962."
+    )
+    run = a.stand_in(ghost).execute(a.base, 0)
+    v = judge(a.base, run, run, FACT.args, "number")
+    assert v.citations["level_reached"] == "L1" and v.citations["cited_quote_exposed"] is False
+    assert v.citations["cited_without_retrieval"] == ["bridge-halvorsen-history"]
+
+
+def test_the_flip_table_states_the_judged_denominators() -> None:
+    """Unjudged runs are neither met nor not met, and each family shows how many runs were judged:
+    a family with 0 judged and 1 unjudged is not one with 1 judged."""
+    a = audit(depth=1)
+    hedged = a.check(_hedging_subject(a))
+    table = hedged.extensions["research"]["flip_table"]
+    plant = table["plant"]
+    assert (plant["runs_judged"], plant["runs_not_judged"], plant["not_met"]) == (0, 1, 0)
+    assert table["baseline"]["runs_judged"] == 1 and table["baseline"]["runs_not_judged"] == 0
+    # an ordinary run: every run judged, nothing unjudged
+    _, careful = run_stand_in("careful", depth=1)
+    for family, row in careful.extensions["research"]["flip_table"].items():
+        assert row["runs_not_judged"] == 0 and row["runs_judged"] == row["worlds"], family

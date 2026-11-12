@@ -1305,6 +1305,8 @@ class ResearchAudit:
                     "answer_changed": 0,
                     "not_met": 0,
                     "cannot_judge": 0,
+                    "runs_judged": 0,
+                    "runs_not_judged": 0,
                     "unobservable": 0,
                     "behaviors": {},
                     "observations": {
@@ -1324,6 +1326,10 @@ class ResearchAudit:
             row["cannot_judge"] += int(
                 any(j.constructive.outcome is Outcome.CANNOT_JUDGE for j in judged)
             )
+            # the denominators: a family with 2 judged and 18 unjudged runs is not one with 20
+            unjudged = sum(j.constructive.outcome is Outcome.CANNOT_JUDGE for j in judged)
+            row["runs_not_judged"] += unjudged
+            row["runs_judged"] += len(judged) - unjudged
             targets = (judged[0].observations or {}).get("targets") or {}
             if targets:
                 seen = row["observations"]

@@ -142,6 +142,47 @@ class RecordedRun(Closed):
             )
         return out
 
+    def quote_exposure(self, doc_id: str, quote: str) -> bool | None:
+        """Whether the cited sentence appeared in any tool output: True if a snippet or an opened
+        document contains the quote; None if it cannot be told (no quote given, a snippet that is
+        only the start of the quote, or an open result without text); False otherwise (the
+        document never appeared, or only its id and title or other sentences did). This is a
+        property of the trace, not of what the agent attended to."""
+        target = squash(quote)
+        if not target:
+            return None
+        appeared = unknown = False
+        for event in self.trace:
+            if event.get("is_error"):
+                continue
+            if event.get("name") == "open" and str(event["arguments"].get("id")) == doc_id:
+                appeared = True
+                try:
+                    text = str(json.loads(event["result"]).get("text") or "")
+                except (ValueError, AttributeError, TypeError):
+                    text = ""
+                if not text:
+                    unknown = True
+                elif target in squash(text):
+                    return True
+            elif event.get("name") == "search":
+                try:
+                    rows = json.loads(event["result"])["results"]
+                except (ValueError, KeyError, TypeError):
+                    continue
+                for row in rows:
+                    if str(row.get("id")) != doc_id:
+                        continue
+                    appeared = True
+                    seen = squash(str(row.get("snippet") or ""))
+                    if seen and target in seen:
+                        return True
+                    if seen and target.startswith(seen):
+                        unknown = True
+        if not appeared:
+            return False
+        return None if unknown else False
+
     def opened(self) -> list[str]:
         out: list[str] = []
         for event in self.trace:
@@ -304,7 +345,21 @@ class CitationCheck:
     trace was not given). A correct-looking citation proves a document exists, not that the agent
     read it."""
     traced: bool = False
+    quote_exposure: list[dict[str, Any]] = field(default_factory=list)
+    """Per citation: whether its quote appeared in tool output (True, False, None for
+    unknown). A diagnostic beside L0 and L1; it never changes the level."""
     claims: int = 0
+
+    @property
+    def cited_quote_exposed(self) -> bool | None:
+        """True if every cited quote appeared in tool output, False if any did not, None when
+        there is no citation, no trace, or any quote's exposure is unknown."""
+        flags = [e["exposed"] for e in self.quote_exposure]
+        if not flags or not self.traced:
+            return None
+        if any(f is False for f in flags):
+            return False
+        return None if any(f is None for f in flags) else True
 
     @property
     def level(self) -> Literal["NONE", "L0", "L1"]:
@@ -325,6 +380,8 @@ class CitationCheck:
                 None if not self.claims else (self.claims - self.uncited_claims) / self.claims
             ),
             "cited_without_retrieval": sorted(self.unretrieved),
+            "cited_quote_exposed": self.cited_quote_exposed,
+            "cited_quote_exposure": self.quote_exposure,
             "retrieval_provenance": (
                 "not checked: no trace given"
                 if not self.traced
@@ -337,7 +394,10 @@ class CitationCheck:
 
 
 def check_citations(
-    report: Report, documents: Mapping[str, Entity], seen: Sequence[str] | None = None
+    report: Report,
+    documents: Mapping[str, Entity],
+    seen: Sequence[str] | None = None,
+    run: RecordedRun | None = None,
 ) -> CitationCheck:
     """L0 and L1 per citation, plus claim coverage and (with ``seen``, the ids the trace shows the
     agent retrieving) retrieval provenance. Coverage and provenance never change the level."""
@@ -349,6 +409,13 @@ def check_citations(
             check.uncited_claims += 1
         for citation in claim.citations:
             check.cited += 1
+            if run is not None and citation.doc_id in documents:
+                check.quote_exposure.append(
+                    {
+                        "doc_id": citation.doc_id,
+                        "exposed": run.quote_exposure(citation.doc_id, citation.quote),
+                    }
+                )
             doc = documents.get(citation.doc_id)
             if doc is None:
                 check.l0_failures.append(f"{citation.doc_id}: no such document")

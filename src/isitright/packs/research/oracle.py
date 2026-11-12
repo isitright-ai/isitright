@@ -349,7 +349,7 @@ def judge(
     original = normalize(base_value, kind)
     changed = None if answer is None or original is None else answer != original
     constructive = _constructive(expectation, report, kind, docs)
-    check = check_citations(report, docs, seen=run.seen())
+    check = check_citations(report, docs, seen=run.seen(), run=run)
     invariant = _invariant(check, report)
     behavior, observations = observe(run, expectation, world, kind)
     return Verdict(
@@ -378,6 +378,10 @@ def _invariant(check: Any, report: Report) -> OracleResult:
         notes.append(f"{check.unquoted} citation(s) give no quote: the quote is not checked")
     if check.uncited_claims:
         notes.append(f"{check.uncited_claims} claim(s) cite nothing (coverage is not required)")
+    if check.cited_quote_exposed is False:
+        notes.append(
+            "a cited quote never appeared in tool output: the agent was not shown that sentence"
+        )
     if check.unretrieved:
         notes.append(
             "retrieval provenance not established for: " + ", ".join(sorted(check.unretrieved))

@@ -26,9 +26,28 @@ offline, without a model, an account or a real research agent.
   (`python -m isitright.packs.research.serve`, needs the `mcp` extra); anything else is refused.
 - **Mutators.** `plant`, `contradict` (both tie orders), `supersede`, `retract`, `remove`,
   `duplicate`, `out_of_scope`, and the response edits `reorder` and `snippets`, with a constructive
-  or relational oracle each, a citation invariant (L0 id exists, L1 quote in document; L2 not
-  judged), roles computed per world (controls and traps) and the three-way separation
-  `FOLLOWED`, `NOT_RETRIEVED`, `REJECTED`.
+  or relational oracle each. A reference procedure over the corpus computes the expected behavior,
+  so a world where the right answer changes is a control and one where it stays is a trap. An
+  answer must be one the expectation recognizes: a stated conflict never rescues an unrelated
+  answer. Number and date answers must be exact (one value, no negation); anything else is
+  `CANNOT_JUDGE`.
+- **Behavior labels that respect exposure.** `FOLLOWED` (the agent was shown the added claim and
+  adopted it), `REJECTED` (shown, not adopted), `NOT_EXPOSED` (the document appeared as an id and
+  title only), `MATCHED_WITHOUT_EXPOSURE`, `EXPOSURE_UNKNOWN` (a snippet cut before the claim) and
+  `NOT_RETRIEVED`. A snippet shows the claim only if it contains the mutation's own sentence.
+  Beneath the labels, per added document: `appeared`, `claim_exposed`, `adopted`, `cited`.
+- **Citation checks.** L0 (the cited id exists) and L1 (the quote occurs in the document); L2
+  (support) is not judged. Reported beside them, never changing the level: claim coverage,
+  retrieval provenance (the id appeared in the trace) and `cited_quote_exposed` (the cited sentence
+  appeared in tool output; a valid citation does not show the agent was shown it).
+- **Reporting.** A flip table per mutator (worlds, answers changed, expectations not met, judged
+  and unjudged runs, the observations above); `CANNOT_JUDGE` runs counted per mutator with
+  truncated examples and every answer in `cannot-judge.jsonl` beside the report; for a recorded
+  run, `frozen_fidelity` (how closely the simulated retrieval reproduced the recorded results) and
+  a note of which conclusions depend on it. Findings carry the trust label of the gold answer.
+- **Stand-in agents** written by Claude (careful, credulous, snippet reader, non-retrieving,
+  refusing, skeptic, ambiguous, mixed), with declared behaviors; every result says which subject
+  produced it.
 - **Core.** A text-span entry in `diff_states` for long text values (`text_span`). The core's
   search, minimizer and replay run unchanged on documents and on a tree of text files.
 - **Examples.** `examples/research/`: a constructed corpus and task (proposed fixtures), a scripted

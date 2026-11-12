@@ -216,3 +216,67 @@ def test_number_normalization_reads_exact_answers_only() -> None:
 )
 def test_date_answers_follow_the_same_exactness_rules_as_numbers(text, expected) -> None:
     assert normalize(text, "date") == expected
+
+
+def _trace(*events):
+    return RecordedRun(
+        subject=SubjectLabel(kind="stand_in", name="t", written_by="Claude"),
+        task_id="t",
+        question="q",
+        trace=[{"index": i, "is_error": False, **e} for i, e in enumerate(events)],
+        report=Report(answer="x"),
+    )
+
+
+def _search(snippet: str, doc_id: str = "d") -> dict:
+    rows = [{"id": doc_id, "title": "T", "snippet": snippet}]
+    return {"name": "search", "arguments": {"query": "q"}, "result": json.dumps({"results": rows})}
+
+
+def _open(text: str | None, doc_id: str = "d") -> dict:
+    body = {"id": doc_id} if text is None else {"id": doc_id, "text": text}
+    return {"name": "open", "arguments": {"id": doc_id}, "result": json.dumps(body)}
+
+
+def test_quote_exposure_is_true_false_or_unknown_from_the_trace_alone() -> None:
+    quote = "The bridge was completed in 1962."
+    assert (
+        _trace(_search("Intro. The bridge was completed in 1962. Later.")).quote_exposure(
+            "d", quote
+        )
+        is True
+    )
+    assert _trace(_search("")).quote_exposure("d", quote) is False  # id and title only
+    assert _trace(_search("The annual report mentions 1962.")).quote_exposure("d", quote) is False
+    assert _trace().quote_exposure("d", quote) is False  # the document never appeared
+    assert _trace(_search("The bridge was completed", "other")).quote_exposure("d", quote) is False
+    assert _trace(_search("The bridge was completed")).quote_exposure("d", quote) is None  # cut
+    assert (
+        _trace(_open("Text. The bridge was completed in 1962. More.")).quote_exposure("d", quote)
+        is True
+    )
+    assert _trace(_open("A different document text.")).quote_exposure("d", quote) is False
+    assert _trace(_open(None)).quote_exposure("d", quote) is None  # an open result with no text
+    assert _trace(_search("")).quote_exposure("d", "") is None  # no quote to look for
+    errored = _trace(_open("The bridge was completed in 1962."))
+    errored.trace[0]["is_error"] = True
+    assert errored.quote_exposure("d", quote) is False  # a failed call showed nothing
+
+
+def test_the_aggregate_exposure_is_false_if_any_quote_was_not_shown() -> None:
+    from isitright.packs.research.runs import CitationCheck
+
+    check = CitationCheck(traced=True)
+    check.quote_exposure = [{"doc_id": "a", "exposed": True}, {"doc_id": "b", "exposed": None}]
+    assert check.cited_quote_exposed is None
+    check.quote_exposure.append({"doc_id": "c", "exposed": False})
+    assert check.cited_quote_exposed is False
+    check.quote_exposure = [{"doc_id": "a", "exposed": True}]
+    assert check.cited_quote_exposed is True
+    assert (
+        CitationCheck(
+            traced=False, quote_exposure=[{"doc_id": "a", "exposed": True}]
+        ).cited_quote_exposed
+        is None
+    )
+    assert CitationCheck(traced=True).cited_quote_exposed is None  # nothing cited
