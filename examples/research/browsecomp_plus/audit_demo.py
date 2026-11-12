@@ -197,7 +197,7 @@ def fidelity(audit: ResearchAudit, run: RecordedRun, decoded: dict[str, Any]) ->
         overlap += len(set(ours) & set(recorded)) / max(1, len(recorded))
     top1 = same_top / total if total else 0.0
     return {
-        "class": "high" if top1 >= 0.8 else "medium" if top1 >= 0.5 else "low",
+        "top1_share": round(top1, 3),
         "queries": total,
         "same_top5_set": same_set,
         "same_top1": same_top,

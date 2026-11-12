@@ -237,8 +237,9 @@ own answer, with no negation or correction cue; it is a heuristic, labeled as on
 check that the sentence entails the answer. Tasks are stratified by how often the simulated
 retrieval returned the recorded first result: per task, the share of its recorded queries for which
 the first hit of this tool's BM25 over the task's restricted world is the first hit the benchmark's
-retriever returned (high at 0.8 or more, medium from 0.5, low below). It describes how closely the
-simulated results follow what the agent actually saw, not how good either retriever is.
+retriever returned. Tasks are counted in fixed bins of width 0.2 (0.0-0.2 up to 0.8-1.0), with the
+per-task share beside the bin and no good-or-bad label. It describes how closely the simulated
+results follow what the agent actually saw, not how good either retriever is.
 
 ## Quick start
 
