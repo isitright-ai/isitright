@@ -41,6 +41,28 @@ class NativeHostError(RuntimeError):
     """The native host could not run a query (not a result: the finding stays unconfirmed)."""
 
 
+UNREACHABLE_STATUS = frozenset({401, 403, 407, 408, 429})
+"""HTTP statuses that say the engine was not reached or refused the caller, not the query."""
+
+
+def engine_error(error: BaseException) -> Exception:
+    """What an exception raised while a native engine ran a query means.
+
+    A failure to reach the engine (an ``OSError``: a network error, a refused connection, a timeout
+    of the transport) or an HTTP status that refuses the caller (authentication, quota) or reports
+    a server error (5xx) is a ``NativeHostError``: the finding stays unconfirmed. Anything else is
+    the query's own error (``QueryExecutionError``), which confirmation may read as "the candidate
+    errors natively too". Before 0.9 every exception was a query error, so a dropped connection on
+    the candidate's run confirmed a candidate-errors finding.
+    """
+    code = getattr(error, "code", None)
+    if isinstance(error, OSError) or (
+        isinstance(code, int) and (code >= 500 or code in UNREACHABLE_STATUS)
+    ):
+        return NativeHostError(f"{type(error).__name__}: {error}")
+    return QueryExecutionError(f"{type(error).__name__}: {error}")
+
+
 @dataclass
 class _Cursor:
     """Just enough of a DB-API cursor for the shared result canonicalizer."""
@@ -176,7 +198,7 @@ class BigQueryHost(InlineHost):
             rows = list(job.result(timeout=timeout, max_results=max_rows + 1))
             schema = list(getattr(job, "schema", None) or getattr(job.result(), "schema", []))
         except Exception as error:
-            raise QueryExecutionError(f"{type(error).__name__}: {error}") from error
+            raise engine_error(error) from error
         self.records.append(
             {
                 "phase": "run",
@@ -232,7 +254,7 @@ class TrinoHost(InlineHost):
             rows = cursor.fetchmany(max_rows + 1)
             description = cursor.description or []
         except Exception as error:
-            raise QueryExecutionError(f"{type(error).__name__}: {error}") from error
+            raise engine_error(error) from error
         finally:
             close = getattr(connection, "close", None)
             if close is not None:
@@ -274,7 +296,7 @@ class ConnectionHost(InlineHost):
         if not outcome:
             raise NativeHostError(f"the connection function did not return within {timeout} s")
         if isinstance(outcome[0], BaseException):
-            raise QueryExecutionError(f"{type(outcome[0]).__name__}: {outcome[0]}")
+            raise engine_error(outcome[0])
         columns, rows = outcome[0]
         self.records.append({"phase": "run", "rows": len(rows)})
         return _result(
