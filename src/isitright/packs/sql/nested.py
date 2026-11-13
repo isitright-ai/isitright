@@ -8,6 +8,10 @@ stored arrays hold neither NULL elements nor, per its documentation, a NULL arra
 is spent on a world the dialect cannot hold. Each proposal is a whole-field `SetField` edit, so
 replay, minimization and the entity model are unchanged. Numeric leaves are moved by the core's
 JSON family, from the `json_path` hints this module's hint helper also emits.
+
+0.9, per-path scoping: given the paths a query reads inside each column (`nested_paths`), the family
+proposes edits only on those paths (an array a query iterates, a field it reads), and the hints name
+only the numeric leaves on them. A column read whole, or a path not resolved, keeps every edit.
 """
 
 from __future__ import annotations
@@ -23,6 +27,14 @@ from isitright.core.jsonpaths import numeric_leaves, text_of
 from isitright.core.mutations import Mutation, SetField, World
 from isitright.core.spec import WorldSpec
 from isitright.packs.sql.dialects import Dialect
+from isitright.packs.sql.nested_paths import (
+    ELEMENT,
+    WHOLE,
+    NestedPath,
+    describe,
+    in_scope,
+    json_steps,
+)
 from isitright.packs.sql.typetree import TypeNode
 
 MAX_PER_ENTITY = 40
@@ -44,21 +56,27 @@ register_hint_kind(HintKind("nested_path", _check_nested_path))
 
 
 def nested_hints(
-    references: set[tuple[str, str]], shapes: dict[tuple[str, str], dict[str, Any]]
+    references: set[tuple[str, str]],
+    shapes: dict[tuple[str, str], dict[str, Any]],
+    paths: dict[tuple[str, str], frozenset[NestedPath]] | None = None,
 ) -> list[Hint]:
-    """A `nested_path` hint per referenced nested column, and a `json_path` per numeric leaf."""
+    """A `nested_path` hint per referenced nested column (with the paths read inside it), and a
+    `json_path` per numeric leaf on those paths."""
     out: list[Hint] = []
     for table, column in sorted(references):
+        scope = (paths or {}).get((table, column), frozenset({WHOLE}))
         out.append(
             Hint(
                 kind="nested_path",
                 name=f"nested:{table}.{column}",
                 provenance=Provenance.HARVESTED_PROGRAM,
-                args={"collection": table, "field": column},
+                args={"collection": table, "field": column, "paths": describe(scope)},
             )
         )
         shape = shapes.get((table, column))
         for leaf in numeric_leaves(shape) if shape else []:
+            if not in_scope(json_steps(leaf), scope):
+                continue
             path = f"{table}.{column}{text_of(leaf)}"
             out.append(
                 Hint(
@@ -76,9 +94,16 @@ class NestedEdit:
     target = "state"
     consumes = frozenset({"nested_path"})
 
-    def __init__(self, trees: dict[tuple[str, str], TypeNode], rules: Dialect) -> None:
+    def __init__(
+        self,
+        trees: dict[tuple[str, str], TypeNode],
+        rules: Dialect,
+        scopes: dict[tuple[str, str], frozenset[NestedPath]] | None = None,
+    ) -> None:
         self.trees = trees
         self.rules = rules
+        self.scopes = scopes or {}
+        """The read paths per column; a column absent here is in scope whole."""
 
     def propose(self, spec: WorldSpec, world: World, hints: Hints) -> Iterator[Mutation]:
         for hint in hints.of("nested_path"):
@@ -90,7 +115,8 @@ class NestedEdit:
             nullable = collection.field(field_name).nullable
             for entity in world.state.entities(collection_name):
                 value = entity.get(field_name)
-                edits = _edits(tree, value, self.rules, [], top_nullable=nullable)
+                scope = self.scopes.get((collection_name, field_name), frozenset({WHOLE}))
+                edits = _edits(tree, value, self.rules, [], top_nullable=nullable, scope=scope)
                 for edited, what in islice(edits, MAX_PER_ENTITY):
                     key = entity[collection.key]
                     yield Mutation(
@@ -114,9 +140,14 @@ def _edits(
     where: list[str | int],
     *,
     top_nullable: bool | None = None,
+    scope: frozenset[NestedPath] = frozenset({WHOLE}),
 ) -> Iterator[tuple[Any, str]]:
-    """(whole new value, description suffix) for each edit inside ``value``, outermost first."""
+    """(whole new value, description suffix) for each edit inside ``value``, outermost first,
+    on the paths in ``scope`` only."""
     if value is None:
+        return
+    here = _steps(where)
+    if not in_scope(here, scope):
         return
     label = text_of(where)
     if node.kind == "ARRAY" and node.element is not None:
@@ -136,15 +167,17 @@ def _edits(
         if len(value) > 1 and value[::-1] != value:
             yield value[::-1], f"{label} reversed"
         for i in range(min(len(value), MAX_ELEMENTS)):
-            for inner, what in _edits(node.element, value[i], rules, [*where, i]):
+            for inner, what in _edits(node.element, value[i], rules, [*where, i], scope=scope):
                 yield _with(value, i, inner), what
     elif node.kind == "STRUCT":
         for name, _, not_null in node.fields:
             inner_value = value.get(name)
-            if not not_null and inner_value is not None:
+            if not not_null and inner_value is not None and in_scope((*here, name), scope):
                 yield {**value, name: None}, f"{text_of([*where, name])} set to NULL"
         for name, inner_type, _ in node.fields:
-            for inner, what in _edits(inner_type, value.get(name), rules, [*where, name]):
+            for inner, what in _edits(
+                inner_type, value.get(name), rules, [*where, name], scope=scope
+            ):
                 yield {**value, name: inner}, what
     elif node.kind == "MAP" and node.value is not None:
         if value:
@@ -153,6 +186,11 @@ def _edits(
             yield value[:i] + value[i + 1 :], f"{label}[{i}] removed"
             if rules.null_elements and value[i][1] is not None:
                 yield _with(value, i, [value[i][0], None]), f"{label}[{i}] value set to NULL"
+
+
+def _steps(where: list[str | int]) -> NestedPath:
+    """A location inside a value (indexes and field names) as path steps."""
+    return tuple(ELEMENT if isinstance(step, int) else step for step in where)
 
 
 def _with(items: list[Any], index: int, new: Any) -> list[Any]:

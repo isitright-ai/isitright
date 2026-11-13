@@ -104,6 +104,11 @@ class Confirm(StrEnum):
     CONNECTION = "connection"
 
 
+class NestedScope(StrEnum):
+    PATH = "path"
+    COLUMN = "column"
+
+
 class AgentsFailOn(StrEnum):
     NONE = "none"
     INVARIANT = "invariant-violation"
@@ -198,6 +203,7 @@ def _config(
     column_vectors: bool = False,
     reference_columns: str | None = None,
     wall_time: float | None = None,
+    nested_scope: str = "path",
 ) -> CheckConfig:
     return CheckConfig(
         seed=seed,
@@ -214,6 +220,7 @@ def _config(
         column_vectors=column_vectors,
         reference_columns=_columns(reference_columns),
         wall_time_seconds=wall_time,
+        nested_scope="column" if nested_scope == "column" else "path",
     )
 
 
@@ -304,6 +311,13 @@ def check_command(
     wall_time: Annotated[
         float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
     ] = None,
+    nested_scope: Annotated[
+        NestedScope,
+        typer.Option(
+            help="Nested columns (BigQuery, Presto, Trino): generate and mutate only the paths "
+            "the queries read (path), or every field of a column they read (column, as in 0.7)."
+        ),
+    ] = NestedScope.PATH,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -423,6 +437,7 @@ def check_command(
                 column_vectors,
                 reference_columns,
                 wall_time,
+                nested_scope.value,
             ),
             _progress=lambda event: progress.update("Candidate states", event),
             **source,
@@ -508,6 +523,13 @@ def suite_command(
     wall_time: Annotated[
         float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
     ] = None,
+    nested_scope: Annotated[
+        NestedScope,
+        typer.Option(
+            help="Nested columns (BigQuery, Presto, Trino): generate and mutate only the paths "
+            "the queries read (path), or every field of a column they read (column, as in 0.7)."
+        ),
+    ] = NestedScope.PATH,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -625,6 +647,7 @@ def suite_command(
                 column_vectors,
                 reference_columns,
                 wall_time,
+                nested_scope.value,
             ),
             _progress=progress.update if not quiet else None,
             **source,

@@ -81,6 +81,7 @@ def test_check_config_defaults_are_locked() -> None:
         "null_as_zero": False,
         "reference_columns": None,
         "wall_time_seconds": None,
+        "nested_scope": "path",
     }
 
 

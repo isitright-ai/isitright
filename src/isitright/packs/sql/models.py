@@ -76,6 +76,9 @@ class CheckConfig(ContractModel):
     """Compare only these reference columns (0-based), as the benchmark's ``condition_cols``."""
     wall_time_seconds: float | None = Field(default=None, gt=0)
     """Stop the search after this long; the report says it was stopped by the time cap."""
+    nested_scope: Literal["path", "column"] = "path"
+    """Nested columns (warehouse dialects): generate and mutate only the paths inside a column the
+    queries read (``path``, 0.9), or every field of a column they read (``column``, as in 0.7)."""
 
 
 class SuiteCase(ContractModel):

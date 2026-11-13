@@ -86,6 +86,7 @@ from isitright.packs.sql.models import (
 )
 from isitright.packs.sql.native import InlineHost, NativeHostError
 from isitright.packs.sql.nested import NestedEdit, nested_hints, nested_trees, shrink_nested
+from isitright.packs.sql.nested_paths import WHOLE, NestedPath, describe, nested_paths
 from isitright.packs.sql.postgres_ddl import (
     Schema,
     _validate_domain_schema,
@@ -246,6 +247,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         self._verifier_note = ""
         self._translation_notes_data: dict[str, int] = {}
         self._warehouse_translations: dict[str, Translation] = {}
+        self._nested_scope: dict[str, Any] | None = None
         self._native_cache: dict[str, tuple[str, Any, Any, Any]] = {}
         self.emulation_artifacts: list[dict[str, Any]] = []
         _validate_domain_schema(domain_schema)
@@ -400,6 +402,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         p = self.prepared
         self._native_cache = {}
         self.emulation_artifacts = []
+        self._nested_scope = None
         try:
             statements = (
                 self._statement(case.reference_sql),
@@ -457,9 +460,28 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             nested_refs = nested_references(
                 reference_statement.expression, p.model.db
             ) | nested_references(candidate_statement.expression, p.model.db)
+            scopes: dict[tuple[str, str], frozenset[NestedPath]] = {}
+            if config.nested_scope == "path":
+                scopes = nested_paths(
+                    [reference_statement.expression, candidate_statement.expression], p.model.db
+                )
+                nested_refs |= set(scopes)
+            if nested_refs:
+                self._nested_scope = {
+                    "mode": config.nested_scope,
+                    "paths": {
+                        f"{t}.{c}": describe(scopes.get((t, c), frozenset({WHOLE})))
+                        for t, c in sorted(nested_refs)
+                    },
+                }
             shapes = {(t, c): p.model.schema.collection(t).field(c).shape for t, c in nested_refs}
             hints = Hints(
-                [*hints, *nested_hints(nested_refs, {k: v for k, v in shapes.items() if v})]
+                [
+                    *hints,
+                    *nested_hints(
+                        nested_refs, {k: v for k, v in shapes.items() if v}, scopes or None
+                    ),
+                ]
             )
             base_state = to_state(
                 p.model,
@@ -468,6 +490,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     list(p.spec.constraints),
                     nested_refs,
                     null_arrays=self.dialect.null_arrays,
+                    paths=scopes or None,
                 ),
             )
             trees = {
@@ -477,7 +500,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 if c.type_tree is not None and c.type_tree.nested
             }
             if trees:
-                mutators = [*mutators, NestedEdit(trees, self.dialect)]
+                mutators = [*mutators, NestedEdit(trees, self.dialect, scopes or None)]
         hints.validate(p.model.schema)
         referenced = [t for t in (x.name for x in p.model.db.tables) if t in guidance.tables]
         if p.domain_schema is not None:
@@ -985,7 +1008,10 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         if self.engine != "duckdb":
             return {}
         if self.dialect.warehouse:
-            return {"rewrites": dict(self._translation_notes_data)}
+            out: dict[str, Any] = {"rewrites": dict(self._translation_notes_data)}
+            if self._nested_scope is not None:
+                out["nested_scope"] = self._nested_scope
+            return out
         catalog = catalog_of(self.prepared.model.db)
         translated = uncertain = 0
         for sql in (case.reference_sql, case.candidate_sql):
