@@ -217,7 +217,18 @@ SCENARIO = McpScenario(
     layout=LAYOUT,
     oracle=ORACLE,
     hints=Hints(
-        [Hint(kind="lookup", args={"collection": "entities", "fields": ["name"], "value": [NAME]})]
+        [
+            Hint(
+                kind="lookup", args={"collection": "entities", "fields": ["name"], "value": [NAME]}
+            ),
+            # 0.9: the two facts the task names, for the string and list-element edits (a world
+            # where the new fact is already there, or the old one is spelled differently)
+            Hint(
+                kind="json_path",
+                name="facts",
+                args={"path": "entities.observations[*]", "values": [NEW, OLD]},
+            ),
+        ]
     ),
     fidelity=Fidelity.NATIVE_ISOLATED,
     external=SERVER,

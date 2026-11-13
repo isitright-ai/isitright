@@ -69,12 +69,16 @@ def load_task(directory: Path) -> DataTask:
     answer = spec.get("answer", {}) or {}
     base = AnswerPolicy.for_question(question)
     frame = FramePolicy(**answer["frame"]) if "frame" in answer else None
+    # A tolerance the task states applies to every answer, unless it also states per_answer.
+    per_answer = answer.get("per_answer", {} if "abs_tol" in answer else base.per_answer)
     policy = AnswerPolicy(
         abs_tol=float(answer.get("abs_tol", base.abs_tol)),
         rel_tol=float(answer.get("rel_tol", base.rel_tol)),
         basis=str(answer.get("basis", base.basis)),
         text=str(answer.get("text", base.text)),
         frame=frame,
+        ulps=int(answer.get("ulps", base.ulps)),
+        per_answer={str(k): int(v) for k, v in dict(per_answer).items()},
     )
     constraints_path = directory / "constraints.yaml"
     hints_path = directory / "hints.yaml"

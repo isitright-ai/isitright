@@ -27,9 +27,8 @@ class CannotJudge(Exception):
     """The answer is narrative or has a shape the policy does not cover."""
 
 
-def decimals_in(text: str) -> int | None:
-    """The decimals a question asks for ("rounded to two decimal places"): the fewest it names,
-    so that two programs rounding a boundary value differently are not told apart."""
+def decimals_named(text: str) -> list[int]:
+    """Every distinct number of decimals a text names ("rounded to two decimal places"), sorted."""
     found = []
     for match in _DECIMALS.finditer(text):
         word = match.group(1).lower()
@@ -38,7 +37,39 @@ def decimals_in(text: str) -> int | None:
         elif word in _WORDS:
             found.append(_WORDS[word])
     found.extend(int(m.group(1)) for m in re.finditer(r"(\d+)\s+decimal", text, re.I))
-    return min(found) if found else None
+    return sorted(set(found))
+
+
+def decimals_in(text: str) -> int | None:
+    """The decimals a question asks for: the fewest it names, so that two programs rounding a
+    boundary value differently are not told apart."""
+    found = decimals_named(text)
+    return found[0] if found else None
+
+
+def decimals_per_answer(text: str) -> dict[str, int]:
+    """Decimals stated for one named answer ("r_value ... rounded to two decimal places, and
+    p_value ... to four"): the clause from an answer's name to the next answer's name or the end
+    of the sentence must name exactly one precision, else that answer gets none (and the task's
+    fewest applies). Names come from the ``@name[...]`` template; the template itself is skipped."""
+    names = {normal_name(n): n for n, _ in _NAMED.findall(text)}
+    if len(names) < 2:
+        return {}
+    plain = _NAMED.sub(" ", text)
+    spots = sorted(
+        (match.start(), key)
+        for key, name in names.items()
+        for match in re.finditer(rf"(?<![\w@]){re.escape(name.strip())}(?!\w)", plain)
+    )
+    out: dict[str, int] = {}
+    for index, (start, key) in enumerate(spots):
+        end = spots[index + 1][0] if index + 1 < len(spots) else len(plain)
+        clause = plain[start:end]
+        stop = re.search(r"\.(\s|$)", clause)
+        digits = decimals_named(clause[: stop.start()] if stop else clause)
+        if len(digits) == 1 and key not in out:
+            out[key] = digits[0]
+    return out
 
 
 def normal_name(name: str) -> str:
@@ -128,20 +159,27 @@ class AnswerPolicy:
     basis: str = "default: floating-point noise"
     text: str = "normalized"
     frame: FramePolicy | None = None
+    ulps: int = 0
+    per_answer: dict[str, int] = field(default_factory=dict)
+    """Decimals stated for one named answer (normalized name); the others use ``abs_tol``."""
 
     @staticmethod
     def for_question(text: str) -> AnswerPolicy:
         digits = decimals_in(text)
         if digits is None:
             return AnswerPolicy()
-        # One unit in the last place. The relative term is floating-point noise: near 2e6 the
-        # difference of two numbers one unit (0.01) apart is off by a few 1e-10, more than a margin
-        # relative to the tolerance alone gives, so a rounding that differs by one unit at a tie
-        # (2243963.30 against 2243963.31) would otherwise count as a disagreement.
+        # One unit in the last place, plus 2 ulps for the rounding of the difference itself: near
+        # 2e6 the difference of two numbers one unit (0.01) apart is off by a few 1e-10, so a
+        # rounding that differs by one unit at a tie (2243963.30 against 2243963.31) would
+        # otherwise count as a disagreement. (0.6 to 0.8 used rel_tol 1e-15 and abs_tol x 1+1e-9,
+        # 4.5 to 9 ulps.) Answers whose own clause names finer decimals get their own unit.
+        per_answer = {name: d for name, d in decimals_per_answer(text).items() if d != digits}
         return AnswerPolicy(
-            abs_tol=10.0**-digits * (1 + 1e-9),
-            rel_tol=1e-15,
+            abs_tol=10.0**-digits,
+            rel_tol=0.0,
+            ulps=2,
             basis=f"question asks for {digits} decimal places: one unit in the last place",
+            per_answer=per_answer,
         )
 
     def describe(self) -> dict[str, Any]:
@@ -150,12 +188,21 @@ class AnswerPolicy:
             "numbers": self.numeric().describe(),
             "text": self.text,
         }
+        if self.per_answer:
+            out["numbers_per_answer"] = {
+                name: self.numeric(name).describe() for name in sorted(self.per_answer)
+            }
         if self.frame is not None:
             out["frame"] = self.frame.describe()
         return out
 
-    def numeric(self) -> NumericComparator:
-        return NumericComparator(self.abs_tol, self.rel_tol, self.basis)
+    def numeric(self, answer: str | None = None) -> NumericComparator:
+        """The comparator for a named answer (its own decimals if stated), else the task's."""
+        if answer is not None and answer in self.per_answer:
+            digits = self.per_answer[answer]
+            basis = f"the question asks for {digits} decimal places for {answer}"
+            return NumericComparator(10.0**-digits, 0.0, basis, self.ulps)
+        return NumericComparator(self.abs_tol, self.rel_tol, self.basis, self.ulps)
 
 
 @dataclass(frozen=True)
@@ -201,7 +248,7 @@ class DataComparator:
             return Comparison(False, str(error), inconclusive=True)
         return Comparison(difference is None, difference)
 
-    def _differs(self, left: Any, right: Any, where: str) -> str | None:
+    def _differs(self, left: Any, right: Any, where: str, answer: str | None = None) -> str | None:
         if isinstance(left, dict) and "__frame__" in left:
             if not (isinstance(right, dict) and "__frame__" in right):
                 return f"{where}: expected a table, got {_shape(right)}"
@@ -217,13 +264,14 @@ class DataComparator:
         if isinstance(left, dict):
             if not isinstance(right, dict) and len(left) == 1:
                 # a bare value stands for a task with a single named answer
-                return self._differs(next(iter(left.values())), right, where)
+                name, value = next(iter(left.items()))
+                return self._differs(value, right, where, name)
             if not isinstance(right, dict):
                 return f"{where}: expected named answers {sorted(left)}, got {_shape(right)}"
             if set(left) != set(right):
                 return f"{where}: names differ: expected {sorted(left)}, got {sorted(right)}"
             for name in sorted(left):
-                inner = self._differs(left[name], right[name], f"{where}[{name}]")
+                inner = self._differs(left[name], right[name], f"{where}[{name}]", name)
                 if inner:
                     return inner
             return None
@@ -239,11 +287,11 @@ class DataComparator:
                     return f"{where}: expected {sorted(left)}, got {sorted(right)}"
                 return None
             for position, (a, b) in enumerate(zip(left, right, strict=True)):
-                inner = self._differs(a, b, f"{where}[{position}]")
+                inner = self._differs(a, b, f"{where}[{position}]", answer)
                 if inner:
                     return inner
             return None
-        return self._scalars(left, right, where)
+        return self._scalars(left, right, where, answer)
 
     def _groups(self, left: list[Any], right: list[Any], where: str) -> str | None:
         """Groups of answers, matched by the value of their first answer, so their order is free."""
@@ -274,13 +322,13 @@ class DataComparator:
                 return inner
         return None
 
-    def _scalars(self, left: Any, right: Any, where: str) -> str | None:
+    def _scalars(self, left: Any, right: Any, where: str, answer: str | None = None) -> str | None:
         if left is None or right is None:
             return None if left is right else f"{where}: expected {left!r}, got {right!r}"
         left_number = isinstance(left, float) and not isinstance(left, bool)
         right_number = isinstance(right, float) and not isinstance(right, bool)
         if left_number and right_number:
-            outcome = self.policy.numeric().compare(left, right)
+            outcome = self.policy.numeric(answer).compare(left, right)
             return None if outcome.matches else f"{where}: {outcome.difference}"
         if left_number != right_number:
             return f"{where}: expected {left!r}, got {right!r}"

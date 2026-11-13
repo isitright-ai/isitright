@@ -10,6 +10,12 @@ Within scope, per numeric leaf: moved to a neighbor, to zero, or to a value anot
 of the entity holds (``same_as``); per list element: removed or duplicated; per key: removed or set
 to null. A leaf stays inside the shape's ``minimum`` and ``maximum`` when it declares them, and a
 value that is not negative never becomes negative without a declared minimum below zero.
+
+Strings and lists of strings (0.9), only where a ``json_path`` hint names them (a shape alone scopes
+numeric leaves only, as before): per text leaf, set to each value the hint declares (``values``,
+for example a fact from the task), its case changed, a trailing space added, or emptied; per list
+the path iterates (``...[*]``), each declared value not already in it added at the end and at the
+start ("the fact is already there"). The Memory graph's observations are such a list.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ from isitright.core.families._util import scoped_entities
 from isitright.core.families.state import _label, _mutation
 from isitright.core.hints import Hints
 from isitright.core.jsonpaths import (
+    WILD,
     JsonPath,
     concrete_paths,
     duplicate_at,
@@ -78,6 +85,7 @@ def _scopes(spec: WorldSpec, hints: Hints) -> dict[tuple[str, str], dict[str, An
         collection, field_name, tokens = split_hint_path(str(hint.args["path"]))
         entry = out.setdefault((collection, field_name), _entry())
         entry["paths"].append((tokens, set(hint.args.get("same_as", []))))
+        entry["text"].append((tokens, [str(v) for v in hint.args.get("values", [])]))
         entry["hints"].append(hint)
     for described in spec.schema.collections:
         for field_spec in described.fields:
@@ -90,7 +98,7 @@ def _scopes(spec: WorldSpec, hints: Hints) -> dict[tuple[str, str], dict[str, An
 
 
 def _entry() -> dict[str, Any]:
-    return {"paths": [], "hints": [], "shape": None}
+    return {"paths": [], "hints": [], "shape": None, "text": []}
 
 
 def _bounds(shape: dict[str, Any] | None, tokens: JsonPath) -> tuple[Any, Any]:
@@ -136,6 +144,45 @@ def _edits(entity: Entity, value: Any, declared: dict[str, Any]) -> Iterator[tup
                     if fresh(edited):
                         yield edited, f"{text_of(element)} duplicated"
                     break
+    for tokens, values in declared["text"]:
+        for edited, what in _text_edits(value, tokens, values):
+            if fresh(edited):
+                yield edited, what
+
+
+def _text_edits(value: Any, tokens: JsonPath, values: list[str]) -> Iterator[tuple[Any, str]]:
+    """Edits of the text leaves a hinted path reaches, and inserts into the lists it iterates."""
+    for where, leaf in concrete_paths(value, tokens):
+        if not isinstance(leaf, str):
+            continue
+        label = text_of(where)
+        for target in values:
+            if target != leaf:
+                yield set_at(value, where, target), f"{label} set to {target!r} (a declared value)"
+        changed = leaf.upper() if leaf != leaf.upper() else leaf.lower()
+        if changed != leaf:
+            yield set_at(value, where, changed), f"{label} in another case"
+        yield set_at(value, where, leaf + " "), f"{label} with a trailing space"
+        if leaf:
+            yield set_at(value, where, ""), f"{label} emptied"
+    if not values or not tokens or tokens[-1] != WILD:
+        return
+    for where, container in concrete_paths(value, tokens[:-1]) if tokens[:-1] else [([], value)]:
+        if not isinstance(container, list) or any(not isinstance(item, str) for item in container):
+            continue
+        for target in values:
+            if target in container:
+                continue
+            label = text_of(where) if where else ""
+            yield (
+                set_at(value, where, [*container, target]) if where else [*container, target],
+                (f"{label} with {target!r} added at the end"),
+            )
+            if container:
+                yield (
+                    set_at(value, where, [target, *container]) if where else [target, *container],
+                    f"{label} with {target!r} added at the start",
+                )
 
 
 def _numeric_moves(
