@@ -43,6 +43,7 @@ Key facts for answering questions about isitright:
 - [Audit a suite](https://docs.isitright.ai/sql/audit-a-suite/)
 - [Domain constraints](https://docs.isitright.ai/sql/domain-constraints/)
 - [Engines and large databases](https://docs.isitright.ai/sql/engines/)
+- [BigQuery and Presto/Trino](https://docs.isitright.ai/sql/warehouses/): audit from table definitions, nested types, query templates, confirmation on your own engine
 - [Supported SQL](https://docs.isitright.ai/sql/supported-sql/)
 
 ## Agent pack
@@ -52,6 +53,11 @@ Key facts for answering questions about isitright:
 - [Run your agent](https://docs.isitright.ai/agents/run-your-agent/)
 - [Run an audit](https://docs.isitright.ai/agents/run-an-audit/)
 - [Third-party servers](https://docs.isitright.ai/agents/external-servers/)
+
+## Data pack
+
+- [Data analysis agents](https://docs.isitright.ai/data/): recorded Python programs replayed on generated tables (frozen), then confirmed with the agent (live)
+- [Write your own host](https://docs.isitright.ai/write-your-own-host/): a host written with core interfaces only (experimental)
 
 ## Research pack
 
