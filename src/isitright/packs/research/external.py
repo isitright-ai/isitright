@@ -146,6 +146,7 @@ def command_subject(
             cost=cost,
             status=status,
             seed=None,
+            own_retrieval=_read_own_retrieval(run_dir / "own_retrieval.jsonl"),
         )
 
     executor: Executor = execute
@@ -157,6 +158,27 @@ def _world_terms(world: World, task: ResearchTask) -> set[str]:
     from isitright.packs.research.retrieval import terms_of, tokenize
 
     return terms_of(world.state.entities(COLLECTION)) | set(tokenize(task.question))
+
+
+def _read_own_retrieval(path: Path) -> list[dict[str, Any]]:
+    """The searches the agent ran on its own retriever (``own_retrieval.jsonl``: one JSON object
+    per line, ``{"query": str, "ids": [str, ...]}``). A line that is not that is dropped."""
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if (
+            isinstance(row, dict)
+            and isinstance(row.get("query"), str)
+            and isinstance(row.get("ids"), list)
+            and all(isinstance(i, str) for i in row["ids"])
+        ):
+            rows.append({"query": row["query"], "ids": row["ids"]})
+    return rows
 
 
 def _read_trace(path: Path) -> list[dict[str, Any]]:

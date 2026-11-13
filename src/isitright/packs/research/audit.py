@@ -904,6 +904,27 @@ class ResearchAudit:
             mode="frozen",
         )
 
+    def own_retriever_fidelity(self, runs: Sequence[RecordedRun]) -> dict[str, Any]:
+        """The agent's own retriever against the simulated one, on the queries the agent ran on it
+        in its baseline runs (``own_retrieval``). Counts and shares, no threshold. A run that gives
+        none is counted, not guessed at. The agent wrote its own results; they are not checked."""
+        rows = [row for run in runs for row in run.own_retrieval]
+        given = sum(1 for run in runs if run.own_retrieval)
+        if not rows:
+            return {
+                "runs_with_own_retrieval": 0,
+                "runs": len(runs),
+                "note": "the agent gave no results of its own retriever: nothing to compare",
+            }
+        lists = [{"query": r["query"], "k": max(1, len(r["ids"])), "ids": r["ids"]} for r in rows]
+        out = self._fidelity_of(lists, self.replay_queries(self.base, lists))
+        out.update(runs_with_own_retrieval=given, runs=len(runs))
+        out["note"] = (
+            "the agent's own retriever against the simulated one on the same queries; the agent's "
+            "results are as it reported them"
+        )
+        return out
+
     def frozen_fidelity(self, recorded: RecordedRun) -> dict[str, Any]:
         """How closely the simulated retrieval reproduces the recorded results: for each recorded
         query, whether the first result and the whole result set match what the agent was shown.
@@ -911,6 +932,10 @@ class ResearchAudit:
         the agent) do. Reported as counts and a share, with no threshold."""
         recorded_lists = recorded.queries()
         ours = self.replay_queries(self.base, recorded_lists)
+        return self._fidelity_of(recorded_lists, ours)
+
+    @staticmethod
+    def _fidelity_of(recorded_lists: list[dict[str, Any]], ours: list[list[str]]) -> dict[str, Any]:
         total = len(recorded_lists)
         same_top = sum(
             1 for q, mine in zip(recorded_lists, ours, strict=True) if mine[:1] == q["ids"][:1]
@@ -1226,6 +1251,11 @@ class ResearchAudit:
                     },
                     "flip_table": flips,
                     **({"frozen_fidelity": self._frozen_fidelity} if mode == "frozen" else {}),
+                    **(
+                        {"own_retriever_fidelity": self.own_retriever_fidelity(baseline_runs)}
+                        if mode != "frozen"
+                        else {}
+                    ),
                     "cannot_judge": self._cannot_judge_summary(),
                     "unobservable_changes": unobservable,
                     "proposed_classification": [
