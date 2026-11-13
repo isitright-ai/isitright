@@ -122,3 +122,40 @@ def test_a_node_is_in_scope_on_the_way_to_a_read_path_or_under_a_subtree() -> No
     assert in_scope((ELEMENT, "sku", ELEMENT), frozenset({WHOLE}))
     only_array = frozenset({()})  # COUNT(*) over UNNEST(items): the array, none of its fields
     assert in_scope((), only_array) and not in_scope((ELEMENT, "qty"), only_array)
+
+
+def test_nested_edit_proposes_nothing_off_the_read_paths() -> None:
+    """With every field filled, a scope that reads only ``[*].qty`` gets no edit on ``sku`` or
+    ``tags``; the whole column gets edits on every field."""
+    from isitright.packs.sql.nested import _edits, nested_trees
+
+    dialect = get_dialect("bigquery")
+    db = parse_warehouse_schema(BQ, dialect)
+    tree = nested_trees(db)[("t", "items")]
+    value = [{"qty": 1, "sku": "a", "tags": ["x"]}]
+    scoped = [
+        what
+        for _, what in _edits(
+            tree, value, dialect, [], scope=frozenset({(), (ELEMENT, "qty", ALL)})
+        )
+    ]
+    whole = [what for _, what in _edits(tree, value, dialect, [])]
+    assert scoped and all("sku" not in w and "tags" not in w for w in scoped)
+    assert any(".qty" in w for w in scoped) and any("emptied" in w for w in scoped)
+    assert any("sku" in w for w in whole) and any("tags" in w for w in whole)
+
+
+def test_off_path_fields_are_null_in_the_base_value() -> None:
+    from isitright.packs.sql.nested_paths import scoped_value
+
+    dialect = get_dialect("bigquery")
+    db = parse_warehouse_schema(BQ, dialect)
+    trees = {(t.name, c.name): c.type_tree for t in db.tables for c in t.columns if c.type_tree}
+    items = scoped_value(trees[("t", "items")], frozenset({(), (ELEMENT, "qty", ALL)}))
+    assert items == [{"qty": 1, "sku": None, "tags": None}]
+    struct = scoped_value(trees[("t", "s")], frozenset({("b", "c", ALL)}))
+    assert struct == {"a": None, "b": {"c": 1, "e": None}}
+    assert scoped_value(trees[("t", "s")], frozenset({WHOLE})) == {
+        "a": 1,
+        "b": {"c": 1, "e": "value"},
+    }
