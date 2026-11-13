@@ -55,11 +55,12 @@ declarations, oracle rules, expected results) need owner review. MIT licence.
 isitright's loop (change the input, run, compare, shrink) is property-based testing combined with
 differential testing, applied to evals. Tools that apply it in one domain exist. isitright applies it
 to *your* agent and *your* passing eval cases, by changing world state, and works the same way for
-SQL and for tool-using agents.
+SQL, tool-using agents, data-analysis agents and research agents.
 
 | Area | Existing approach | How isitright differs |
 |---|---|---|
 | Text-to-SQL | SQL equivalence checkers (SpotIt, VeriEQL) and test-suite accuracy search for a database where a gold and a generated query differ | isitright reports how valid the database is under your own domain rules, runs it on the real engine, minimizes and replays it, ranks a whole suite, and exports each finding as a new eval case. The same pipeline audits agents |
 | Auditing evals | EvalPlus strengthens a public benchmark with generated inputs | isitright audits your own eval set rather than shipping a stronger public one, and changes the world rather than function inputs |
 | Agent robustness | Benchmarks such as AgentPerturb and ToolRobustBench perturb prompts, tool interfaces and tool outputs; the right answer stays the same | isitright changes what is *true* in the world and recomputes the right answer, so it catches an agent that fails to notice the change |
+| Research agents | DRNoise (arXiv 2607.17291) adds one plausible document that states a conflicting answer to a frozen corpus and reports large accuracy drops (abstract read 2026-11-10) | isitright's `plant` mutator is that intervention, one family among several (remove, contradict, supersede, retract, duplicate, out of scope, reorder). Each comes with validity tiers, an oracle that says what the right report is (so moving to a newer edition is not counted as an error), a check that the agent was shown the claim, minimization to a few documents, replay and an exportable case. Numbers from the two are not comparable: different corpora, agents and planted text; the 0.8 results here come from stand-in agents |
 | Testing engines | Hypothesis does property-based testing for fast, deterministic functions | isitright handles slow, costly, random subjects with baselines, budgets and statistical tests, and keeps worlds valid. It uses Hypothesis to draw edge values |

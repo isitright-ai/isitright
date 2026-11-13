@@ -19,6 +19,9 @@ and ZIP. A generator cannot guess that from a schema. Hints are how you tell it.
 | `threshold` | `path` and `value`, or `collection` and `count` (optional `where`); on a field also `inclusive` and `holds` | Boundaries, cardinality boundaries, service parameters | "within 24 hours"; `list_orders` page size 10 |
 | `json_path` | `path` such as `orders.items[*].price`, optional `same_as` | Edits inside a JSON field | A per-item price a careless agent could refund instead of the total |
 | `trace` | `calls` | Reserved for the baseline trace, harvested automatically | The calls a reference procedure makes |
+| `fact_span` | `doc_id`, `quote`, `value`, `answer_type` | Research: plant, contradict, supersede, retract, duplicate | The sentence the baseline run cited and the value inside it (harvested from the trace, never from the gold answer) |
+| `cited` | `ids` | Research: remove | The documents the baseline run opened or cited |
+| `question_terms` | `terms` | Research: out-of-scope additions | The question's content words |
 
 Paths are dotted (`collection.field`, `collection.embedded.field`). `$name` refers to another hint
 (`$lookup.id` is the id of the entities a `lookup` hint matches), `@name` to a state parameter such
