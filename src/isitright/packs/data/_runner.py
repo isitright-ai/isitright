@@ -234,17 +234,24 @@ def _watch_own_memory(limit: int, interval: float = 0.05) -> threading.Thread:
     The second line behind the host's watchdog. It reads ``getrusage``, which opens no file (so the
     audit hook has nothing to refuse), and it runs only when the running program lets go of the
     interpreter lock; a program stuck in one long C call is left to the host's watchdog.
+
+    On Linux a child keeps its parent's high-water mark across fork and exec, so a large audit
+    process makes ``ru_maxrss`` start above the limit (seen on 2026-11-13: a runner that had used
+    little reported 349 MB). The check therefore fires only when the peak has grown past the value
+    it had when the check started; the host's watchdog, which reads the current size, is the line
+    that does not depend on this.
     """
     if sys.platform == "win32":
         raise RuntimeError("Windows uses a Job Object, not this check")
     import resource
 
     scale = 1 if sys.platform == "darwin" else 1024  # ru_maxrss: bytes on macOS, KiB on Linux
+    inherited = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
 
     def watch() -> None:
         while True:
             peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
-            if peak > limit:
+            if peak > limit and peak > inherited:
                 os.write(
                     2,
                     f"{MEMORY_MARK}: {peak // 2**20} MB resident at the peak, over the "

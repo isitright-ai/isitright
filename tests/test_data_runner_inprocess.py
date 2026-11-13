@@ -179,13 +179,15 @@ def test_the_host_and_the_runner_agree_on_the_memory_mark() -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
-def test_the_runner_ends_itself_when_its_peak_memory_passes_the_limit() -> None:
-    """A limit below what the interpreter already uses: the check must end the process at once,
-    with the mark the host reads, instead of letting the program run to its end."""
+def test_the_runner_ends_itself_when_its_peak_memory_grows_past_the_limit() -> None:
+    """The limit is 20 MB above the starting peak; the program then allocates 100 MB."""
     code = (
-        "import time\n"
+        "import resource, sys, time\n"
         "from isitright.packs.data import _runner\n"
-        "_runner._watch_own_memory(1024 * 1024)\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "now = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
+        "_runner._watch_own_memory(now + 20 * 2**20)\n"
+        "x = bytearray(100 * 2**20)\n"
         "time.sleep(10)\n"
         "print('survived')\n"
     )
@@ -193,8 +195,25 @@ def test_the_runner_ends_itself_when_its_peak_memory_passes_the_limit() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
     )
     assert completed.returncode == _runner.MEMORY_EXIT, completed.stderr
-    assert _runner.MEMORY_MARK in completed.stderr and "over the 1 MB limit" in completed.stderr
+    assert _runner.MEMORY_MARK in completed.stderr and "MB limit" in completed.stderr
     assert "survived" not in completed.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
+def test_a_peak_inherited_from_a_large_parent_does_not_end_the_runner() -> None:
+    """Regression (CI, 2026-11-13): the child of a large process starts with the parent's
+    high-water mark above the limit; a runner that has not grown must go on."""
+    code = (
+        "import time\n"
+        "from isitright.packs.data import _runner\n"
+        "_runner._watch_own_memory(1024 * 1024)\n"  # far below the interpreter's own size
+        "time.sleep(1)\n"
+        "print('survived')\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+    )
+    assert completed.returncode == 0 and "survived" in completed.stdout, completed.stderr
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
