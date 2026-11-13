@@ -141,10 +141,38 @@ def _field_changes(before: Entity, after: Entity, prefix: str = "") -> dict[str,
         if isinstance(old, dict) and isinstance(new, dict):
             out.update(_field_changes(old, new, f"{path}."))
         else:
-            out[path] = {
+            change: dict[str, Any] = {
                 "before": None if old is _MISSING else old,
                 "after": None if new is _MISSING else new,
                 "absent_before": old is _MISSING,
                 "absent_after": new is _MISSING,
             }
+            if isinstance(old, str) and isinstance(new, str) and max(len(old), len(new)) > _LONG:
+                change["span"] = text_span(old, new)
+            out[path] = change
     return out
+
+
+_LONG = 160
+"""A text value longer than this gets a ``span`` in its field change: the edit, not two copies."""
+
+
+def text_span(old: str, new: str) -> dict[str, Any]:
+    """The edited stretch of a text: what the common prefix and suffix leave of each side.
+
+    ``start`` is the offset of the edit; ``removed`` and ``inserted`` are what the old text had
+    there and what the new text has. A world diff of a long free-text field (a document) shows
+    this instead of two whole texts.
+    """
+    limit = min(len(old), len(new))
+    head = 0
+    while head < limit and old[head] == new[head]:
+        head += 1
+    tail = 0
+    while tail < limit - head and old[len(old) - 1 - tail] == new[len(new) - 1 - tail]:
+        tail += 1
+    return {
+        "start": head,
+        "removed": old[head : len(old) - tail],
+        "inserted": new[head : len(new) - tail],
+    }

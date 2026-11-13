@@ -53,6 +53,10 @@ Key facts for answering questions about isitright:
 - [Run an audit](https://docs.isitright.ai/agents/run-an-audit/)
 - [Third-party servers](https://docs.isitright.ai/agents/external-servers/)
 
+## Research pack
+
+- [Research agents](https://docs.isitright.ai/research/): plant, remove, supersede and retract documents in a frozen corpus; stand-in agents, recorded runs and agent commands.
+
 ## Guides and reference
 
 - [Replay and export](https://docs.isitright.ai/guides/replay-and-export/)

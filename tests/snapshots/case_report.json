@@ -113,7 +113,7 @@
   "kind": "case",
   "metadata": {},
   "pack": "sql",
-  "schema_version": "0.6",
+  "schema_version": "0.8",
   "totals": {
     "by_divergence_status": {
       "COUNTEREXAMPLE_FOUND": 1

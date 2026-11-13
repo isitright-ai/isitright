@@ -160,6 +160,35 @@ that sees only the variables named by `--pass-env`.
 Write each finding as an eval case: the dataset (CSV), the question, the gold program, the expected
 answer, and an index `cases.jsonl`.
 
+## `isitright research check CORPUS`
+
+Audit a research agent on mutated corpora (see [Research agents](../research/index.md)).
+
+```bash
+isitright research check CORPUS --task task.json --output DIR \
+  (--stand-in NAME | --agent module:attr | --agent-command "..." | --recorded-run run.json) \
+  [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] [--runs K] [--max-runs N] \
+  [--seconds S] [--max-money USD] [--timeout S] [--screen] [--no-minimize] \
+  [--allow-failing-baseline] [--record-runs DIR] \
+  [--fail-on none|domain-counterexample|any-counterexample]
+```
+
+`CORPUS` is a JSONL file or a directory. Choose exactly one subject. `--agent` and
+`--agent-command` need `--trust-code`. An agent command receives `{mcp_config}`, `{task_file}` and
+`{run_dir}` and writes `report.json` into `{run_dir}`. `--max-money` is refused for an agent that
+reports no cost. The output directory holds `report.json`, `findings-cases.md`, and per finding
+`N.replay.json` and `N.eval-case.json`.
+
+## `isitright research replay ARTIFACT`
+
+Reproduce a finding offline: the recorded tool calls must give the same results on the rebuilt
+corpus, the recorded report must earn the recorded verdict, and a stand-in agent run again with the
+recorded seed must give the same report. A live agent is not run again.
+
+## `isitright research export REPORT --output DIR`
+
+Write each finding as an eval case: the minimized corpus, the question and the expectation.
+
 ## Exit codes
 
 | Code | Meaning |

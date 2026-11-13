@@ -19,6 +19,14 @@ record. Two things use them: the **world diff** in a report ("one customer added
 that differ from the base state, and [minimization](minimization-and-replay.md) removes atoms to find
 the smallest world that still fails.
 
+### A world that is not records
+
+A world need not be rows. The research pack's world is a corpus: each document is an atom (an
+entity with an id, typed metadata and an opaque `text`), so the world diff, the fingerprint,
+`without`, minimization and replay work on documents with no change to the core. The text is never
+parsed by the core; a mutator that edits it declares a span, and a diff of a long text shows the
+edited span instead of two whole documents. See [Research agents](../research/index.md).
+
 ## The entity model
 
 To change a world *sensibly*, isitright needs to know its shape. Most agent worlds are records with
