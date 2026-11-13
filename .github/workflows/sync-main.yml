@@ -1,0 +1,84 @@
+name: Sync main into develop
+
+# After a push to main (a merged release), opens the pull request that merges main back into
+# develop, from a branch sync/main-<commit>-into-develop, and turns on auto-merge, so develop gets
+# the release commit without anyone opening the pull request. If the two branches conflict, the pull
+# request stays open: merge develop into the sync branch, resolve, push.
+#
+# Needs the repository secret RELEASE_PR_TOKEN (a pull request opened with the default GITHUB_TOKEN
+# does not start CI, and develop requires green CI) and the repository setting "Allow auto-merge".
+# Without the secret it stops before it changes anything. Run it by hand with dry_run to see what
+# it would do; a dry run needs no secret.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: only report what would be opened"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+      HAS_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
+    steps:
+      - name: Stop without the token
+        if: ${{ env.DRY_RUN != 'true' && env.HAS_TOKEN != 'true' }}
+        run: |
+          echo "::error::The repository secret RELEASE_PR_TOKEN is not set, so no pull request was opened. See CONTRIBUTING.md, 'Releasing'."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ env.DRY_RUN == 'true' && github.token || secrets.RELEASE_PR_TOKEN }}
+
+      - name: Decide whether develop needs main
+        id: decide
+        run: |
+          main_sha=$(git rev-parse origin/main)
+          if git merge-base --is-ancestor origin/main origin/develop; then
+            echo "develop already contains main (${main_sha}): nothing to do."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          branch="sync/main-${main_sha:0:7}-into-develop"
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+          echo "main at ${main_sha} is not in develop: open ${branch} into develop, with auto-merge."
+          if git merge-tree --write-tree origin/develop origin/main > /dev/null; then
+            echo "The merge is clean."
+          else
+            echo "::warning::main and develop conflict; the pull request will need a manual merge."
+          fi
+
+      - name: Push the sync branch, open the pull request, turn on auto-merge
+        if: ${{ steps.decide.outputs.needed == 'true' && env.DRY_RUN != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          BRANCH: ${{ steps.decide.outputs.branch }}
+        run: |
+          open=$(gh pr list --base develop --head "$BRANCH" --state open --json url --jq '.[0].url')
+          if [ -z "$open" ]; then
+            git push origin "refs/remotes/origin/main:refs/heads/${BRANCH}"
+            open=$(gh pr create --base develop --head "$BRANCH" --title "Merge main into develop" \
+              --body "Brings the release commit on main back into develop (opened by the 'Sync main into develop' workflow).")
+          fi
+          if ! gh pr merge --auto --merge "$open"; then
+            echo "::error::Could not turn on auto-merge for ${open}. Is 'Allow auto-merge' enabled in the repository settings? The pull request is open; merge it by hand."
+            exit 1
+          fi

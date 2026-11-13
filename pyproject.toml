@@ -86,6 +86,7 @@ include = [
   "/src",
   "/tests",
   "/tools/export_schemas.py",
+  "/tools/release.py",
   "/CHANGELOG.md",
   "/CONTRIBUTING.md",
   "/LICENSE",
@@ -104,6 +105,11 @@ exclude = [
 
 [tool.hatch.version]
 path = "src/isitright/__about__.py"
+
+[tool.uv]
+# The version is read from __about__.py at build time, so an editable install must be rebuilt
+# when it changes; otherwise the installed metadata keeps the old version.
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/isitright/__about__.py" }]
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers --cov=isitright --cov-report=term-missing"

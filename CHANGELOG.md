@@ -3,6 +3,25 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
+## 0.9.0.dev0 - Hardening
+
+Closes loose ends of 0.4 to 0.8 and adds no pack. Built and tested offline: no model, account or
+paid service was used.
+
+### Changed
+
+- **The version is written in one place**, `src/isitright/__about__.py`. `isitright --version`,
+  the package metadata and the tests read it; the docs no longer state it. `tools/release.py X.Y.Z`
+  (with `--dry-run`) sets it and renames the top changelog heading from `X.Y.Z.devN` to `X.Y.Z`;
+  `tools/release.py X.Y.Z.dev0 --title ...` starts the next version. It refuses a version that is
+  not greater than the current one, one that already has a tag, and a working tree with uncommitted
+  changes.
+- **Release workflows.** `Prepare release` opens the release pull request from `develop` into
+  `main`; `Sync main into develop` opens the merge back after a release and turns on auto-merge.
+  Both need a repository secret, `RELEASE_PR_TOKEN`, and stop without it; both have a dry run.
+  Publishing stays a manual dispatch behind the `pypi` environment's approval. The procedure is in
+  `CONTRIBUTING.md`, "Releasing".
+
 ## 0.8.0 - Research agents
 
 Agents that answer a question by searching a frozen corpus and citing documents are audited by

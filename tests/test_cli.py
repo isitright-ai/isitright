@@ -1,3 +1,4 @@
+import importlib.metadata
 import re
 import sqlite3
 from pathlib import Path
@@ -52,7 +53,8 @@ def test_commands_explain_ordering_policy(command: list[str]) -> None:
 def test_version_is_available() -> None:
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert result.output.strip() == "isitright 0.8.0"
+    # the version is read, never written here: tools/release.py changes __about__.py only
+    assert result.output.strip() == f"isitright {importlib.metadata.version('isitright')}"
 
 
 def test_invalid_fail_on_uses_reserved_input_exit_code(tmp_path: Path) -> None:
