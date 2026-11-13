@@ -239,6 +239,6 @@ def test_a_clause_that_names_two_precisions_gives_no_answer_its_own() -> None:
     # named precision must not be taken for p_value
     split = (
         "Format: @r_value[r_value] @p_value[p_value] where r_value is rounded to two decimal "
-        "places and p_value is given to four or six decimal places."
+        "places and p_value to four decimal places or to six decimal places."
     )
     assert AnswerPolicy.for_question(split).per_answer == {}
