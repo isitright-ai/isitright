@@ -32,7 +32,8 @@ def test_package_metadata_and_runtime_contract() -> None:
     assert not any(item.startswith("duckdb") for item in extras["postgres"])
     assert extras["duckdb"] == ["duckdb>=1.5,<2"]
     assert extras["mcp"] == ["mcp>=2.3,<3"]
-    assert extras["data"] == ["pandas>=2.2,<4"]
+    # psutil drives the data host's memory watchdog on Linux and macOS (0.9)
+    assert extras["data"] == ["pandas>=2.2,<4", "psutil>=5.9,<8"]
     assert set(extras["all"]) == (
         set(extras["postgres"])
         | set(extras["duckdb"])

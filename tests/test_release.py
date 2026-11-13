@@ -147,6 +147,7 @@ def test_a_later_development_version_renames_the_heading_and_keeps_its_title(
         ("0.9.0", "0.9.0 - H", "0.9.0.dev7", "0.9.0.dev7 is not greater than the current"),
         ("0.9.0.dev2", "0.9.0.dev2 - H", "0.9.0.dev1", "is not greater than the current"),
         ("0.9.0.dev0", "0.8.0 - H", "0.9.0", "needs a top changelog heading 0.9.0.devN"),
+        ("0.9.0.dev0", "0.9.0 - H", "0.9.0", "the top heading is 0.9.0"),
         ("0.9.0.dev0", "0.9.0.dev0 - H", "0.10.0", "needs a top changelog heading 0.10.0.dev"),
         ("0.8.0", "0.8.0 - H", "0.9.0.dev0", "adds a changelog heading: give it a --title"),
     ],

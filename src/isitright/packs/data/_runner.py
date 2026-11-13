@@ -18,6 +18,8 @@ import json
 import os
 import sys
 import sysconfig
+import threading
+import time
 import traceback
 import warnings
 from typing import Any
@@ -222,17 +224,55 @@ def run_one(request: dict[str, Any], guard: Guard) -> dict[str, Any]:
     return result
 
 
-def _limit_memory() -> None:
-    """Windows: put this process in a Job Object that caps the memory one process may commit.
+MEMORY_MARK = "isitright runner: memory limit exceeded"  # the host reads it (host.MEMORY_MARK)
+MEMORY_EXIT = 137
 
-    The host cannot do this from outside. A virtualenv's ``python.exe`` can be a launcher whose
-    child, the process that runs the programs, is not in the job the host creates, so the limit
-    would silently not apply. A limit that was asked for and cannot be set ends the runner.
+
+def _watch_own_memory(limit: int, interval: float = 0.05) -> threading.Thread:
+    """POSIX: end this process when its peak resident memory passes ``limit``.
+
+    The second line behind the host's watchdog. It reads ``getrusage``, which opens no file (so the
+    audit hook has nothing to refuse), and it runs only when the running program lets go of the
+    interpreter lock; a program stuck in one long C call is left to the host's watchdog.
+    """
+    if sys.platform == "win32":
+        raise RuntimeError("Windows uses a Job Object, not this check")
+    import resource
+
+    scale = 1 if sys.platform == "darwin" else 1024  # ru_maxrss: bytes on macOS, KiB on Linux
+
+    def watch() -> None:
+        while True:
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+            if peak > limit:
+                os.write(
+                    2,
+                    f"{MEMORY_MARK}: {peak // 2**20} MB resident at the peak, over the "
+                    f"{limit // 2**20} MB limit\n".encode(),
+                )
+                os._exit(MEMORY_EXIT)
+            time.sleep(interval)
+
+    thread = threading.Thread(target=watch, name="isitright-memory", daemon=True)
+    thread.start()
+    return thread
+
+
+def _limit_memory() -> None:
+    """Apply the memory limit the host asked for (``ISITRIGHT_MEMORY_BYTES``), to this process.
+
+    Windows: join a Job Object that caps the memory one process may commit. The host cannot do this
+    from outside. A virtualenv's ``python.exe`` can be a launcher whose child, the process that runs
+    the programs, is not in the job the host creates, so the limit would silently not apply. A limit
+    that was asked for and cannot be set ends the runner.
+
+    POSIX: the host sets the variable only when its watchdog runs; start the self-check as well.
     """
     limit = os.environ.pop("ISITRIGHT_MEMORY_BYTES", "")
-    if sys.platform != "win32":
-        return
     if not limit:
+        return
+    if sys.platform != "win32":
+        _watch_own_memory(int(limit))
         return
     import ctypes
     from ctypes import wintypes

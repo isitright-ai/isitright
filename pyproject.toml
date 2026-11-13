@@ -36,7 +36,8 @@ duckdb = ["duckdb>=1.5,<2"]
 bigquery = ["google-cloud-bigquery>=3.25,<4"]
 trino = ["trino>=0.330,<1"]
 mcp = ["mcp>=2.3,<3"]
-data = ["pandas>=2.2,<4"]
+# psutil: the memory watchdog of the data host on Linux and macOS (docs/data.md)
+data = ["pandas>=2.2,<4", "psutil>=5.9,<8"]
 data-schema = ["pandas>=2.2,<4", "pandera>=0.20,<1"]
 parquet = ["pandas>=2.2,<4", "pyarrow>=15"]
 # `all` leaves out `bigquery` and `trino` on purpose: they pull a cloud client stack that
@@ -49,6 +50,7 @@ all = [
   "pandas>=2.2,<4",
   "pandera>=0.20,<1",
   "pyarrow>=15",
+  "psutil>=5.9,<8",
 ]
 dev = [
   "build>=1.2.2,<2",
@@ -59,6 +61,7 @@ dev = [
   "pandas>=2.2,<4",
   "pandera>=0.20,<1",
   "pyarrow>=15",
+  "psutil>=5.9,<8",
   "pytest>=8.3,<9",
   "pytest-cov>=6,<8",
   "psycopg[binary]>=3.2,<4",
@@ -148,6 +151,6 @@ strict = true
 packages = ["isitright"]
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "pandera.*", "pyarrow.*", "scipy.*", "pandasai.*", "smolagents.*"]
+module = ["pandas.*", "pandera.*", "pyarrow.*", "scipy.*", "pandasai.*", "smolagents.*", "psutil.*"]
 ignore_missing_imports = true
 

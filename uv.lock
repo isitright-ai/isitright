@@ -1017,6 +1017,7 @@ all = [
     { name = "mcp" },
     { name = "pandas" },
     { name = "pandera" },
+    { name = "psutil" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
 ]
@@ -1025,6 +1026,7 @@ bigquery = [
 ]
 data = [
     { name = "pandas" },
+    { name = "psutil" },
 ]
 data-schema = [
     { name = "pandas" },
@@ -1038,6 +1040,7 @@ dev = [
     { name = "mypy" },
     { name = "pandas" },
     { name = "pandera" },
+    { name = "psutil" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
     { name = "pytest" },
@@ -1089,6 +1092,9 @@ requires-dist = [
     { name = "pandera", marker = "extra == 'all'", specifier = ">=0.20,<1" },
     { name = "pandera", marker = "extra == 'data-schema'", specifier = ">=0.20,<1" },
     { name = "pandera", marker = "extra == 'dev'", specifier = ">=0.20,<1" },
+    { name = "psutil", marker = "extra == 'all'", specifier = ">=5.9,<8" },
+    { name = "psutil", marker = "extra == 'data'", specifier = ">=5.9,<8" },
+    { name = "psutil", marker = "extra == 'dev'", specifier = ">=5.9,<8" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'all'", specifier = ">=3.2,<4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dev'", specifier = ">=3.2,<4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.2,<4" },

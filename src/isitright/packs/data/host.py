@@ -1,9 +1,21 @@
 """The data host: run programs on worlds in a separate, limited process.
 
 Each run gets a fresh temporary directory holding the world's files, a scrubbed environment, a
-wall-clock timeout and, where the platform offers one, a memory limit (an address-space limit on
-POSIX, a Job Object on Windows). The program never runs in the audit process, and never without
-``trust_code=True``.
+wall-clock timeout and a memory limit. The program never runs in the audit process, and never
+without ``trust_code=True``.
+
+How the memory limit is enforced (``memory_enforcement()``):
+
+* Windows: a Job Object caps the memory the runner may commit; an allocation over the limit fails
+  with ``MemoryError``. Exact.
+* Linux and macOS with ``psutil`` installed: a watchdog thread in this process reads the resident
+  memory of the runner and its children every ``WATCH_INTERVAL`` seconds and kills the process
+  group above the limit; inside the runner a thread watches its own peak resident memory as a
+  second line. Approximate: a program can pass the limit between two readings (measured overshoot
+  in ``docs/data.md``).
+* Linux without ``psutil``: an address-space limit (``RLIMIT_AS``), which counts reserved virtual
+  memory, so NumPy or pandas can hit it far below their real use.
+* macOS without ``psutil``: none (macOS has no ``RLIMIT_AS``); a warning says so.
 
 By default every run starts a new process (``reuse=1``). ``reuse=N`` keeps a process for N runs:
 modules a program imported stay loaded, so one run can affect the next, but a run takes
@@ -18,6 +30,7 @@ or VM without network access.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import queue
@@ -41,6 +54,78 @@ from isitright.packs.data.mapping import write_state
 
 RUNNER = Path(__file__).with_name("_runner.py")
 MAX_CAPTURE = 64 * 1024
+WATCH_INTERVAL = 0.05
+"""Seconds between two readings of the runner's resident memory by the watchdog."""
+MEMORY_MARK = "isitright runner: memory limit exceeded"
+"""The line the runner writes to stderr before it ends itself over the limit (``_runner.py``)."""
+MB = 1024 * 1024
+
+
+def memory_enforcement(platform: str | None = None, *, psutil_available: bool | None = None) -> str:
+    """How a memory limit is enforced on ``platform`` (default: this one): ``job_object``,
+    ``rss_watchdog``, ``address_space`` or ``none``. See the module docstring."""
+    platform = sys.platform if platform is None else platform
+    if platform == "win32":
+        return "job_object"
+    if psutil_available is None:
+        psutil_available = importlib.util.find_spec("psutil") is not None
+    if psutil_available:
+        return "rss_watchdog"
+    return "none" if platform == "darwin" else "address_space"
+
+
+def _kill_group(pid: int) -> None:
+    if sys.platform == "win32":  # pragma: no cover - the Job Object ends the tree there
+        return
+    import signal
+
+    with suppress(ProcessLookupError, PermissionError, OSError):
+        os.killpg(pid, signal.SIGKILL)
+
+
+class _Watchdog:
+    """Kills the runner's process group when the resident memory of the runner and its children
+    passes the limit. Reads it every ``interval`` seconds, so a fast allocation can pass the limit
+    by what it allocates between two readings. Needs ``psutil``; POSIX only."""
+
+    def __init__(self, pid: int, limit: int, interval: float = WATCH_INTERVAL) -> None:
+        import psutil
+
+        self.limit = limit
+        self.interval = interval
+        self.exceeded: int | None = None
+        """The resident memory read when the limit was passed (bytes): a lower bound of the peak."""
+        self._psutil = psutil
+        self._process = psutil.Process(pid)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._watch, name="isitright-watchdog", daemon=True)
+        self._thread.start()
+
+    def resident(self) -> int | None:
+        """Bytes resident in the runner and its children, or None once the runner is gone."""
+        try:
+            processes = [self._process, *self._process.children(recursive=True)]
+        except self._psutil.Error:
+            return None
+        total = 0
+        for process in processes:
+            with suppress(self._psutil.Error):
+                total += int(process.memory_info().rss)
+        return total
+
+    def _watch(self) -> None:
+        while not self._stop.is_set():
+            resident = self.resident()
+            if resident is None:
+                return
+            if resident > self.limit:
+                self.exceeded = resident
+                _kill_group(self._process.pid)
+                return
+            self._stop.wait(self.interval)
+
+    def stop(self) -> None:
+        self._stop.set()
 
 
 class UntrustedCodeError(RuntimeError):
@@ -98,22 +183,26 @@ def scrubbed_environment(home: Path) -> dict[str, str]:
 class _Limits:
     """Platform-specific containment of the child process."""
 
-    def __init__(self, memory_bytes: int | None) -> None:
+    def __init__(self, memory_bytes: int | None, enforcement: str) -> None:
         self.memory_bytes = memory_bytes
+        self.enforcement = enforcement
         self.job: Any = None
 
     def preexec(self) -> Any:
         if sys.platform == "win32" or not self.memory_bytes:
             return None
-        if sys.platform == "darwin":
-            # macOS does not support RLIMIT_AS: setrlimit fails in the child and the process
-            # never starts. The memory limit is not enforced there (the time limit still is).
+        if self.enforcement == "none":
+            # macOS does not support RLIMIT_AS (setrlimit fails in the child and the process never
+            # starts), and without psutil there is no watchdog. The time limit still applies.
             warnings.warn(
-                "the memory limit is not enforced on macOS (no RLIMIT_AS); the timeout still is",
+                "the memory limit is not enforced on macOS without psutil (no RLIMIT_AS); install "
+                "isitright[data] or psutil. The timeout still is",
                 RuntimeWarning,
                 stacklevel=2,
             )
             return None
+        if self.enforcement != "address_space":
+            return None  # the watchdog enforces it from outside
         import resource
 
         limit = self.memory_bytes
@@ -141,17 +230,20 @@ class _Limits:
 class _Worker:
     """One runner process: requests go in as JSON lines, replies come back the same way."""
 
-    def __init__(self, memory_bytes: int | None) -> None:
+    def __init__(self, memory_bytes: int | None, enforcement: str) -> None:
         self.home = Path(tempfile.mkdtemp(prefix="isitright-worker-"))
-        self.limits = _Limits(memory_bytes)
+        self.limits = _Limits(memory_bytes, enforcement)
+        self.watchdog: _Watchdog | None = None
         self.runs = 0
         self._stderr: IO[bytes] = open(self.home / "stderr.txt", "wb")  # noqa: SIM115
         popen: dict[str, Any] = {}
         env = scrubbed_environment(self.home)
+        if memory_bytes and enforcement in ("job_object", "rss_watchdog"):
+            # The runner applies it to itself: on Windows it joins a Job Object, on POSIX it starts
+            # its own check, the second line behind the watchdog (see _runner._limit_memory)
+            env["ISITRIGHT_MEMORY_BYTES"] = str(memory_bytes)
         if sys.platform == "win32":
             popen["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            if memory_bytes:  # the runner applies it to itself (see _runner._limit_memory)
-                env["ISITRIGHT_MEMORY_BYTES"] = str(memory_bytes)
         else:
             popen["preexec_fn"] = self.limits.preexec()
             popen["start_new_session"] = True
@@ -165,6 +257,8 @@ class _Worker:
             **popen,
         )
         self.limits.attach(self.process)
+        if memory_bytes and enforcement == "rss_watchdog":
+            self.watchdog = _Watchdog(self.process.pid, memory_bytes)
         self._lines: queue.Queue[bytes] = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
 
@@ -201,15 +295,15 @@ class _Worker:
         return ""
 
     def close(self) -> None:
+        if self.watchdog is not None:
+            self.watchdog.stop()
         self.limits.release()  # a Job Object closes the whole process tree
         with suppress(ProcessLookupError, PermissionError, OSError):
             if self.process.poll() is None:
                 if sys.platform == "win32":
                     self.process.kill()
                 else:
-                    import signal
-
-                    os.killpg(self.process.pid, signal.SIGKILL)
+                    _kill_group(self.process.pid)
         with suppress(OSError):
             self.process.wait(timeout=5)
         for stream in (self.process.stdin, self.process.stdout, self._stderr):
@@ -246,7 +340,8 @@ class DataHost:
         self.schema = schema
         self.trust_code = trust_code
         self.timeout_seconds = timeout_seconds
-        self.memory_bytes = memory_mb * 1024 * 1024 if memory_mb else None
+        self.memory_bytes = memory_mb * MB if memory_mb else None
+        self.enforcement = memory_enforcement() if self.memory_bytes else "none"
         self.outputs = outputs
         self.data_format = data_format
         self.reuse = max(1, reuse)
@@ -260,7 +355,8 @@ class DataHost:
             if self.reuse == 1
             else f"process reused for {self.reuse} runs",
             "timeout_seconds": self.timeout_seconds,
-            "memory_limit_mb": self.memory_bytes // (1024 * 1024) if self.memory_bytes else None,
+            "memory_limit_mb": self.memory_bytes // MB if self.memory_bytes else None,
+            "memory_enforcement": self.enforcement,
             "data_format": self.data_format,
         }
 
@@ -279,7 +375,7 @@ class DataHost:
                 if worker in self._workers:
                     self._workers.remove(worker)
             worker.dispose()
-        worker = _Worker(self.memory_bytes)
+        worker = _Worker(self.memory_bytes, self.enforcement)
         with self._lock:
             self._workers.append(worker)
         self._local.worker = worker
@@ -329,12 +425,20 @@ class DataHost:
             return RunResult(
                 "timeout", stderr=stderr, error=f"over {self.timeout_seconds:g} s", seconds=seconds
             )
-        memory = self.memory_bytes is not None and "MemoryError" in stderr
+        watched = worker.watchdog.exceeded if worker.watchdog is not None else None
+        memory = self.memory_bytes is not None and (
+            watched is not None or "MemoryError" in stderr or MEMORY_MARK in stderr
+        )
+        error = "the process ended without a reply"
+        if watched is not None and self.memory_bytes:
+            error += (
+                f" (memory limit: {watched // MB} MB resident, over the "
+                f"{self.memory_bytes // MB} MB limit; stopped by the watchdog)"
+            )
+        elif memory:
+            error += " (memory limit)"
         return RunResult(
-            "memory" if memory else "error",
-            stderr=stderr,
-            error="the process ended without a reply" + (" (memory limit)" if memory else ""),
-            seconds=seconds,
+            "memory" if memory else "error", stderr=stderr, error=error, seconds=seconds
         )
 
     @staticmethod

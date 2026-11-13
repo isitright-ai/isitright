@@ -9,6 +9,9 @@ never installed in this process.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -166,3 +169,46 @@ def test_no_memory_limit_is_applied_unless_one_is_asked_for(
     _runner._limit_memory()  # nothing to do, and nothing raised
     monkeypatch.setenv("ISITRIGHT_MEMORY_BYTES", "")
     _runner._limit_memory()
+
+
+def test_the_host_and_the_runner_agree_on_the_memory_mark() -> None:
+    """The runner is a standalone file and cannot import the host; the text is written twice."""
+    from isitright.packs.data.host import MEMORY_MARK
+
+    assert MEMORY_MARK == _runner.MEMORY_MARK
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
+def test_the_runner_ends_itself_when_its_peak_memory_passes_the_limit() -> None:
+    """A limit below what the interpreter already uses: the check must end the process at once,
+    with the mark the host reads, instead of letting the program run to its end."""
+    code = (
+        "import time\n"
+        "from isitright.packs.data import _runner\n"
+        "_runner._watch_own_memory(1024 * 1024)\n"
+        "time.sleep(10)\n"
+        "print('survived')\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+    )
+    assert completed.returncode == _runner.MEMORY_EXIT, completed.stderr
+    assert _runner.MEMORY_MARK in completed.stderr and "over the 1 MB limit" in completed.stderr
+    assert "survived" not in completed.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
+def test_the_runner_starts_its_check_only_when_the_host_asks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def running() -> int:
+        return sum(t.name == "isitright-memory" for t in threading.enumerate())
+
+    before = running()
+    monkeypatch.delenv("ISITRIGHT_MEMORY_BYTES", raising=False)
+    _runner._limit_memory()
+    assert running() == before
+    monkeypatch.setenv("ISITRIGHT_MEMORY_BYTES", str(10**15))  # far above anything: it never fires
+    _runner._limit_memory()
+    assert running() == before + 1
+    assert "ISITRIGHT_MEMORY_BYTES" not in os.environ  # a program cannot read the limit

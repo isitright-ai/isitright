@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 pytest.importorskip("pandas")
 
-from isitright.packs.data.host import DataHost, UntrustedCodeError
+from isitright.packs.data.host import (
+    MEMORY_MARK,
+    DataHost,
+    UntrustedCodeError,
+    memory_enforcement,
+)
 from isitright.packs.data.mapping import (
     TableFile,
     read_frame,
@@ -114,15 +120,104 @@ def test_a_runaway_program_times_out_and_the_next_run_gets_a_new_process(
         host.close()
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="macOS has no RLIMIT_AS: not enforced")
-def test_a_memory_limit_stops_a_program_that_allocates_too_much(world: tuple[Any, Any]) -> None:
+ONE_CALL = "x = bytearray(1500 * 1024 * 1024)\nresult = len(x)"
+"""Allocates and touches 1.5 GB in one C call, which holds the interpreter lock throughout."""
+CHUNKS = (
+    "chunks = []\nfor _ in range(96):\n    chunks.append(bytearray(16 * 1024 * 1024))\nresult = 1"
+)
+"""Allocates 1.5 GB in 16 MB steps: the fast allocator, with the lock released between steps."""
+
+
+@pytest.mark.parametrize("program", [ONE_CALL, CHUNKS], ids=["one-call", "chunks"])
+def test_a_memory_limit_stops_a_program_that_allocates_too_much(
+    world: tuple[Any, Any], program: str
+) -> None:
+    """On every platform where CI runs: a Job Object on Windows, the watchdog on Linux and macOS
+    (psutil is part of the data extra)."""
     host = make_host(world, memory_mb=300)
     try:
-        run = host.run("x = bytearray(1500 * 1024 * 1024)\nresult = len(x)", world[1])
-        assert run.status in {"memory", "error"} and run.answer()[0] != 1500 * 1024 * 1024
-        assert run.status == "memory"
+        assert host.describe()["memory_enforcement"] == (
+            "job_object" if sys.platform == "win32" else "rss_watchdog"
+        )
+        run = host.run(program, world[1])
+        assert run.status == "memory", (run.status, run.error, run.stderr)
+        assert run.answer()[0] is None
+        if sys.platform != "win32":  # stopped from outside, or by the runner's own check
+            assert "watchdog" in run.error or MEMORY_MARK in run.stderr, (run.error, run.stderr)
     finally:
         host.close()
+
+
+def test_a_program_under_the_memory_limit_is_left_alone(world: tuple[Any, Any]) -> None:
+    host = make_host(world, memory_mb=400)
+    try:
+        run = host.run("x = bytearray(100 * 1024 * 1024)\nresult = len(x)", world[1])
+        assert run.status == "ok" and run.answer()[0] == 100 * 1024 * 1024
+    finally:
+        host.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the watchdog runs on Linux and macOS")
+def test_memory_reserved_but_never_touched_does_not_count(world: tuple[Any, Any]) -> None:
+    """Resident memory, not address space: a 2 GB reservation that is never written stays far
+    below a 300 MB limit (RLIMIT_AS, the 0.8 limit on Linux, refused it)."""
+    host = make_host(world, memory_mb=300)
+    try:
+        run = host.run("import mmap\nm = mmap.mmap(-1, 2 * 1024 ** 3)\nresult = len(m)", world[1])
+        assert run.status == "ok" and run.answer()[0] == 2 * 1024**3, (run.error, run.stderr)
+    finally:
+        host.close()
+
+
+@pytest.mark.parametrize(
+    ("platform", "psutil_available", "expected"),
+    [
+        ("win32", True, "job_object"),
+        ("win32", False, "job_object"),
+        ("linux", True, "rss_watchdog"),
+        ("darwin", True, "rss_watchdog"),
+        ("linux", False, "address_space"),
+        ("darwin", False, "none"),
+    ],
+)
+def test_how_the_memory_limit_is_enforced(
+    platform: str, psutil_available: bool, expected: str
+) -> None:
+    assert memory_enforcement(platform, psutil_available=psutil_available) == expected
+
+
+def test_without_a_limit_nothing_is_enforced(world: tuple[Any, Any]) -> None:
+    host = make_host(world, memory_mb=None)
+    assert host.describe()["memory_limit_mb"] is None
+    assert host.describe()["memory_enforcement"] == "none"
+
+
+class _GoneWorker:
+    def __init__(self, stderr: str, exceeded: int | None) -> None:
+        self._stderr = stderr
+        self.watchdog = SimpleNamespace(exceeded=exceeded) if exceeded is not None else None
+
+    def stderr_tail(self) -> str:
+        return self._stderr
+
+
+@pytest.mark.parametrize(
+    ("stderr", "exceeded", "status", "error"),
+    [
+        ("", 412 * 1024 * 1024, "memory", "412 MB resident, over the 300 MB limit; stopped by"),
+        (f"{MEMORY_MARK}: 350 MB resident", None, "memory", "(memory limit)"),
+        ("MemoryError", None, "memory", "(memory limit)"),
+        ("Segmentation fault", None, "error", "the process ended without a reply"),
+    ],
+)
+def test_a_lost_process_is_classified_by_what_stopped_it(
+    world: tuple[Any, Any], stderr: str, exceeded: int | None, status: str, error: str
+) -> None:
+    host = make_host(world, memory_mb=300)
+    run = host._lost(_GoneWorker(stderr, exceeded), seconds=1.0)  # type: ignore[arg-type]
+    assert run.status == status and error in run.error
+    if status == "error":
+        assert "memory" not in run.error
 
 
 def test_a_write_outside_the_working_directory_is_blocked_and_recorded(

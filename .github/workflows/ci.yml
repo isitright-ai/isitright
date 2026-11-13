@@ -16,9 +16,15 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13"]
         include:
-          # one macOS job: subprocesses use spawn there, and paths and builds differ
+          # macOS (Apple Silicon) on every supported version: subprocesses use spawn there, the
+          # memory limit is the watchdog, and paths and builds differ. A job cancelled with "The job
+          # was not acquired by Runner of type hosted" is runner capacity: rerun it.
+          - os: macos-latest
+            python-version: "3.11"
           - os: macos-latest
             python-version: "3.12"
+          - os: macos-latest
+            python-version: "3.13"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
