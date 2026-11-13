@@ -61,6 +61,7 @@ def test_the_agents_own_results_file_is_read_line_by_line(tmp_path: Path) -> Non
         "not json\n"
         '{"query": "b", "ids": "x"}\n'
         '{"query": 3, "ids": []}\n'
+        '{"query": "d", "ids": [1, 2]}\n'
         '{"query": "c", "ids": ["z"], "extra": 1}\n',
         encoding="utf-8",
     )

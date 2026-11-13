@@ -54,6 +54,14 @@ def test_the_hashed_embedding_is_deterministic_and_unit_length() -> None:
     assert sum(x * y for x, y in zip(a, b, strict=True)) == pytest.approx(0.7745967, abs=1e-6)
 
 
+def test_a_single_words_embedding_is_one_pinned_slot_with_a_pinned_sign() -> None:
+    """The hash and the sign rule decide every dense ranking; a change must be seen here."""
+    pinned = {"bridge": (165, 1.0), "halvorsen": (173, -1.0), "traffic": (57, -1.0)}
+    for word, (slot, value) in pinned.items():
+        vector = hashed_embedding(word)
+        assert [(i, v) for i, v in enumerate(vector) if v] == [(slot, value)], word
+
+
 def test_each_retriever_ranks_the_gold_document_first_for_the_gold_query() -> None:
     for kind in ("bm25", "hashed-dense", "hybrid"):
         index = build_index(stats(kind), DOCS)
@@ -82,6 +90,29 @@ def test_ties_break_by_document_id_in_every_retriever() -> None:
     for kind in ("hashed-dense", "hybrid"):
         index = build_index(FrozenStats.from_documents(twins, kind), twins)
         assert [h.id for h in index.rank("same words")] == ["a", "b"], kind
+
+
+class _Fixed:
+    """A retriever that returns a fixed order, whatever the query."""
+
+    def __init__(self, order: list[str]) -> None:
+        self.documents = {i: {"id": i, "title": i, "text": i} for i in ("a", "b")}
+        self._order = order
+
+    def rank(self, query: str, k: int = 20) -> list[Any]:
+        from isitright.packs.research.retrieval import Hit
+
+        return [Hit(i, 1.0) for i in self._order][:k]
+
+    def snippet(self, doc_id: str, query: str) -> str:
+        return doc_id
+
+
+def test_a_fused_tie_is_broken_by_id_not_by_the_order_the_parts_gave() -> None:
+    # b is first in one part and a first in the other: equal fused scores; b is seen first
+    fused = HybridIndex(_Fixed(["b", "a"]), _Fixed(["a", "b"])).rank("anything")
+    assert fused[0].score == fused[1].score
+    assert [h.id for h in fused] == ["a", "b"]
 
 
 def test_hybrid_fuses_ranks_not_scores() -> None:

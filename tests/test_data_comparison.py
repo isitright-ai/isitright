@@ -235,3 +235,10 @@ def test_a_clause_that_names_two_precisions_gives_no_answer_its_own() -> None:
     )
     policy = AnswerPolicy.for_question(text)
     assert policy.per_answer == {} and policy.abs_tol == 0.01  # the fewest, as before
+    # the clause of p_value names 4 and 6, and the task's fewest is 2 (from r_value): the first
+    # named precision must not be taken for p_value
+    split = (
+        "Format: @r_value[r_value] @p_value[p_value] where r_value is rounded to two decimal "
+        "places and p_value is given to four or six decimal places."
+    )
+    assert AnswerPolicy.for_question(split).per_answer == {}
