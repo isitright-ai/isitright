@@ -159,11 +159,16 @@ def test_a_program_under_the_memory_limit_is_left_alone(world: tuple[Any, Any]) 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the watchdog runs on Linux and macOS")
 def test_memory_reserved_but_never_touched_does_not_count(world: tuple[Any, Any]) -> None:
-    """Resident memory, not address space: a 2 GB reservation that is never written stays far
-    below a 300 MB limit (RLIMIT_AS, the 0.8 limit on Linux, refused it)."""
+    """Resident memory, not address space: a 2 GB NumPy array that is allocated and never written
+    stays far below a 300 MB limit (RLIMIT_AS, the 0.8 limit on Linux, refused it). A first
+    version used a shared anonymous ``mmap``; on GitHub's Linux runners its runner reached 340 to
+    352 MB resident (2026-11-13), so that call is not a clean untouched reservation there."""
     host = make_host(world, memory_mb=300)
     try:
-        run = host.run("import mmap\nm = mmap.mmap(-1, 2 * 1024 ** 3)\nresult = len(m)", world[1])
+        run = host.run(
+            "import numpy as np\nx = np.empty(2 * 1024 ** 3, dtype=np.uint8)\nresult = int(x.size)",
+            world[1],
+        )
         assert run.status == "ok" and run.answer()[0] == 2 * 1024**3, (run.error, run.stderr)
     finally:
         host.close()
