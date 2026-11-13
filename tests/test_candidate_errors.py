@@ -5,6 +5,8 @@ Proposed fixture: pending owner review (constructed schema and queries, written 
 
 from __future__ import annotations
 
+import importlib.util
+import sqlite3
 from typing import Any
 
 import pytest
@@ -21,8 +23,14 @@ from isitright.packs.sql.models import (
     QueryResult,
     ResultColumn,
 )
+from isitright.packs.sql.postgres_server import _postgres_server, is_postgres_data_error
 from isitright.packs.sql.replaying import export_eval_cases, replay_report
 from isitright.packs.sql.results import error_result, is_error_result
+from isitright.packs.sql.sqlite_sandbox import (
+    QueryDataError,
+    QueryExecutionError,
+    sqlite_query_error,
+)
 
 DDL = "CREATE TABLE t (id INT64, s STRING)"
 SAFE = "SELECT id, SAFE_CAST(s AS INT64) AS n FROM t"
@@ -226,3 +234,112 @@ def test_a_finding_verified_only_on_the_unminimized_world_says_so() -> None:
     assert worlds == ["minimized", "unminimized divergent"]
     assert finding.fidelity.verification.status == "VERIFIED"
     assert "not itself confirmed" in finding.fidelity.verification.note
+
+
+# --- SQLite and PostgreSQL (0.9): a data error of the candidate is a finding there too -----------
+
+SQLITE_DDL = "CREATE TABLE doc (id INTEGER PRIMARY KEY, body TEXT)"
+# json_extract raises "malformed JSON" on text that is not JSON; the reference guards it. The
+# literal 'none' gives the generator a text value for body (a text column is otherwise NULL).
+SQLITE_SAFE = (
+    "SELECT id FROM doc WHERE body = 'none' "
+    "OR CASE WHEN json_valid(body) THEN json_extract(body, '$.a') END = 1"
+)
+SQLITE_PLAIN = "SELECT id FROM doc WHERE json_extract(body, '$.a') = 1 OR body = 'none'"
+
+PG_DDL = "CREATE TABLE t (id INTEGER PRIMARY KEY, s TEXT NOT NULL)"
+PG_SAFE = "SELECT id, CASE WHEN s IN ('1', '2') THEN CAST(s AS INTEGER) END AS n FROM t"
+PG_PLAIN = "SELECT id, CAST(s AS INTEGER) AS n FROM t"
+HAS_POSTGRES = all(
+    importlib.util.find_spec(name) is not None for name in ("embedded_postgres", "psycopg")
+)
+
+
+def test_sqlite_data_errors_are_told_apart_from_other_errors() -> None:
+    assert isinstance(
+        sqlite_query_error(sqlite3.OperationalError("malformed JSON")), QueryDataError
+    )
+    assert isinstance(
+        sqlite_query_error(sqlite3.OperationalError("integer overflow")), QueryDataError
+    )
+    for static in ("no such column: x", 'near "SELEC": syntax error', "no such table: y"):
+        error = sqlite_query_error(sqlite3.OperationalError(static))
+        assert type(error) is QueryExecutionError and str(error) == static
+
+
+def test_postgres_data_errors_are_classes_21_and_22_only() -> None:
+    def error(sqlstate: str) -> Exception:
+        failure = RuntimeError("x")
+        failure.sqlstate = sqlstate  # type: ignore[attr-defined]
+        return failure
+
+    assert is_postgres_data_error(error("22P02"))  # invalid_text_representation
+    assert is_postgres_data_error(error("22012"))  # division_by_zero
+    assert is_postgres_data_error(error("21000"))  # cardinality_violation
+    for other in ("42703", "42601", "57014", "08006", "23505"):  # column, syntax, timeout, ...
+        assert not is_postgres_data_error(error(other))
+    assert not is_postgres_data_error(RuntimeError("no sqlstate"))
+
+
+def test_sqlite_candidate_that_errors_on_a_valid_world_is_a_finding() -> None:
+    report = check(
+        engine="sqlite", ddl=SQLITE_DDL, reference_sql=SQLITE_SAFE, candidate_sql=SQLITE_PLAIN
+    )
+    assert report.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND, report.headline
+    finding = report.findings[0]
+    assert finding.divergence["kind"] == "candidate_errors"
+    assert finding.divergence["difference"] == "candidate errors: malformed JSON"
+    assert finding.divergence["candidate_state"]["doc"][0]["body"] is not None
+    assert finding.fidelity.found_on == "NATIVE_ISOLATED"
+    assert report.headline.startswith("Generated counterexample (candidate errors)")
+    assert replay_report(report)["reproduced"] is True
+    assert export_eval_cases(report)[0].expectation["outputs_differ"] is True
+
+
+def test_sqlite_reference_that_errors_skips_the_world_and_is_not_a_finding() -> None:
+    report = check(
+        engine="sqlite", ddl=SQLITE_DDL, reference_sql=SQLITE_PLAIN, candidate_sql=SQLITE_SAFE
+    )
+    assert report.findings == []
+    assert report.search is not None and report.search.rejected.get("query_error", 0) > 0
+
+
+@pytest.mark.skipif(not HAS_POSTGRES, reason="optional PostgreSQL dependencies not installed")
+def test_postgres_candidate_errors_are_a_finding_and_reference_errors_skip_the_world() -> None:
+    with _postgres_server() as server:
+        found = check(
+            engine="postgres",
+            ddl=PG_DDL,
+            reference_sql=PG_SAFE,
+            candidate_sql=PG_PLAIN,
+            _server=server,
+        )
+        assert found.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND, found.headline
+        divergence = found.findings[0].divergence
+        assert divergence["kind"] == "candidate_errors"
+        assert divergence["difference"].startswith("candidate errors: InvalidTextRepresentation")
+        assert found.findings[0].fidelity.found_on == "NATIVE_ISOLATED"
+        # before 0.9 a PostgreSQL query error stopped the whole audit as INCONCLUSIVE
+        reversed_pair = check(
+            engine="postgres",
+            ddl=PG_DDL,
+            reference_sql=PG_PLAIN,
+            candidate_sql=PG_SAFE,
+            _server=server,
+        )
+        assert reversed_pair.findings == [] and reversed_pair.errors == []
+        assert reversed_pair.divergence_status is not DivergenceStatus.INCONCLUSIVE
+        assert reversed_pair.search is not None
+        assert reversed_pair.search.rejected.get("query_error", 0) > 0
+
+
+@pytest.mark.skipif(not HAS_POSTGRES, reason="optional PostgreSQL dependencies not installed")
+def test_an_emulated_candidate_error_is_verified_on_postgres() -> None:
+    report = check(engine="duckdb", ddl=PG_DDL, reference_sql=PG_SAFE, candidate_sql=PG_PLAIN)
+    assert report.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND, report.headline
+    finding = report.findings[0]
+    assert finding.divergence["kind"] == "candidate_errors"
+    assert finding.fidelity.found_on == "EMULATED"
+    assert finding.fidelity.verified_on == "NATIVE_ISOLATED"
+    assert finding.fidelity.verification is not None
+    assert finding.fidelity.verification.status == "VERIFIED"

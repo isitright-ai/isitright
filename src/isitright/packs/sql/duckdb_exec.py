@@ -113,9 +113,13 @@ def _execute_duckdb(
             timer.start()
             try:
                 if warehouse is None:
-                    return _result(
-                        connection.execute(translate_for_duckdb(query, catalog).sql), max_rows
-                    )
+                    text = translate_for_duckdb(query, catalog).sql
+                    try:
+                        return _result(connection.execute(text), max_rows)
+                    except _data_errors() as error:  # emulated PostgreSQL: the same rule
+                        if tolerate:
+                            return error_result(f"{type(error).__name__}: {error}")
+                        raise QueryDataError(f"{type(error).__name__}: {error}") from error
                 try:
                     return _result(
                         connection.execute(query),
@@ -127,13 +131,16 @@ def _execute_duckdb(
                         return error_result(str(error))
                     raise
                 except duckdb.Error as error:  # a data-dependent query error is a per-world result
-                    if tolerate and isinstance(error, _data_errors()):
-                        return error_result(f"{type(error).__name__}: {error}")
-                    raise QueryExecutionError(f"{type(error).__name__}: {error}") from error
+                    message = f"{type(error).__name__}: {error}"
+                    if isinstance(error, _data_errors()):
+                        if tolerate:
+                            return error_result(message)
+                        raise QueryDataError(message) from error
+                    raise QueryExecutionError(message) from error
             finally:
                 timer.cancel()
                 timer.join()
 
         left = execute_one(reference)
-        right = execute_one(candidate, tolerate=warehouse is not None)
+        right = execute_one(candidate, tolerate=True)
         return left, right, str(duckdb.__version__)

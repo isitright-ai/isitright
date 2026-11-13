@@ -35,6 +35,19 @@ class QueryResourceLimitError(QueryExecutionError):
     """Raised when a query produces more rows than the configured cap."""
 
 
+SQLITE_DATA_ERRORS = ("integer overflow", "malformed JSON", "JSON cannot hold BLOB values")
+"""SQLite messages that depend on the data a query reads. SQLite has few: a CAST never fails and a
+division by zero is NULL. Anything else (a missing column, a syntax error) is not a data error."""
+
+
+def sqlite_query_error(error: sqlite3.Error) -> QueryExecutionError:
+    """``QueryDataError`` for a data-dependent SQLite error, ``QueryExecutionError`` otherwise."""
+    message = str(error)
+    if any(fragment.lower() in message.lower() for fragment in SQLITE_DATA_ERRORS):
+        return QueryDataError(message)
+    return QueryExecutionError(message)
+
+
 def foreign_key_problem(connection: sqlite3.Connection) -> str | None:
     """What ``PRAGMA foreign_key_check`` finds, in words, or None when the database is consistent.
 
@@ -160,9 +173,9 @@ def execute_query(
             raise QueryTimeoutError(
                 f"query exceeded the {timeout_seconds:g}-second budget"
             ) from error
-        raise QueryExecutionError(str(error)) from error
+        raise sqlite_query_error(error) from error
     except sqlite3.Error as error:
-        raise QueryExecutionError(str(error)) from error
+        raise sqlite_query_error(error) from error
     finally:
         connection.set_progress_handler(None, 0)
         connection.set_authorizer(None)

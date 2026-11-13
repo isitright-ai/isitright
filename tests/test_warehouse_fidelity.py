@@ -19,7 +19,12 @@ from isitright.packs.sql.mapping import build_model
 from isitright.packs.sql.models import QueryResult
 from isitright.packs.sql.postgres_ddl import Schema
 from isitright.packs.sql.replaying import _state
-from isitright.packs.sql.sqlite_sandbox import QueryExecutionError
+from isitright.packs.sql.sqlite_sandbox import (
+    QueryDataError,
+    QueryExecutionError,
+    QueryResourceLimitError,
+    QueryTimeoutError,
+)
 from isitright.packs.sql.warehouse_ddl import parse_warehouse_schema
 from isitright.packs.sql.warehouse_sql import parse_query, resolve_tables, to_duckdb
 from tests.warehouse_fixtures import (
@@ -58,21 +63,32 @@ def _host(fixture: Fixture, *, raw: bool = False) -> tuple[Any, DuckdbHost, Any]
     return db, DuckdbHost(Schema(db), dialect, time_zone=zone, result_rules=not raw), state
 
 
-def _run(host: DuckdbHost, state: Any, sql: str) -> tuple[Any, str, QueryResult | None]:
-    """The outcome, the error message and the result. Only a query error counts as ``ERROR``;
-    any other failure (a bug, a connection) propagates and fails the test."""
+def _run(
+    host: DuckdbHost, state: Any, sql: str
+) -> tuple[Any, QueryExecutionError | None, QueryResult | None]:
+    """The outcome, the error and the result. Only a query error counts as ``ERROR``; any other
+    failure (a bug, a connection) propagates and fails the test."""
     try:
         left, _ = host.run_pair(state, sql, sql, timeout_seconds=10, max_result_rows=100)
     except QueryExecutionError as error:
-        return ERROR, str(error), None
-    return _plain(left), "", left
+        return ERROR, error, None
+    return _plain(left), None, left
 
 
 def _execute(host: DuckdbHost, state: Any, sql: str) -> Any:
     return _run(host, state, sql)[0]
 
 
-def _emulated_run(fixture: Fixture) -> tuple[Any, str, QueryResult | None]:
+def expect_data_error(fixture: Fixture, error: QueryExecutionError | None) -> None:
+    """An expected ``ERROR`` must be the data error the fixture names: a ``QueryDataError`` (not a
+    timeout, a row limit, a parse or bind error, all ``QueryExecutionError`` too) whose message
+    carries the fixture's ``error_text``."""
+    assert fixture.error_text, f"{fixture.id}: name the expected error text"
+    assert isinstance(error, QueryDataError), f"{fixture.id}: {type(error).__name__}: {error}"
+    assert fixture.error_text.lower() in str(error).lower(), str(error)
+
+
+def _emulated_run(fixture: Fixture) -> tuple[Any, QueryExecutionError | None, QueryResult | None]:
     db, host, state = _host(fixture)
     dialect = get_dialect(fixture.dialect)
     try:
@@ -80,17 +96,35 @@ def _emulated_run(fixture: Fixture) -> tuple[Any, str, QueryResult | None]:
     except SqlInputError as error:
         assert fixture.status == "detected", str(error)
         assert fixture.detected_text in str(error)
-        return "REJECTED", "", None
+        return "REJECTED", None, None
     return _run(host, state, translated.sql)
 
 
 def _emulated(fixture: Fixture) -> Any:
-    outcome, message, _ = _emulated_run(fixture)
+    outcome, error, _ = _emulated_run(fixture)
     if fixture.emulated == ERROR and outcome == ERROR:
-        # the expected data error, not an unrelated failure that also raises
-        assert fixture.error_text, f"{fixture.id}: name the expected error text"
-        assert fixture.error_text.lower() in message.lower(), message
+        expect_data_error(fixture, error)  # not an unrelated failure that also raises
     return outcome
+
+
+ERROR_FIXTURES = [f for f in FIXTURES if f.emulated == ERROR]
+
+
+@pytest.mark.parametrize("fixture", ERROR_FIXTURES, ids=lambda f: f.id)
+@pytest.mark.parametrize(
+    "kind",
+    [QueryTimeoutError, QueryResourceLimitError, QueryExecutionError],
+    ids=["timeout", "row-limit", "parse-or-bind"],
+)
+def test_another_failure_cannot_pass_as_the_expected_data_error(
+    fixture: Fixture, kind: type[QueryExecutionError]
+) -> None:
+    """Even with the expected words in its message, a timeout, a row limit or a parse or bind
+    error is not the fixture's data error."""
+    impostor = kind(f"{fixture.error_text} (but a {kind.__name__})")
+    with pytest.raises(AssertionError, match=kind.__name__):
+        expect_data_error(fixture, impostor)
+    expect_data_error(fixture, QueryDataError(f"{fixture.error_text}"))  # the real category
 
 
 def _raw(fixture: Fixture) -> Any:
@@ -170,27 +204,35 @@ def test_a_listed_divergence_stays_a_divergence_and_is_counted(fixture: Fixture)
     assert _normal(fixture.emulated, fixture.ordered) != _normal(fixture.native, fixture.ordered)
 
 
+CONFIRMED_ON = {"bigquery": "bigquery", "presto": "trino"}
+"""The engine whose record backs ``confirmed=True`` for each dialect family."""
+
+
 def test_a_confirmed_fixture_matches_its_recorded_native_observation() -> None:
     """``confirmed=True`` is a claim; the observation file holds what the engine returned, its
-    version and the date. BigQuery's smoke test of 2026-11-07 left no machine-readable record in
-    this repository (the owner holds it), so for BigQuery the claim rests on the review notes
-    until the smoke step is rerun and its output added; no Presto fixture is exempt."""
-    records = {r["id"]: r for r in json.loads(OBSERVATIONS.read_text(encoding="utf-8"))["records"]}
-    assert set(records) <= {f.id for f in FIXTURES}
+    version and the date, one record per fixture and engine. Every confirmed fixture needs the
+    record of the engine that confirms its family (BigQuery; Trino for Presto, 0.9 removed the
+    exemption that let a BigQuery fixture be confirmed without one). A record of another engine
+    (PrestoDB, through a connection) is checked against that engine's stated outcome, if the
+    fixture states one, else against ``native``."""
+    records = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))["records"]
+    by_key = {(r["id"], r["engine"]): r for r in records}
+    assert len(by_key) == len(records), "one record per fixture and engine"
+    assert {r["id"] for r in records} <= {f.id for f in FIXTURES}
     for fixture in FIXTURES:
+        mine = {engine: r for (fid, engine), r in by_key.items() if fid == fixture.id}
         if not fixture.confirmed:
-            assert fixture.id not in records, f"{fixture.id} has a record but is not confirmed"
+            assert not mine, f"{fixture.id} has a record but is not confirmed"
             continue
-        record = records.get(fixture.id)
-        if record is None:
-            assert fixture.dialect == "bigquery", f"{fixture.id} is confirmed without a record"
-            continue
-        assert record["engine_version"] and record["date"]
-        assert _normal(record["observed"], fixture.ordered) == _normal(
-            fixture.native, fixture.ordered
-        )
-        if fixture.native == ERROR and fixture.native_error:
-            assert fixture.native_error in record["error"], fixture.id
+        assert CONFIRMED_ON[fixture.dialect] in mine, f"{fixture.id} is confirmed without a record"
+        for engine, record in mine.items():
+            expected = fixture.extra.get(f"native_{engine}", fixture.native)
+            assert record["engine_version"] and record["date"]
+            assert _normal(record["observed"], fixture.ordered) == _normal(
+                expected, fixture.ordered
+            ), (fixture.id, engine)
+            if expected == ERROR and fixture.native_error:
+                assert fixture.native_error in record["error"], (fixture.id, engine)
 
 
 def test_every_fixture_has_a_status_and_a_source() -> None:

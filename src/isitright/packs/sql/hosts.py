@@ -2,6 +2,11 @@
 
 SQLite and PostgreSQL run natively on disposable instances (`NATIVE_ISOLATED`); DuckDB runs
 translated PostgreSQL and is `EMULATED`: a candidate generator, not native evidence.
+
+A data-dependent error of the candidate (a failed cast, an overflow, a division by zero, malformed
+JSON) where the reference returns a result is the candidate's result (``results.error_result``), so
+the comparison reports "candidate errors". Any other error, and any error of the reference, raises:
+the world is skipped (``query_error``) or the audit stops, as before 0.9.
 """
 
 from __future__ import annotations
@@ -19,8 +24,10 @@ from isitright.packs.sql.errors import StateRejected
 from isitright.packs.sql.models import QueryResult
 from isitright.packs.sql.postgres_ddl import Schema
 from isitright.packs.sql.postgres_server import _execute_postgres, _postgres_server
+from isitright.packs.sql.results import error_result
 from isitright.packs.sql.schema import DatabaseSchema
 from isitright.packs.sql.sqlite_sandbox import (
+    QueryDataError,
     QueryExecutionError,
     execute_query,
     foreign_key_problem,
@@ -105,20 +112,22 @@ class SqliteHost(SqlHost):
     ) -> tuple[QueryResult, QueryResult]:
         connection = self._load(state)
         try:
-            return (
-                execute_query(
-                    connection,
-                    reference_sql,
-                    timeout_seconds=timeout_seconds,
-                    max_result_rows=max_result_rows,
-                ),
-                execute_query(
+            left = execute_query(
+                connection,
+                reference_sql,
+                timeout_seconds=timeout_seconds,
+                max_result_rows=max_result_rows,
+            )
+            try:
+                right = execute_query(
                     connection,
                     candidate_sql,
                     timeout_seconds=timeout_seconds,
                     max_result_rows=max_result_rows,
-                ),
-            )
+                )
+            except QueryDataError as error:  # the candidate fails on this data
+                right = error_result(str(error))
+            return left, right
         finally:
             connection.close()
 
