@@ -151,6 +151,6 @@ strict = true
 packages = ["isitright"]
 
 [[tool.mypy.overrides]]
-module = ["pandas.*", "pandera.*", "pyarrow.*", "scipy.*", "pandasai.*", "smolagents.*", "psutil.*"]
+module = ["pandas.*", "pandera.*", "pyarrow.*", "scipy.*", "pandasai.*", "smolagents.*", "psutil.*", "sentence_transformers.*"]
 ignore_missing_imports = true
 

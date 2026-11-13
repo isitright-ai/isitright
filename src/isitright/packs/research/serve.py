@@ -22,7 +22,7 @@ from typing import Any
 
 from isitright.core.mutations import World
 from isitright.packs.research.documents import COLLECTION
-from isitright.packs.research.retrieval import FrozenIndex, FrozenStats, ToolError, ToolHost
+from isitright.packs.research.retrieval import FrozenStats, ToolError, ToolHost, build_index
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "search": {
@@ -52,7 +52,7 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
 def build_host(world_file: Path, stats_file: Path) -> ToolHost:
     world = World.from_json(json.loads(world_file.read_text(encoding="utf-8")))
     stats = FrozenStats.from_json(json.loads(stats_file.read_text(encoding="utf-8")))
-    index = FrozenIndex(stats, list(world.state.entities(COLLECTION)))
+    index = build_index(stats, list(world.state.entities(COLLECTION)))
     return ToolHost(index, world.response_edits)
 
 

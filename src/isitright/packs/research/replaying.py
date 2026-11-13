@@ -25,7 +25,7 @@ from isitright.core.replay import (
 from isitright.packs.research.agents import STAND_INS, ResearchTask, ToolClient
 from isitright.packs.research.documents import COLLECTION
 from isitright.packs.research.oracle import judge
-from isitright.packs.research.retrieval import FrozenIndex, FrozenStats, ToolHost
+from isitright.packs.research.retrieval import FrozenStats, ToolHost, build_index
 from isitright.packs.research.runs import RecordedRun
 
 
@@ -37,7 +37,7 @@ def rerun(artifact: ReplayArtifact) -> dict[str, Any]:
     baseline = RecordedRun.model_validate(inputs["baseline_run"])
     recorded = RecordedRun.model_validate(inputs["world_run"])
     docs = list(world.state.entities(COLLECTION))
-    host = ToolHost(FrozenIndex(stats, docs), world.response_edits)
+    host = ToolHost(build_index(stats, docs), world.response_edits)
     trace_ok = True
     for event in recorded.trace:
         if event["name"] not in ToolHost.TOOLS:
@@ -55,7 +55,7 @@ def rerun(artifact: ReplayArtifact) -> dict[str, Any]:
     subject = inputs["subject"]
     name = str(subject["name"]).split("(")[0]
     if subject["kind"] == "stand_in" and name in STAND_INS and recorded.seed is not None:
-        again_host = ToolHost(FrozenIndex(stats, docs), world.response_edits)
+        again_host = ToolHost(build_index(stats, docs), world.response_edits)
         agent = STAND_INS[name](task)
         report = agent.run(ToolClient(again_host), task, recorded.seed)
         observed["subject_rerun_same_report"] = report == recorded.report

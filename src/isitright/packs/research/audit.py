@@ -61,9 +61,10 @@ from isitright.packs.research.oracle import Expect, judge
 from isitright.packs.research.oracle import Verdict as Judged
 from isitright.packs.research.replaying import export_case
 from isitright.packs.research.retrieval import (
-    FrozenIndex,
+    RETRIEVER_STATEMENTS,
     FrozenStats,
     ToolHost,
+    build_index,
     terms_of,
     tokenize,
 )
@@ -119,6 +120,8 @@ class AuditConfig:
     mutators: Sequence[Mutator] | None = None
     declared_hints: Sequence[Hint] = ()
     k_search: int = 5
+    retriever: str = "bm25"
+    """``bm25`` (the 0.8 retriever), ``hashed-dense`` or ``hybrid`` (see `retrieval.py`)."""
 
 
 Executor = Callable[[World, int], RecordedRun]
@@ -185,7 +188,7 @@ def in_process_executor(agent: Agent, task: ResearchTask, stats: FrozenStats) ->
 
     def execute(world: World, seed: int) -> RecordedRun:
         host = ToolHost(
-            FrozenIndex(stats, list(world.state.entities(COLLECTION))), world.response_edits
+            build_index(stats, list(world.state.entities(COLLECTION))), world.response_edits
         )
         status = "COMPLETED"
         try:
@@ -243,7 +246,9 @@ class ResearchAudit:
         # ``stats`` lets a caller whose state is a restricted world of a larger corpus (a
         # benchmark task) give the statistics of the whole corpus: ranks do not depend on the
         # restriction.
-        self.stats = stats or FrozenStats.from_documents(state.entities(COLLECTION))
+        self.stats = stats or FrozenStats.from_documents(
+            state.entities(COLLECTION), self.config.retriever
+        )
         self.artifacts: dict[str, ReplayArtifact] = {}
         self.exports: dict[str, Any] = {}
         self.baseline_runs: list[RecordedRun] = []
@@ -256,14 +261,14 @@ class ResearchAudit:
 
     def host(self, world: World) -> ToolHost:
         return ToolHost(
-            FrozenIndex(self.stats, list(world.state.entities(COLLECTION))), world.response_edits
+            build_index(self.stats, list(world.state.entities(COLLECTION))), world.response_edits
         )
 
     def stand_in(self, agent: Agent) -> Subject:
         return stand_in_subject(agent, self.task, self.stats)
 
     def replay_queries(self, world: World, queries: list[dict[str, Any]]) -> list[list[str]]:
-        index = FrozenIndex(self.stats, list(world.state.entities(COLLECTION)))
+        index = build_index(self.stats, list(world.state.entities(COLLECTION)))
         host = ToolHost(index, world.response_edits)
         out = []
         for q in queries:
@@ -530,7 +535,7 @@ class ResearchAudit:
         """Whether an added copy scored exactly like the document it was copied from for the
         baseline's first query (the rank between them is then decided by the id tie-break)."""
         docs = documents_of(wr.world.state)
-        index = FrozenIndex(self.stats, list(wr.world.state.entities(COLLECTION)))
+        index = build_index(self.stats, list(wr.world.state.entities(COLLECTION)))
         scores = {h.id: h.score for h in index.rank(self.task.question, 50)}
         for doc_id, doc in docs.items():
             origin = (doc.get("provenance") or {}).get("derived_from")
@@ -1204,9 +1209,8 @@ class ResearchAudit:
                     "subject": subject.label.model_dump(mode="json"),
                     "subject_statement": _subject_statement(subject.label, mode),
                     "retrieval": {
-                        "scorer": (
-                            "BM25 (k1=1.2, b=0.75), statistics frozen from the original corpus"
-                        ),
+                        "scorer": RETRIEVER_STATEMENTS[self.stats.retriever],
+                        "retriever": self.stats.retriever,
                         "documents": self.stats.n,
                         "tools": ["search", "open"],
                         "fidelity": "SIMULATED",

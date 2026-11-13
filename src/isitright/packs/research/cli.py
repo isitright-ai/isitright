@@ -78,6 +78,13 @@ def check_command(
     attempts: Annotated[int, typer.Option(min=1, help="Worlds to try.")] = 500,
     seed: Annotated[int, typer.Option()] = 0,
     depth: Annotated[int, typer.Option(min=1, max=3)] = 2,
+    retriever: Annotated[
+        str,
+        typer.Option(
+            help="The retriever behind the tools: bm25, hashed-dense or hybrid. The last two "
+            "are stand-ins for a dense retriever (a hashed bag-of-words embedding), not a model."
+        ),
+    ] = "bm25",
     runs: Annotated[
         int | None,
         typer.Option(min=1, help="Runs per world (default 1; 4 for a stochastic agent)."),
@@ -132,6 +139,7 @@ def check_command(
             seed=seed,
             attempts=attempts,
             depth=depth,
+            retriever=retriever,
             runs=runs,
             max_runs=max_runs,
             seconds=seconds,
