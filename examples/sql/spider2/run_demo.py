@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_CAP = 600.0
@@ -44,17 +45,64 @@ def load_gold_trust() -> dict[str, dict]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-def reference_columns(condition_cols: object) -> list[int] | None:
-    """Spider's ``condition_cols``: [] means all columns; a list of lists means several accepted
-    gold results, of which the first is the one the gold SQL produces."""
+def reference_column_variants(condition_cols: object) -> list[list[int] | None]:
+    """Spider's ``condition_cols`` as a list of accepted column lists (``None``: all columns).
+
+    [] means all columns; a list of ints is one list; a list of lists gives several, one per
+    accepted gold result file, and Spider accepts a prediction that matches any of them (0.9: every
+    variant is applied; 0.7 took the first only)."""
     if not condition_cols:
-        return None
+        return [None]
     if isinstance(condition_cols, int):
-        return [condition_cols]
+        return [[condition_cols]]
     assert isinstance(condition_cols, list)
-    if condition_cols and isinstance(condition_cols[0], list):
-        return [int(c) for c in condition_cols[0]] or None
-    return [int(c) for c in condition_cols]
+    if isinstance(condition_cols[0], list):
+        return [[int(c) for c in variant] or None for variant in condition_cols]
+    return [[int(c) for c in condition_cols]]
+
+
+def reference_columns(condition_cols: object) -> list[int] | None:
+    """The first accepted column list (the 0.7 behaviour; kept for the owner-step scripts)."""
+    return reference_column_variants(condition_cols)[0]
+
+
+def benchmark_policy(variant: list[int] | None, ignore_order: bool) -> Any:
+    """The benchmark's comparison for one accepted column list."""
+    from isitright.packs.sql.models import ColumnComparisonPolicy, ComparisonPolicy, OrderingPolicy
+
+    ordering = OrderingPolicy.UNORDERED if ignore_order else OrderingPolicy.ORDERED
+    return ComparisonPolicy(
+        columns=ColumnComparisonPolicy.CONTAINED,
+        null_as_zero=True,
+        float_absolute_tolerance=0.01,
+        ordering=ordering,
+        reference_columns=variant,
+    ).model_copy(update={"effective_ordering": ordering})
+
+
+def accepted_by(
+    reference: dict, candidate: dict, variants: list[list[int] | None], ignore_order: bool
+) -> list[int]:
+    """Indexes of the variants under which the candidate's result matches the reference's. A
+    benchmark finding is one that no variant accepts, as Spider scores with any of its files."""
+    from isitright.packs.sql.comparison import ComparisonError, compare_results
+    from isitright.packs.sql.models import QueryResult
+
+    left, right = QueryResult.model_validate(reference), QueryResult.model_validate(candidate)
+    out = []
+    for index, variant in enumerate(variants):
+        try:
+            outcome = compare_results(
+                left,
+                right,
+                policy=benchmark_policy(variant, ignore_order),
+                reference_has_order_by=False,
+            )
+        except ComparisonError:
+            continue  # a variant that does not fit the reference's columns accepts nothing
+        if outcome.matches:
+            out.append(index)
+    return out
 
 
 def audit_one(task_id: str, out: Path, cap: float) -> dict:
@@ -76,17 +124,22 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
     constraints_path = HERE / "constraints" / f"{task_id}.yaml"
     constraints = load_constraint_schema(constraints_path) if constraints_path.exists() else None
     ordering = OrderingPolicy.UNORDERED if record["ignore_order"] else OrderingPolicy.ORDERED
+    variants = reference_column_variants(record["condition_cols"])
+    labels = (
+        ["benchmark"] if len(variants) == 1 else [f"benchmark[{i}]" for i in range(len(variants))]
+    )
     settings = {
-        "benchmark": CheckConfig(
+        label: CheckConfig(
             column_policy=ColumnComparisonPolicy.CONTAINED,
             null_as_zero=True,
             float_absolute_tolerance=0.01,
             ordering_policy=ordering,
-            reference_columns=reference_columns(record["condition_cols"]),
+            reference_columns=variant,
             wall_time_seconds=cap,
-        ),
-        "strict": CheckConfig(wall_time_seconds=cap),
+        )
+        for label, variant in zip(labels, variants, strict=True)
     }
+    settings["strict"] = CheckConfig(wall_time_seconds=cap)
     result: dict = {
         "id": task_id,
         "db": record["db"],
@@ -152,6 +205,13 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
                     "found_on": finding.fidelity.found_on,
                     "verified_on": finding.fidelity.verified_on,
                 }
+                if label != "strict":
+                    entry["finding"]["accepted_by_variants"] = accepted_by(
+                        finding.divergence["reference_result"],
+                        finding.divergence["candidate_result"],
+                        variants,
+                        record["ignore_order"],
+                    )
                 try:
                     entry["finding"]["replay_reproduced"] = replay_report(report)["reproduced"]
                     entry["finding"]["eval_cases_exported"] = len(export_eval_cases(report))
@@ -168,7 +228,42 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
             entry["error"] = f"{type(error).__name__}: {str(error)[:300]}"
         entry["wall_seconds"] = round(time.monotonic() - started, 1)
         result[label] = entry
+    if len(variants) > 1:
+        result["benchmark"] = combine_variants([result[label] for label in labels])
     return result
+
+
+def combine_variants(entries: list[dict]) -> dict:
+    """The benchmark verdict of a task with several accepted column lists: a finding counts only if
+    no accepted list takes the candidate's result on the finding's world (Spider accepts a
+    prediction that matches any of its gold files). Each variant's own audit is kept beside it."""
+    kept = [
+        e["finding"]
+        for e in entries
+        if e.get("status") == "COUNTEREXAMPLE_FOUND" and not e["finding"]["accepted_by_variants"]
+    ]
+    statuses = [e.get("status") for e in entries]
+    if kept:
+        status = "COUNTEREXAMPLE_FOUND"
+    elif "COUNTEREXAMPLE_FOUND" in statuses:
+        status = "NOT_FOUND_WITHIN_BUDGET"  # every finding is accepted under another list
+    elif all(s == statuses[0] for s in statuses):
+        status = statuses[0]
+    else:
+        status = "INCONCLUSIVE"
+    out: dict = {
+        "status": status,
+        "variants": len(entries),
+        "variant_statuses": statuses,
+        "findings_accepted_under_another_list": sum(
+            1
+            for e in entries
+            if e.get("status") == "COUNTEREXAMPLE_FOUND" and e["finding"]["accepted_by_variants"]
+        ),
+    }
+    if kept:
+        out["finding"] = kept[0]
+    return out
 
 
 def _worker_command(out: Path, task_id: str, cap: float) -> list[str]:
