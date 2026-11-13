@@ -5,6 +5,7 @@
 
 Usage:
     python -I run_demo.py <output directory> [--only bq001,ga002] [--cap 600]   # all tasks
+    python -I run_demo.py <output directory> --nested-scope column            # 0.7 scoping
     python -I run_demo.py <output directory> --task bq001                       # one task (worker)
 
 Every task is audited twice: under the benchmark's comparison (columns contained, NULL as zero,
@@ -105,7 +106,7 @@ def accepted_by(
     return out
 
 
-def audit_one(task_id: str, out: Path, cap: float) -> dict:
+def audit_one(task_id: str, out: Path, cap: float, nested_scope: str = "path") -> dict:
     from isitright.packs.sql import (
         CheckConfig,
         SqlInputError,
@@ -136,10 +137,11 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
             ordering_policy=ordering,
             reference_columns=variant,
             wall_time_seconds=cap,
+            nested_scope=nested_scope,
         )
         for label, variant in zip(labels, variants, strict=True)
     }
-    settings["strict"] = CheckConfig(wall_time_seconds=cap)
+    settings["strict"] = CheckConfig(wall_time_seconds=cap, nested_scope=nested_scope)
     result: dict = {
         "id": task_id,
         "db": record["db"],
@@ -150,6 +152,7 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
             "condition_cols": record["condition_cols"],
             "ignore_order": record["ignore_order"],
             "wall_time_cap_seconds": cap,
+            "nested_scope": nested_scope,
         },
     }
     for label, config in settings.items():
@@ -320,10 +323,17 @@ def run_all(out: Path, only: list[str] | None, cap: float) -> None:
 def main(argv: list[str]) -> None:
     out = Path(argv[0])
     cap = float(argv[argv.index("--cap") + 1]) if "--cap" in argv else DEFAULT_CAP
+    # the workers inherit the scope through the environment
+    scope = (
+        argv[argv.index("--nested-scope") + 1]
+        if "--nested-scope" in argv
+        else os.environ.get("ISITRIGHT_DEMO_NESTED_SCOPE", "path")
+    )
+    os.environ["ISITRIGHT_DEMO_NESTED_SCOPE"] = scope
     if "--task" in argv:
         task_id = argv[argv.index("--task") + 1]
         out.mkdir(parents=True, exist_ok=True)
-        result = audit_one(task_id, out, cap)
+        result = audit_one(task_id, out, cap, scope)
         (out / f"{task_id}.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
         return
     only = argv[argv.index("--only") + 1].split(",") if "--only" in argv else None

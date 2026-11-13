@@ -37,7 +37,7 @@ jobs:
       - run: uv run python tools/export_schemas.py --check
       - run: uv run pytest
       - name: Measure the memory-limit overshoot (information for docs/data.md)
-        if: matrix.python-version == '3.12' && runner.os != 'Windows'
+        if: ${{ !cancelled() && matrix.python-version == '3.12' && runner.os != 'Windows' }}
         continue-on-error: true
         run: uv run python tools/measure_memory.py --repeat 5
       - run: uv build
