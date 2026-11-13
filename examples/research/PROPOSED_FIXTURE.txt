@@ -1,0 +1,4 @@
+Proposed fixture: pending owner review.
+The corpus (corpus/corpus.jsonl) and task (task.json) are invented subjects written by Claude. They
+encode semantics: a fact (the bridge's completion year), distractors with the same sentence shape, a
+supersedes chain, a syndicated duplicate, a retracted source and a recent irrelevant document.

@@ -19,6 +19,7 @@ from isitright.core.evidence import (
     policy_triggered,
 )
 from isitright.packs.data.cli import data_app
+from isitright.packs.research.cli import research_app
 from isitright.packs.sql import (
     CheckConfig,
     InputError,
@@ -80,6 +81,7 @@ app.add_typer(agents_app, name="agents")
 hints_app = typer.Typer(help="Propose hints with a model, then confirm them (labeled proposed).")
 agents_app.add_typer(hints_app, name="hints")
 app.add_typer(data_app, name="data")
+app.add_typer(research_app, name="research")
 
 
 class Engine(StrEnum):

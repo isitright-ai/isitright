@@ -1,6 +1,6 @@
 # Report schema
 
-One versioned JSON schema covers all packs: [`schemas/report-0.6.schema.json`](https://github.com/isitright-ai/isitright/blob/main/schemas/report-0.6.schema.json),
+One versioned JSON schema covers all packs: [`schemas/report-0.8.schema.json`](https://github.com/isitright-ai/isitright/blob/main/schemas/report-0.8.schema.json),
 exported from `isitright.core.evidence.AuditReport` by `tools/export_schemas.py`. Pack-specific
 detail lives under `extensions` and is not part of the common contract.
 
@@ -9,16 +9,18 @@ between pre-1.0 releases.
 
 ## Compatibility
 
-Schema `0.6` replaces `0.5`. Reports written as `0.4` or `0.5` still load: `replay` and `export` read
-them, because every field added since is optional. Older schemas are removed. 0.6 adds `findings[].mode`
-(`frozen_program` or `live_agent`) and `findings[].live` (see below).
+Schema `0.8` replaces `0.6` (0.7 added no field and kept 0.6). Reports written as `0.4`, `0.5` or `0.6` still load: `replay` and `export` read
+them, because every field added since is optional. Older schemas are removed. 0.6 added `findings[].mode`
+(`frozen_program` or `live_agent`) and `findings[].live` (see below). 0.8 adds the mode `frozen_trace`
+(a recorded research run replayed, its report not regenerated) and `schema_version` `"0.8"`; the research
+pack's other fields are under `extensions.research` (see below).
 
 ## AuditReport
 
 | Field | Contents |
 |---|---|
-| `schema_version` | `"0.6"` (`"0.4"` or `"0.5"` when read from an older report) |
-| `pack` | `sql`, `mcp` or `data` |
+| `schema_version` | `"0.8"` (`"0.4"`, `"0.5"` or `"0.6"` when read from an older report) |
+| `pack` | `sql`, `mcp`, `data` or `research` |
 | `kind` | `case` (one SQL pair), `suite`, or `scenario` (one agent scenario) |
 | `cases` | A list of `CaseReport` |
 | `totals` | Counts per status |
@@ -83,7 +85,7 @@ the replayed program) and `verified_on` is `LIVE_AGENT` once the agent itself ra
 
 ## Warehouse reports (0.7)
 
-0.7 adds no field to the report schema; the schema stays 0.6. Warehouse data is in
+0.7 added no field to the report schema; the schema stayed 0.6. Warehouse data is in
 `extensions.sql`:
 
 | Key | Content |
@@ -141,3 +143,27 @@ from isitright.core.evidence import AuditReport
 
 report = AuditReport.model_validate_json(open("report.json", encoding="utf-8").read())
 ```
+
+## Research reports (0.8)
+
+Research data is in `extensions.research`:
+
+| Key | Content |
+|---|---|
+| `mode` | `live` (the subject ran in each world), `frozen` (a recorded run replayed) or `baseline` (the baseline stopped the audit) |
+| `subject`, `subject_statement` | Who produced the run (`stand_in`, `recorded` or `live_agent`), the name and who wrote it, and how it was used. A stand-in is always labeled |
+| `retrieval` | The scorer, the document count, the tools and the fidelity (`SIMULATED`) |
+| `gold` | The gold answer if one was given, and whether it was checked against anything |
+| `baseline` | Runs, reports, the gate that stopped the audit if any, the citation levels reached, the queries and the opened documents |
+| `flip_table` | Per mutator (or composition): worlds run, answers changed, expectations not met, unobservable changes, and the behaviors `FOLLOWED`, `NOT_RETRIEVED`, `REJECTED` |
+| `unobservable_changes` | Changes no query could retrieve |
+| `proposed_classification` | A proposal by the implementing assistant per finding; attribution stays `UNDETERMINED` |
+| `budget` | What the run spent |
+
+A finding's `divergence` has the question, both reports, the expected behavior, the behavior, the
+citation check (`level_reached`, failures, `unquoted_citations`), whether a tie in scores decided a rank, the
+documents of the shown world, the trust label of the reference, and the ids of the world the
+finding was found on and of the world shown (they differ when the finding was minimized).
+`world_diff` shows an edited document as a `span` (offset, removed text, inserted text).
+`worlds[].screening` carries the replay class of a world (`WRONG_IF_UNCHANGED`, `STALE`,
+`RIGHT_IF_UNCHANGED`, `UNSCREENABLE`) as ranking input, never a verdict.

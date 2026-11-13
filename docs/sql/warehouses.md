@@ -272,6 +272,11 @@ Spider 2.0's evaluator needs options the strict default does not have, all recor
 `--reference-columns 0,2` (only those reference columns), `--column-vectors`, `--null-as-zero`, and
 `--float-atol 0.01`. With unordered comparison, columns are compared as independent sorted vectors.
 
+## Demos
+
+- `examples/sql/bigquery/`: a constructed schema and two queries, offline, a few seconds.
+- `examples/sql/spider2/`: the BigQuery tasks of Spider 2.0-lite whose published gold SQL passes in a published schemagate run (73 selected by a rule fixed before any audit ran; the rule and commits are in `selection.json`). Each task is audited from its table definitions only, under Spider's comparison settings and under isitright's strict default. Findings are emulated; none is confirmed on BigQuery unless you run the BigQuery steps. The scripts are `prepare.py` (selects and copies from two local clones), `run_demo.py` and `bigquery_steps.py`; the third-party licences are in `licenses/`. These are proposed fixtures, not a benchmark result.
+
 ## Not supported in 0.7
 
 Wildcard tables (rewritten in the Spider demo copy only), scripting (`DECLARE`, multiple

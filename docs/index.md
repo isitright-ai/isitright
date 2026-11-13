@@ -94,8 +94,10 @@ The full field-by-field explanation is in [Evidence](concepts/evidence.md).
 
 | You have | Start here | What you provide |
 |---|---|---|
-| Text-to-SQL output: a gold query and a generated query per question | [Quick start: SQL](get-started/sql.md) | A DDL (PostgreSQL or SQLite), a SQLite file, the query pairs as JSONL, optionally domain rules |
+| Text-to-SQL output: a gold query and a generated query per question | [Quick start: SQL](get-started/sql.md) | A DDL (PostgreSQL, BigQuery, Presto/Trino or SQLite), a SQLite file, the query pairs as JSONL, optionally domain rules |
 | A tool-using agent that talks MCP | [Quick start: agents](get-started/agents.md) | A [scenario](agents/write-a-scenario.md) (service, tools, task, oracle) and a command that runs your agent |
+| An agent that writes and runs Python over data files | [Data analysis agents](data.md) | A task directory (question, data files, a gold program) and recorded programs or your agent |
+| A research agent that answers from a frozen corpus with citations | [Quick start: research](get-started/research.md) | A corpus (JSONL) and a task; no API key needed for the stand-in agents |
 | An eval set you want to onboard faster | [Onboarding with an LLM](onboarding/index.md) | Prompt templates that draft [hints](concepts/hints.md), constraints and scenarios for you to review |
 | Unfamiliar terms | [Concepts](concepts/index.md) | Nothing. A guided vocabulary with one running example |
 | A different domain | [Write a mutator or host](guides/extending.md) | Python; the extension API is experimental |
@@ -113,6 +115,7 @@ flowchart LR
     M --> E[Counterexample<br/>replay, add to evals]
 ```
 
-Two packs ship today, on one shared core: one for text-to-SQL (SQLite, PostgreSQL, and DuckDB as
-labeled emulation), one for tool-using agents over MCP. [How an audit works](concepts/how-it-works.md)
+Four packs ship today, on one shared core: text-to-SQL (SQLite, PostgreSQL, BigQuery and
+Presto/Trino, with DuckDB as labeled emulation), tool-using agents over MCP, data-analysis agents,
+and research agents that answer from a frozen corpus with citations. [How an audit works](concepts/how-it-works.md)
 explains the loop in order.

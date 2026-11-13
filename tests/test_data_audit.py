@@ -24,7 +24,7 @@ from isitright.packs.data.task import TaskError, load_task
 from tests.data_factories import CORRECT, DROPNA_FORGOTTEN, make_task, program
 
 CONFIG = AuditConfig(attempts=80, trust_code=True, reuse=20, timeout_seconds=20.0)
-SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.6.schema.json"
+SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.8.schema.json"
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +81,7 @@ def test_the_report_validates_against_the_schema_and_exports_an_eval_case(
     write_report(report, tmp_path / "out", audit.artifacts)
     payload = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
     Draft202012Validator(json.loads(SCHEMA.read_text(encoding="utf-8"))).validate(payload)
-    assert payload["schema_version"] == "0.6"
+    assert payload["schema_version"] == "0.8"
     assert (tmp_path / "out" / payload["cases"][0]["findings"][0]["replay"]["artifact"]).is_file()
     cases = export_eval_cases(AuditReport.model_validate(payload), tmp_path / "eval")
     directory = tmp_path / "eval" / cases[0].case_id

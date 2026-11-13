@@ -373,6 +373,7 @@
             {
               "enum": [
                 "frozen_program",
+                "frozen_trace",
                 "live_agent"
               ],
               "type": "string"
@@ -1434,11 +1435,12 @@
       "type": "string"
     },
     "schema_version": {
-      "default": "0.6",
+      "default": "0.8",
       "enum": [
         "0.4",
         "0.5",
-        "0.6"
+        "0.6",
+        "0.8"
       ],
       "title": "Schema Version",
       "type": "string"

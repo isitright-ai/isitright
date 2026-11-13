@@ -62,7 +62,7 @@ as your rules. [Validity and fidelity](validity-and-fidelity.md) has the full ta
 |---|---|
 | `NATIVE_ISOLATED` | The real engine (or your real service code) on a disposable copy |
 | `EMULATED` | A different engine ran translated SQL (DuckDB standing in for PostgreSQL). Treat as a candidate until it says `verified_on: NATIVE_ISOLATED` |
-| `SIMULATED` | Handlers you wrote stand in for the service. The finding is about your stand-in |
+| `SIMULATED` | Handlers you wrote stand in for the service. The finding is about your stand-in. In the research pack the corpus tools (`search`, `open`) are simulated by a frozen BM25, so a finding describes that retriever, not the one your agent uses in production |
 
 ### `stability`: for live agents
 

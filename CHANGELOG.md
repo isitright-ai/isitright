@@ -3,6 +3,63 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
+## 0.8.0 - Research agents
+
+Agents that answer a question by searching a frozen corpus and citing documents are audited by
+planting, removing, editing, superseding and retracting documents. See `docs/research/index.md`.
+Everything reported about stand-in agents describes the stand-ins; the release was built and tested
+offline, without a model, an account or a real research agent.
+
+### Added
+
+- **`isitright research check | replay | export`.** Subjects: a built-in stand-in agent written by
+  Claude, an agent as code (`--agent`), an agent command that uses the MCP server
+  (`--agent-command`), or a recorded run replayed frozen (`--recorded-run`). Live subjects get the
+  0.5 budgets, repeated runs, the paired sequential test and noise-tolerant minimization; `--screen`
+  replays the baseline trace first and skips worlds that cannot matter.
+- **The corpus as a world.** A `documents` collection in the core state (stable id, typed
+  metadata, opaque text); validity rules over metadata (supersede dates, reference cycles, a
+  cutoff, visible retractions); `OBSERVABLE` computed per world from retrieval, so a change no
+  query can retrieve is `UNOBSERVABLE`.
+- **Frozen retrieval and two tools.** A BM25 whose statistics come from the original corpus and do
+  not move when a world mutates; `search` and `open` only, in process or as a stdio MCP server
+  (`python -m isitright.packs.research.serve`, needs the `mcp` extra); anything else is refused.
+- **Mutators.** `plant`, `contradict` (both tie orders), `supersede`, `retract`, `remove`,
+  `duplicate`, `out_of_scope`, and the response edits `reorder` and `snippets`, with a constructive
+  or relational oracle each. A reference procedure over the corpus computes the expected behavior,
+  so a world where the right answer changes is a control and one where it stays is a trap. An
+  answer must be one the expectation recognizes: a stated conflict never rescues an unrelated
+  answer. Number and date answers must be exact (one value, no negation); anything else is
+  `CANNOT_JUDGE`.
+- **Behavior labels that respect exposure.** `FOLLOWED` (the agent was shown the added claim and
+  adopted it), `REJECTED` (shown, not adopted), `NOT_EXPOSED` (the document appeared as an id and
+  title only), `MATCHED_WITHOUT_EXPOSURE`, `EXPOSURE_UNKNOWN` (a snippet cut before the claim) and
+  `NOT_RETRIEVED`. A snippet shows the claim only if it contains the mutation's own sentence.
+  Beneath the labels, per added document: `appeared`, `claim_exposed`, `adopted`, `cited`.
+- **Citation checks.** L0 (the cited id exists) and L1 (the quote occurs in the document); L2
+  (support) is not judged. Reported beside them, never changing the level: claim coverage,
+  retrieval provenance (the id appeared in the trace) and `cited_quote_exposed` (the cited sentence
+  appeared in tool output; a valid citation does not show the agent was shown it).
+- **Reporting.** A flip table per mutator (worlds, answers changed, expectations not met, judged
+  and unjudged runs, the observations above); `CANNOT_JUDGE` runs counted per mutator with
+  truncated examples and every answer in `cannot-judge.jsonl` beside the report; for a recorded
+  run, `frozen_fidelity` (how closely the simulated retrieval reproduced the recorded results) and
+  a note of which conclusions depend on it. Findings carry the trust label of the gold answer.
+- **Stand-in agents** written by Claude (careful, credulous, snippet reader, non-retrieving,
+  refusing, skeptic, ambiguous, mixed), with declared behaviors; every result says which subject
+  produced it.
+- **Core.** A text-span entry in `diff_states` for long text values (`text_span`). The core's
+  search, minimizer and replay run unchanged on documents and on a tree of text files.
+- **Examples.** `examples/research/`: a constructed corpus and task (proposed fixtures), a scripted
+  command agent, and the BrowseComp-Plus demo scripts.
+
+### Changed (breaking)
+
+- Report schema `0.8` replaces `0.6` (`schemas/report-0.8.schema.json`; the 0.6 file is removed).
+  Additive: `findings[].mode` may be `frozen_trace`. Reports written as 0.4, 0.5 and 0.6 still load.
+  Replay artifacts of version 0.4 to 0.6 still load; new ones are written as 0.8.
+- `isitright --version` reports 0.8.0.
+
 ## 0.7.0 - Warehouse dialects
 
 BigQuery and Presto/Trino queries are audited from table definitions alone, without moving data.

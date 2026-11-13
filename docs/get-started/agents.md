@@ -153,7 +153,7 @@ minutes, `NOT_FOUND_WITHIN_BUDGET`, `DISCRIMINATING`). `--worlds all` runs both 
 
 ## 4. Read the report
 
-The run writes `report.json` (schema 0.5) and `report.md` to the output directory. Start with the
+The run writes `report.json` (schema 0.8) and `report.md` to the output directory. Start with the
 summary table: every world run, with its role, [validity tiers](../concepts/validity-and-fidelity.md#validity-tiers), oracle outcome and run counts against
 the baseline. Then the findings: for each, the minimal world change (`world_diff`), the mutation path
 with the hints behind it, and `stability`.

@@ -10,7 +10,8 @@ and its limits with every result.
 |---|---|---|
 | `REFERENCE_PROGRAM` | Run a reference program or procedure on the changed world | SQL: the reference query. Agents: the [scenario](../agents/write-a-scenario.md)'s reference procedure |
 | `INVARIANT` | A property that must hold in every run | Agents: "no refund exceeds the amount paid", "writes touch only the task's customer" |
-| `RELATIONAL`, `CONSTRUCTIVE`, `JUDGE` | A metamorphic relation; a world built so the answer is known; an LLM | Reserved values in the report schema. No pack ships them yet |
+| `RELATIONAL`, `CONSTRUCTIVE` | A metamorphic relation (the answer must not change); a world built so the right behavior is known | The research pack: a reference procedure over the corpus says what the report should be after each mutation (a newer edition: use it or say so; a planted conflict: keep the answer or say so), and a relation covers duplicates, irrelevant additions and reordered results |
+| `JUDGE` | An LLM | Reserved; no judge is run. Whether a cited document supports a claim (level L2) is not judged |
 
 A scenario's oracle usually combines two: invariants that must hold everywhere, and a reference
 procedure that drives the tools the way a careful agent would. The agent's run meets the oracle when
@@ -79,6 +80,12 @@ A frequent source: a world exactly on a numeric cut-off. A `threshold` [hint](hi
 the cut-off value falls on (`holds` and `inclusive`); without that, the world is `CANNOT_JUDGE`,
 because `<` versus `<=` in the reference would otherwise decide the answer. See
 [Hints](hints.md).
+
+In the research pack `CANNOT_JUDGE` also covers an answer that is not an exact value (prose with
+two numbers, a date after a negation) and a world where no right answer is defined (the original
+source is gone and a planted document is the only one left). Such runs are counted per mutator beside
+the judged ones, with examples in the report and every answer in `cannot-judge.jsonl`; not judged is
+not right, and a high count in one mutator means the audit is incomplete there.
 
 ## Comparators
 

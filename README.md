@@ -6,7 +6,7 @@ one as a minimized, replayable counterexample. You can add each counterexample b
 as a new case.
 
 **Documentation: [docs.isitright.ai](https://docs.isitright.ai)**: quick starts, concepts, guides for
-both packs, and prompt templates that draft hints, constraints and scenarios for you to review.
+each pack, and prompt templates that draft hints, constraints and scenarios for you to review.
 
 ## What it does
 
@@ -26,12 +26,13 @@ days ago: the right behavior is to decline, and the agent does. An agent that de
 passes too. isitright reruns the case in a world where the booking is 23 hours 59 minutes old, where
 the right answer is to cancel, and reports the runs in which your agent did not.
 
-Three packs ship on one shared core:
+Four packs ship on one shared core:
 
 | You have | Use | World | Where it runs |
 |---|---|---|---|
 | A tool-using agent that talks MCP | `isitright agents run` | An entity state behind MCP tools | An MCP server per run (`SIMULATED`) |
 | Text-to-SQL output (reference and candidate queries) | `isitright sql check` / `suite` | A database, or DDL for a warehouse | SQLite or PostgreSQL (`NATIVE_ISOLATED`), DuckDB (`EMULATED`); BigQuery and Presto/Trino searched on DuckDB and confirmed on your engine with the state inlined (`NATIVE_INLINE`) |
+| A research agent that answers from a frozen corpus with citations | `isitright research check` | A corpus of documents (JSONL) and a task | A simulated frozen BM25 behind `search` and `open` (`SIMULATED`); stand-in agents, recorded runs or your agent command |
 | A data-analysis agent that writes Python over data files | `isitright data check` (recorded programs), `data audit` (the agent) | Tables, one row per entity | A limited child process (`NATIVE_ISOLATED`), not a sandbox |
 
 **What a finding means.** isitright runs your subject (the agent or the generated query) and an
@@ -64,7 +65,7 @@ engine, so you install them on purpose: `pip install "isitright[bigquery]"` or
 `pip install "isitright[trino]"`. Searching and reporting for BigQuery, Presto and Trino
 queries needs neither.
 
-The quick starts below use files from `examples/`, which the package does not ship:
+The quick starts below use files from `examples/`, which the package does not ship. Further demos there: `examples/sql/bigquery/` (offline, from DDL) and `examples/sql/spider2/` (Spider 2.0-lite BigQuery tasks, see [BigQuery and Presto/Trino](https://docs.isitright.ai/sql/warehouses/)):
 
 ```console
 git clone https://github.com/isitright-ai/isitright.git

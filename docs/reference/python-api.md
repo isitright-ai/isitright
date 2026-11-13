@@ -13,14 +13,19 @@ from isitright import check, check_suite, CheckConfig, SuiteCase, SqlInputError
 ### `check`
 
 ```python
-check(*, reference_sql, candidate_sql, engine="sqlite", database=None, ddl=None,
+check(*, reference_sql, candidate_sql, engine=None, dialect=None, database=None, ddl=None,
       question=None, case_id=None, constraints=None, constraints_file=None,
-      config=None, validator=None, verify_native=None) -> CaseReport
+      config=None, validator=None, verify_native=None, params=None, confirm=None,
+      gold_trusted=None, gold_trust_basis=None) -> CaseReport
 ```
 
 | Argument | Notes |
 |---|---|
-| `engine` | `"sqlite"`, `"postgres"` or `"duckdb"` |
+| `engine` | `"sqlite"`, `"postgres"` or `"duckdb"`: where states run. Defaults to the dialect's engine (SQLite when neither is given) |
+| `dialect` | `"sqlite"`, `"postgres"`, `"bigquery"`, `"presto"` or `"trino"`: the SQL the queries are written in. BigQuery, Presto and Trino need `ddl` (table definitions), and the search runs on DuckDB. See [BigQuery and Presto/Trino](../sql/warehouses.md) |
+| `params` | A dict that fills `<NAME>` and `{{ NAME }}` in the queries ([query templates](../sql/warehouses.md#query-templates)) |
+| `confirm` | A native host that re-runs findings on your engine with the state written into the query text: `BigQueryHost`, `TrinoHost` or `ConnectionHost` from `isitright.packs.sql.native`. Each refuses text that still names a real table. `BigQueryHost` and `TrinoHost` need the `bigquery` or `trino` extra |
+| `gold_trusted`, `gold_trust_basis` | Whether you know the reference is right, and how you decided. See [Audit a suite](../sql/audit-a-suite.md) |
 | `database`, `ddl` | Exactly one. A SQLite file path, or a DDL string |
 | `constraints`, `constraints_file` | JSON Schema [domain rules](../sql/domain-constraints.md) as a dict, or a YAML or JSON file |
 | `config` | A `CheckConfig`. See below |
@@ -33,8 +38,9 @@ cannot run, and raises `SqlInputError` for unsupported PostgreSQL or DuckDB quer
 ### `check_suite`
 
 ```python
-check_suite(*, cases, engine="sqlite", database=None, ddl=None, constraints=None,
-            constraints_file=None, config=None, validator=None, verify_native=None) -> AuditReport
+check_suite(*, cases, engine=None, dialect=None, database=None, ddl=None, constraints=None,
+            constraints_file=None, config=None, validator=None, verify_native=None,
+            params=None, confirm=None) -> AuditReport
 ```
 
 `cases` is a path to a JSONL file or a list of `SuiteCase`. A suite turns both unsupported-query
@@ -58,6 +64,12 @@ report = check_suite(cases=suite, database="shop.sqlite", config=CheckConfig(max
 | `ordering_policy` | `OrderingPolicy.AUTO` |
 | `float_mode` | `FloatComparisonMode.ISCLOSE` |
 | `float_relative_tolerance`, `float_absolute_tolerance` | `1e-9`, `1e-12` |
+| `column_vectors` | `False`. With unordered comparison, compare each column as its own sorted vector |
+| `null_as_zero` | `False`. Count NULL as 0 before comparing |
+| `reference_columns` | `None`. Compare only these reference columns (0-based) |
+| `wall_time_seconds` | `None`. Stop the search after this long; the report says the time cap stopped it |
+
+`column_policy` also accepts the `contained` policy. The last four fields and `contained` exist for benchmark-style comparison: see [BigQuery and Presto/Trino](../sql/warehouses.md#comparing-the-way-a-benchmark-does).
 
 ### Reading the result
 
@@ -99,6 +111,32 @@ trusted use only. See [Write a scenario](../agents/write-a-scenario.md).
 
 Running an audit from Python is done through the CLI (`isitright agents run`), which owns the
 runner, the report and the output directory.
+
+## Data pack
+
+Needs the `data` extra. Importing `isitright.packs.data` does not import pandas.
+
+```python
+from pathlib import Path
+from isitright.packs.data.task import load_task
+from isitright.packs.data.audit import DataAudit, AuditConfig
+from isitright.packs.data.programs import load_programs
+from isitright.packs.data.live import run_live, LiveConfig
+```
+
+| Name | Notes |
+|---|---|
+| `load_task(directory)` | Reads a [task directory](../data.md) into a `DataTask` |
+| `DataAudit(task, config)` | A context manager. Prepares the task once and checks recorded programs against it. `AuditConfig` has `seed`, `attempts`, `depth`, `timeout_seconds`, `memory_mb`, `trust_code` (must be `True` to run any program), `cache_dir` (resume an interrupted audit) and `parallel` |
+| `DataAudit.check_frozen(program)` | Replays one `RecordedProgram` on generated worlds and returns a `CaseReport` |
+| `load_programs(path)` | Reads recorded programs from a JSONL file |
+| `run_live(audit, agent, program=..., config=..., budget=...)` | Runs a `DataAgent` (`name`, `model`, `solve(question, directory)`) on the ranked worlds, under the budgets and sequential test of `agents run`. `LiveConfig` has the trial and world limits |
+
+Programs run in a separate, limited process that is not a sandbox: see [Data analysis agents](../data.md).
+
+## Research pack
+
+The research pack is driven from the CLI (`isitright research`). Its modules are `isitright.packs.research`; the surface is experimental and not listed here. See [Research agents](../research/index.md).
 
 ## Evidence and eval cases
 

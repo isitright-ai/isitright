@@ -4,13 +4,16 @@ isitright needs Python 3.11 or newer.
 
 ```console
 python -m pip install isitright                 # the core and SQLite
-python -m pip install "isitright[mcp]"          # + the agent pack (MCP)
+python -m pip install "isitright[mcp]"          # + the agent pack (MCP), and the research pack's stdio server
 python -m pip install "isitright[postgres]"     # + native PostgreSQL on a disposable local server
 python -m pip install "isitright[duckdb]"       # + DuckDB, as labeled emulation of PostgreSQL
 python -m pip install "isitright[bigquery]"     # + BigQuery client, to confirm findings (NOT in [all])
 python -m pip install "isitright[trino]"        # + Trino client, to confirm findings (NOT in [all])
 python -m pip install "isitright[all]"          # all of the above except bigquery and trino
 ```
+
+The research pack runs with the base install: stand-in agents, agents given as code and recorded
+runs need no extra. Only an agent command that talks to the corpus tools over MCP needs `[mcp]`.
 
 `isitright[all]` does **not** include `bigquery` or `trino`. Those two extras install a cloud
 client (about thirty packages for BigQuery) that you need only to confirm a finding on your own
