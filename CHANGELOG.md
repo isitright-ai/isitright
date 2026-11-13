@@ -3,7 +3,7 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
-## 0.8.0.dev0 - Research agents
+## 0.8.0 - Research agents
 
 Agents that answer a question by searching a frozen corpus and citing documents are audited by
 planting, removing, editing, superseding and retracting documents. See `docs/research/index.md`.
@@ -58,7 +58,7 @@ offline, without a model, an account or a real research agent.
 - Report schema `0.8` replaces `0.6` (`schemas/report-0.8.schema.json`; the 0.6 file is removed).
   Additive: `findings[].mode` may be `frozen_trace`. Reports written as 0.4, 0.5 and 0.6 still load.
   Replay artifacts of version 0.4 to 0.6 still load; new ones are written as 0.8.
-- `isitright --version` reports 0.8.0.dev0.
+- `isitright --version` reports 0.8.0.
 
 ## 0.7.0 - Warehouse dialects
 
