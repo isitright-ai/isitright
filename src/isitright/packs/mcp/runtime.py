@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from isitright.core.mutations import (
+    EditError,
     ResponseEdit,
     Timer,
     World,
@@ -73,7 +74,13 @@ class ServiceRuntime:
             if timer.name not in self._fired and timer.trigger.matches(name, arguments):
                 self._fired.add(timer.name)
                 before = self.scenario.layout.from_service(self.service, self._state_keys)
-                after = apply_edits(before, timer.edits)
+                try:
+                    after = apply_edits(before, timer.edits)
+                except EditError as error:
+                    # a composed world can remove what the timer was to change: the timer finds
+                    # nothing to act on, which the trace says; before 0.9 the run crashed here
+                    changes.append({"timer": timer.name, "not_applied": str(error)})
+                    continue
                 self.service = self.scenario.layout.to_service(after)
                 changes.append(timer.record or {"edits": edits_to_json(timer.edits)})
         for interference in self.interferences:
