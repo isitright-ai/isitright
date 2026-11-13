@@ -60,19 +60,22 @@ quality of this tier is the quality of your rules. With no [domain rules](../sql
 ## Execution fidelity
 
 A **host** is what makes a changed world available to your [subject](subjects.md) and runs it: a disposable SQLite
-or PostgreSQL instance, an MCP server process serving the world's state, a simulation. Every host
+or PostgreSQL instance, an MCP server process serving the world's state, a limited child process that runs a
+Python program, a simulation. Every host
 declares how faithfully it reproduces the real system, and every result records it, so you know how
 much to trust an output.
 
 | Fidelity | Meaning | Used by |
 |---|---|---|
-| `NATIVE_ISOLATED` | The target engine or your real service code, on a disposable instance | SQLite; PostgreSQL; external MCP servers |
-| `EMULATED` | A different engine runs translated programs | PostgreSQL SQL on DuckDB |
-| `SIMULATED` | Hand-written handlers stand in for a service | The default for MCP scenarios |
-| `NATIVE_INLINE`, `GENERATED`, `REPLAY_ONLY` | Reserved for later packs and hosts | |
+| `NATIVE_ISOLATED` | The target engine or your real service code, on a disposable instance | SQLite; PostgreSQL; external MCP servers; the data pack's child process (not a sandbox) |
+| `NATIVE_INLINE` | Your own engine runs the query with the state written into the query text; no table is created there | Confirmation of BigQuery, Presto and Trino findings (BigQuery, Trino, or a function you supply) |
+| `EMULATED` | A different engine runs translated programs | PostgreSQL, BigQuery, Presto and Trino SQL on DuckDB |
+| `SIMULATED` | Hand-written handlers stand in for a service | The default for MCP scenarios; the research pack's frozen BM25 corpus tools |
+| `GENERATED`, `REPLAY_ONLY` | Reserved for later hosts | |
 
 When an emulated finding is re-executed on native PostgreSQL, the result records `found_on:
-EMULATED` and `verified_on: NATIVE_ISOLATED`. A divergence that does not reproduce natively is an
+EMULATED` and `verified_on: NATIVE_ISOLATED`; on your BigQuery, Trino or own engine it records
+`verified_on: NATIVE_INLINE`. A divergence that does not reproduce natively is an
 **emulation artifact**, excluded from the counterexamples and never failing CI. See
 [Engines](../sql/engines.md).
 

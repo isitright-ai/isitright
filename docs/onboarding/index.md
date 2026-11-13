@@ -5,7 +5,8 @@ An audit has a few inputs that nobody has written down yet: [domain rules](../sq
 minutes from material you already have, and you review the draft.
 
 This section gives you prompt templates for that, and says where the drafts need your judgment.
-Nothing here is required. isitright itself never calls a model.
+Nothing here is required. isitright itself never calls a model. The templates cover the SQL and agent
+packs; the [data](../data.md) and [research](../research/index.md) packs have no templates yet.
 
 ## What is manual, and what can be drafted
 
@@ -59,7 +60,7 @@ Prompts work better when the model knows what isitright is. Either point it at
 [`llms.txt`](https://docs.isitright.ai/llms.txt) or paste this primer at the top of the session:
 
 ```text
-You are helping me set up isitright 0.5.1, a tool that audits agent evals. It takes a passing eval
+You are helping me set up isitright (version 0.8), a tool that audits agent evals. It takes a passing eval
 case and searches for valid changes to the world (a database, a service's state) under which the
 pass no longer holds. It needs:
 - a world spec: an entity schema (collections with typed fields, keys, references), constraints
@@ -67,7 +68,8 @@ pass no longer holds. It needs:
 - hints: facts from the task text that tell the search which entities and fields matter. Kinds:
   lookup {collection, fields, value}, ordering {collection, field, direction asc|desc},
   gate {collection, field, allows, action}, scope {collection, where}, threshold {path, value} or
-  {collection, count}, json_path {path, same_as};
+  {collection, count}, json_path {path, same_as}, and for data tasks column {collection, field},
+  literal {path, value}, tolerance {basis, abs and/or rel};
 - an oracle: invariants and a reference procedure that recompute what is right in a changed world.
 A disagreement between agent and oracle is evidence, not a verdict on who is wrong. Drafts you write
 will be reviewed by me. Where something is ambiguous, say so and ask, or list it as an assumption.

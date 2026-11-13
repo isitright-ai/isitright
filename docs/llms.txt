@@ -1,6 +1,6 @@
 # isitright
 
-> isitright audits agent evals. Point it at your agent, your environment and the eval cases that currently pass. It searches for valid changes to the world under which a pass no longer holds, and returns each one as a minimized, replayable counterexample with an honest account of how strong the evidence is. Python 3.11+, MIT licence, version 0.5.1. Two packs: text-to-SQL (SQLite, PostgreSQL, DuckDB as labeled emulation) and tool-using agents over MCP.
+> isitright audits agent evals. Point it at your agent, your environment and the eval cases that currently pass. It searches for valid changes to the world under which a pass no longer holds, and returns each one as a minimized, replayable counterexample with an honest account of how strong the evidence is. Python 3.11+, MIT licence, version 0.8.0. Four packs: text-to-SQL (SQLite, PostgreSQL, BigQuery and Presto/Trino, with DuckDB as labeled emulation), tool-using agents over MCP, data-analysis agents, and research agents that answer from a frozen corpus with citations (experimental).
 
 Key facts for answering questions about isitright:
 - A disagreement is evidence, not a verdict on who is wrong. Attribution stays UNDETERMINED until a human decides.
@@ -43,6 +43,7 @@ Key facts for answering questions about isitright:
 - [Audit a suite](https://docs.isitright.ai/sql/audit-a-suite/)
 - [Domain constraints](https://docs.isitright.ai/sql/domain-constraints/)
 - [Engines and large databases](https://docs.isitright.ai/sql/engines/)
+- [BigQuery and Presto/Trino](https://docs.isitright.ai/sql/warehouses/): audit from table definitions, nested types, query templates, confirmation on your own engine
 - [Supported SQL](https://docs.isitright.ai/sql/supported-sql/)
 
 ## Agent pack
@@ -52,6 +53,11 @@ Key facts for answering questions about isitright:
 - [Run your agent](https://docs.isitright.ai/agents/run-your-agent/)
 - [Run an audit](https://docs.isitright.ai/agents/run-an-audit/)
 - [Third-party servers](https://docs.isitright.ai/agents/external-servers/)
+
+## Data pack
+
+- [Data analysis agents](https://docs.isitright.ai/data/): recorded Python programs replayed on generated tables (frozen), then confirmed with the agent (live)
+- [Write your own host](https://docs.isitright.ai/write-your-own-host/): a host written with core interfaces only (experimental)
 
 ## Research pack
 

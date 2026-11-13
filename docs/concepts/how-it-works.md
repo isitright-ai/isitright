@@ -20,13 +20,13 @@ worlds must stay valid, and the oracle can itself be wrong. [About](../about.md)
 
 ## The five inputs
 
-| Input | What it is | SQL pack | Agent pack |
-|---|---|---|---|
-| **World spec** | What states of the world can exist | A schema (DDL or a SQLite file) and a target engine | A scenario's [entity schema](worlds-and-mutations.md#the-entity-model), tools and service parameters |
-| **Constraints** | Which states are valid | Keys, types, foreign keys, plus domain rules you write | The same, plus the service's own validity rules |
-| **Task** | What the agent was asked | The question | The task text |
-| **Subject** | What is under test | The candidate query | Your agent, run live |
-| **Oracle** | What is right in a changed world | The reference query, re-run on each world | Invariants and a reference procedure, re-run on each world |
+| Input | What it is | SQL pack | Agent pack | Data pack | Research pack |
+|---|---|---|---|---|---|
+| **World spec** | What states of the world can exist | A schema (DDL or a SQLite file) and a target engine | A scenario's [entity schema](worlds-and-mutations.md#the-entity-model), tools and service parameters | Data files: a table is a collection, a row an entity | A frozen corpus of documents |
+| **Constraints** | Which states are valid | Keys, types, foreign keys, plus domain rules you write | The same, plus the service's own validity rules | Types and the rules you declare, or a pandera schema | Document rules (dates, ids, supersession links) |
+| **Task** | What the agent was asked | The question | The task text | The question | The question |
+| **Subject** | What is under test | The candidate query | Your agent, run live | A recorded program (replayed), or your agent (live) | A stand-in, your agent, or a recorded run |
+| **Oracle** | What is right in a changed world | The reference query, re-run on each world | Invariants and a reference procedure, re-run on each world | The gold program, re-run on each world | A reference procedure over the corpus says what the report should be |
 
 A fixed gold *output* is not an oracle for this purpose. It says what was right in the original
 world and nothing about a changed one. The oracle has to be a program that recomputes.
@@ -54,7 +54,8 @@ flowchart TD
    and oracle run in it. For a live agent this is expensive and noisy, so the loop is
    budgeted and statistical. See [Live agents](live-agents.md).
 4. **Compare** under an explicit policy: multiset rows with column and float options for SQL; final
-   state and call comparison for agents.
+   state and call comparison for agents; numeric, text and frame comparators with a recorded tolerance
+   for data answers; answer, conflict statement and citation checks for research reports.
 5. **Minimize.** For deterministic subjects the whole world shrinks to a few rows. For live agents
    the *mutation path* shrinks (usually one to three atoms) because the agent only sees what it
    queries.

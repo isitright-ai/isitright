@@ -7,9 +7,11 @@ it runs per world and what kind of claim a finding can support.
 |---|---|---|---|
 | `ARTIFACT` | A static program the agent produced, such as a generated SQL query | One. It is deterministic | "This query returns a different answer than the reference on this valid database" |
 | `AGENT` | The live agent, placed in the changed world | Several | Individual observed failures, or a comparison of failure rates against the unchanged world |
-| `FROZEN_ARTIFACT` | A program extracted from one live run, then tested across many worlds | One | Reserved for a later pack. The claim would be "this program is wrong on world X", not "this agent is" |
+| `FROZEN_ARTIFACT` | A program extracted from one live run (data pack), or a recorded research run (research pack), then tested across many worlds | One | "This program, or this recorded report, is wrong on world X", not "this agent is". For a recorded research run the queries are re-run on the changed corpus and the report is not regenerated |
 
 ## Which one am I using?
+
+- **Research agents:** a stand-in agent, an agent given as code or an agent command is an `AGENT` (it runs again in each changed corpus); a recorded run is a `FROZEN_ARTIFACT`. See [Research agents](../research/index.md#subjects).
 
 - **Text-to-SQL:** your candidate query is an `ARTIFACT`. isitright re-runs the *query* on each changed
   database. It does not re-run the model that wrote it, so a finding is about that query, not about

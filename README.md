@@ -6,7 +6,7 @@ one as a minimized, replayable counterexample. You can add each counterexample b
 as a new case.
 
 **Documentation: [docs.isitright.ai](https://docs.isitright.ai)**: quick starts, concepts, guides for
-both packs, and prompt templates that draft hints, constraints and scenarios for you to review.
+each pack, and prompt templates that draft hints, constraints and scenarios for you to review.
 
 ## What it does
 
@@ -26,7 +26,7 @@ days ago: the right behavior is to decline, and the agent does. An agent that de
 passes too. isitright reruns the case in a world where the booking is 23 hours 59 minutes old, where
 the right answer is to cancel, and reports the runs in which your agent did not.
 
-Three packs ship on one shared core:
+Four packs ship on one shared core:
 
 | You have | Use | World | Where it runs |
 |---|---|---|---|
@@ -65,7 +65,7 @@ engine, so you install them on purpose: `pip install "isitright[bigquery]"` or
 `pip install "isitright[trino]"`. Searching and reporting for BigQuery, Presto and Trino
 queries needs neither.
 
-The quick starts below use files from `examples/`, which the package does not ship:
+The quick starts below use files from `examples/`, which the package does not ship. Further demos there: `examples/sql/bigquery/` (offline, from DDL) and `examples/sql/spider2/` (Spider 2.0-lite BigQuery tasks, see [BigQuery and Presto/Trino](https://docs.isitright.ai/sql/warehouses/)):
 
 ```console
 git clone https://github.com/isitright-ai/isitright.git
