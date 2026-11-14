@@ -46,10 +46,20 @@ UNREACHABLE_STATUS = frozenset({401, 403, 407, 408, 429})
 """HTTP statuses that say the engine was not reached or refused the caller, not the query."""
 
 
-_CREDENTIAL_ERRORS = frozenset(
-    {"DefaultCredentialsError", "RefreshError", "TransportError", "Unauthenticated"}
+_HOST_ERROR_NAMES = frozenset(
+    {
+        # google.auth: failures to obtain or refresh credentials, no HTTP status
+        "DefaultCredentialsError",
+        "RefreshError",
+        "TransportError",
+        "Unauthenticated",
+        # the trino client: not OSErrors and no status attribute (checked against trino 0.3x)
+        "TrinoConnectionError",
+        "TrinoAuthError",
+        "HttpError",
+    }
 )
-"""google.auth's failures to obtain or refresh credentials: they carry no HTTP status."""
+"""Exception classes that say the engine was not reached or refused the caller."""
 
 
 def _http_status(error: BaseException) -> int | None:
@@ -83,7 +93,7 @@ def engine_error(error: BaseException) -> Exception:
     status = _http_status(error)
     if (
         isinstance(error, OSError)
-        or type(error).__name__ in _CREDENTIAL_ERRORS
+        or type(error).__name__ in _HOST_ERROR_NAMES
         or (status is not None and (status >= 500 or status in UNREACHABLE_STATUS))
     ):
         return NativeHostError(f"{type(error).__name__}: {error}")

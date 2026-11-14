@@ -260,3 +260,46 @@ def test_a_missing_client_library_is_still_an_input_error_not_a_host_error() -> 
         TrinoHost(connect=connect).run_inline(
             INLINE, get_dialect("trino"), timeout_seconds=5, max_rows=10
         )
+
+
+# --- the real exception classes, when the client libraries are installed -------------------------
+# (the extras ``bigquery`` and ``trino`` are not in CI's ``all``, so these run only where the
+# libraries are present; the shapes above are the same ones, written by hand)
+
+
+def test_trino_client_classes_are_told_apart() -> None:
+    exceptions = pytest.importorskip("trino.exceptions")
+    for name in ("TrinoConnectionError", "TrinoAuthError", "HttpError"):
+        assert type(engine_error(getattr(exceptions, name)("x"))) is NativeHostError, name
+    for name in ("Http502Error", "Http503Error", "Http504Error"):
+        assert type(engine_error(getattr(exceptions, name)("x"))) is NativeHostError, name
+    query = {"errorName": "DIVISION_BY_ZERO", "message": "Division by zero", "errorCode": 8}
+    assert type(engine_error(exceptions.TrinoUserError(query))) is QueryExecutionError
+
+
+def test_google_client_classes_are_told_apart() -> None:
+    api = pytest.importorskip("google.api_core.exceptions")
+    for name in (
+        "Forbidden",
+        "Unauthorized",
+        "TooManyRequests",
+        "ServiceUnavailable",
+        "InternalServerError",
+        "DeadlineExceeded",
+    ):
+        assert type(engine_error(getattr(api, name)("x"))) is NativeHostError, name
+    for name in ("BadRequest", "NotFound"):
+        assert type(engine_error(getattr(api, name)("x"))) is QueryExecutionError, name
+    auth = pytest.importorskip("google.auth.exceptions")
+    for name in ("DefaultCredentialsError", "RefreshError", "TransportError"):
+        assert type(engine_error(getattr(auth, name)("x"))) is NativeHostError, name
+
+
+def test_requests_errors_are_host_errors() -> None:
+    requests = pytest.importorskip("requests")
+    for error in (
+        requests.exceptions.ConnectionError("x"),
+        requests.exceptions.Timeout("x"),
+        requests.exceptions.HTTPError("x"),
+    ):
+        assert type(engine_error(error)) is NativeHostError
