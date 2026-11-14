@@ -133,7 +133,13 @@ def test_the_refusals_are_the_hosts(server: tuple[str, Path]) -> None:
     assert all(error for error, _ in refused), refused
     assert "no document with id" in refused[1][1]
     events = [json.loads(line) for line in (run_dir / "trace.jsonl").read_text().splitlines()]
-    assert [e["is_error"] for e in events if e["name"] in ("open", "search")]
+    # every refused call reached the host and was traced as an error, in the order it was made
+    assert [(e["name"], e["arguments"], e["is_error"]) for e in events] == [
+        ("open", {"id": "bridge-halvorsen-1962"}, True),
+        ("open", {"id": "../../etc/passwd"}, True),
+        ("open", {"id": "x", "extra": 1}, True),
+        ("search", {"query": "x", "k": 99}, True),
+    ]
 
 
 def test_it_binds_to_loopback_unless_told_otherwise(
