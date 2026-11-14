@@ -58,8 +58,58 @@ and a short one among 6,000. The report states the number used. In a measurement
 scenario with a scripted agent whose findings are rare, the fixed 30 stopped after 288 of 6,000
 worlds and kept 5 of 21 distinct findings; 10% of the universe kept all 21 (and all 7 of a universe of
 600), at 4,789 worlds run. It is one scenario and two scripted agents; the cost is more runs. `0` turns
-a rule off (`--run-patience-share 0` restores the fixed number). A stopped stratum is reported as "no finding in n of m worlds"
+a rule off (`--run-patience-share 0` restores the fixed number).
+
+!!! warning "Default changed in 0.9: a run can now use more paid agent runs"
+    The run stopping rule used to stop after 30 consecutive worlds that added nothing new. It now
+    stops after the **larger of 30 and 10% of the worlds ranked** (`--run-patience-share 0.10`).
+    **The consequence is more runs:** among 1,000 ranked worlds the quiet stretch is 100 worlds, not
+    30, so the rule fires much later or never, and a search goes on until it reaches `--max-worlds`
+    (default 50 for `agents run`, 40 for `data audit`), `--max-runs`, `--max-money` or `--max-seconds`. Every extra world is at least one more
+    agent run, and each is a paid model call if your agent calls a hosted model. The default keeps
+    more of the distinct findings when findings are rare (measured on one scenario: 21 of 21
+    instead of 5 of 21 at 6,000 worlds) and costs more to get them.
+    Whether 10% is right for your scenario is something to measure, not assume: see
+    [Tuning the run rule](#tuning-the-run-rule).
+    **Set a spend limit on every real run** (`--max-money`, `--max-runs`) and `--max-worlds` to the
+    number of worlds you are willing to pay for. `--run-patience-share 0` restores the old fixed
+    rule.
+ A stopped stratum is reported as "no finding in n of m worlds"
 with the reason. That is not evidence of correctness.
+
+## Tuning the run rule
+
+Whether 10% is right depends on your scenario, your agent and how rare its findings are. Measure it
+on your own scenario instead of trusting the default:
+
+1. **Make one run with both rules off** and a cap you are willing to pay for. It is the only run
+   that costs anything: baseline runs plus (worlds run x `--trials`) agent runs.
+
+   ```console
+   isitright agents run --trust-code --scenario my_scenario.py:SCENARIO      --agent-command "..." --worlds generated --attempts 2000 --max-worlds 100 --trials 1      --no-sequential --stratum-patience 0 --run-patience 0 --max-money 20 --max-runs 150      --output-dir artifacts/tuning-run
+   ```
+
+2. **Replay the rules offline and free** over the worlds that run executed:
+
+   ```console
+   isitright agents stopping --report artifacts/tuning-run/report.json --trust-code
+   ```
+
+   It prints, for each `--run-patience-share` (`--shares 0,0.02,0.05,0.1,0.2,0.5`), the patience
+   that share gives, the worlds the rule would have run, the worlds with a finding it would have
+   reached, the strata with a finding it would have reached (a stratum is a family chain, a target
+   and a role: the measure of distinct findings), and the position of the last finding it reached.
+
+3. **Pick the smallest share that still reaches the strata you care about.** Each world a share
+   adds is `--trials` more paid runs of your agent, so the "worlds run" column is the price.
+
+What it cannot tell you: the replay covers only worlds the tuning run executed (a run that was
+capped or stopped early understates what a small share would have run); a stochastic agent gives a
+different table each run; and it is the agent you ran that is measured. For a free first look, run
+the same two steps with a scripted agent (the shop's `careless` and `reference` agents are the
+examples). That shows where the scenario's findings sit in the order, not where your agent's do.
+`isitright data audit` has no replay command; its `--max-worlds` default is 40, so the rule rarely
+matters there.
 
 ## Sequential testing per world
 

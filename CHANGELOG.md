@@ -38,6 +38,9 @@ paid service was used.
   simulated one on the same queries (`own_retrieval.jsonl`).
 - **`--run-patience-share`** (default 0.10): the run stopping rule stops after the larger of
   `--run-patience` and this share of the worlds ranked, so it scales with the universe.
+- **`isitright agents stopping`**: replays the stopping rules offline over a finished run (made with both
+  rules off) and prints, per `--run-patience-share`, the worlds each would have run and the findings it
+  would have reached, to tune the share on your own scenario.
 - **`tools/measure_memory.py`** and a CI step that print the memory-limit overshoot on Linux and macOS.
 
 ### Fixed
@@ -65,8 +68,10 @@ paid service was used.
 
 - On macOS the data host warns that the memory limit is a lower bound and says so in the report.
 - **Breaking, small:** the default run stopping rule scales with the universe (10% of the worlds
-  ranked, with 30 as the floor) where 0.8 stopped after a fixed 30 quiet worlds. `--run-patience-share 0`
-  restores the fixed number. Runs of large universes cost more and keep more distinct findings.
+  ranked, with 30 as the floor) where 0.8 stopped after a fixed 30 quiet worlds. **A search now runs
+  more worlds, so it can use more paid agent runs** (it goes on until `--max-worlds`, `--max-runs`,
+  `--max-money` or `--max-seconds`); set those on every real run. `--run-patience-share 0` restores
+  the fixed number.
 - **Breaking, small:** `isitright data` numeric answers use `abs_tol = 10^-d`, `rel_tol = 0` and 2
   ulps where 0.6 to 0.8 used a tolerance of `10^-d * (1 + 1e-9)` and `rel_tol = 1e-15`; a question
   that states different decimals for different answers now compares each at its own precision.

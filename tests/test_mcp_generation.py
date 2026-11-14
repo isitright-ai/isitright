@@ -17,6 +17,7 @@ import pytest
 
 from isitright.core.constraints import ValidityStatus
 from isitright.core.oracles import Role
+from isitright.core.selection import StoppingRules
 from isitright.core.stochastic import Budget
 from isitright.packs.mcp.audit import run_scenario
 from isitright.packs.mcp.generate import GeneratedWorld, generate_worlds, select_worlds
@@ -666,6 +667,75 @@ def test_orderings_are_compared_offline_from_a_finished_run(tmp_path: Path) -> N
     for r in results:
         assert r.first_finding is None or 1 <= r.first_finding <= ran
     assert results[-1].seeds == 5
+
+
+def test_the_stopping_rules_are_replayed_offline_from_a_finished_run(tmp_path: Path) -> None:
+    import os
+
+    from typer.testing import CliRunner
+
+    from isitright.cli import app
+    from isitright.packs.mcp.ordering import compare_stopping
+
+    careless = f'"{sys.executable}" "{EXAMPLES / "shop" / "shop_agent.py"}"'
+    os.environ["SHOP_AGENT_MODE"] = "careless"
+    try:
+        report = run_scenario(
+            scenario_ref=SHOP_REF,
+            agent_command=careless,
+            output_dir=tmp_path / "out",
+            worlds="generated",
+            k=1,
+            attempts=300,
+            max_worlds=6,
+            max_trials=1,
+            sequential=False,
+            trust_code=True,
+            timeout_seconds=60,
+            rules=StoppingRules(None, None),
+        )
+    finally:
+        del os.environ["SHOP_AGENT_MODE"]
+    rows = compare_stopping(
+        report,
+        tmp_path / "out",
+        load_scenario(SHOP_REF),
+        shares=(0.0, 0.5),
+        run_patience=1,
+        stratum_patience=None,
+    )
+    fixed, scaled = rows
+    total = fixed.worlds_total
+    assert 3 <= total <= 6 and scaled.worlds_total == total
+    assert (fixed.run_patience, scaled.run_patience) == (1, -(-total // 2))
+    assert fixed.worlds_run <= scaled.worlds_run <= total  # a larger share never runs fewer
+    assert fixed.bad_total == scaled.bad_total and fixed.strata_total == scaled.strata_total
+    assert fixed.bad_found <= scaled.bad_found <= fixed.bad_total
+    assert all(r.last_finding_position in (None, *range(1, total + 1)) for r in rows)
+    result = CliRunner().invoke(
+        app,
+        [
+            "agents",
+            "stopping",
+            "--report",
+            str(tmp_path / "out" / "report.json"),
+            "--trust-code",
+            "--shares",
+            "0,0.5",
+            "--run-patience",
+            "1",
+            "--stratum-patience",
+            "0",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "share  patience  worlds run" in result.output
+    line = next(row for row in result.output.splitlines() if row.startswith("0.5 "))
+    assert f"/{total}" in line and str(scaled.run_patience) in line.split()[1]
+    refused = CliRunner().invoke(
+        app, ["agents", "stopping", "--report", str(tmp_path / "out" / "report.json")]
+    )
+    assert refused.exit_code == 2 and "--trust-code" in refused.output
 
 
 # --- a threshold hint says where its cut-off value falls --------------------------------------

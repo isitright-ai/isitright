@@ -102,7 +102,7 @@ Run an agent on the [baseline](../concepts/live-agents.md#baseline-first) and on
 | `--ranking diverse\|screening\|coverage\|random` | `diverse` | |
 | `--stratum-patience N` | `10` | `0` = never |
 | `--run-patience N` | `30` | `0` = never; the floor of the run rule |
-| `--run-patience-share S` | `0.10` | The run rule stops after the larger of `--run-patience` and this share of the worlds ranked; `0` = the fixed number |
+| `--run-patience-share S` | `0.10` | The run rule stops after the larger of `--run-patience` and this share of the worlds ranked; `0` = the fixed number. **More worlds run than with 0.8's fixed 30, so more paid agent runs are possible: set `--max-money`, `--max-runs` and `--max-worlds`** |
 | `--max-trials N` | `16` | Most paired runs per world for the [sequential test](../concepts/live-agents.md#sequential-testing-per-world) |
 | `--sequential` / `--no-sequential` | on | |
 | `--minimize` / `--no-minimize` | off | Costs runs |
@@ -124,6 +124,13 @@ Append the report's findings as eval cases (world, task, recorded trace, verdict
 
 `--report FILE [--trust-code] [--random-seeds N]` (default 100). Re-rank the executed worlds with each
 ordering offline; prints how many worlds each needs before the first finding. Costs nothing.
+
+## `isitright agents stopping`
+
+`--report FILE --trust-code [--shares 0,0.02,0.05,0.1,0.2,0.5] [--run-patience N] [--stratum-patience N] [--ranking diverse|screening|coverage|random]`.
+Replay the stopping rules over the worlds a finished run executed and print, per `--run-patience-share`,
+the worlds and findings each would have run and reached. Make that run with `--run-patience 0 --stratum-patience 0`.
+Costs nothing. See [Tuning the run rule](../concepts/live-agents.md#tuning-the-run-rule).
 
 ## `isitright agents hints propose`
 

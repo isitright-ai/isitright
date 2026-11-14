@@ -949,7 +949,9 @@ def agents_run_command(
             min=0.0,
             max=1.0,
             help="Scale --run-patience with the universe: stop after the larger of --run-patience "
-            "and this share of the worlds ranked (default 0.10; 0 = the fixed number).",
+            "and this share of the worlds ranked (default 0.10; 0 = the fixed number). MORE WORLDS "
+            "RUN than with a fixed 30, so more paid agent runs are possible: set --max-money, "
+            "--max-runs and --max-worlds.",
         ),
     ] = 0.10,
     max_trials: Annotated[
@@ -1170,6 +1172,66 @@ def agents_order_command(
         )
         typer.echo(f"{r.ranking:<11} {r.worlds:>6}  {r.findings:>8}  {first:<28}  {r.seeds:>5}")
     typer.echo("Only worlds the run executed are placed; an early-stopped run is biased.")
+
+
+@agents_app.command("stopping")
+def agents_stopping_command(
+    report: Annotated[Path, typer.Option(exists=True, dir_okay=False, readable=True)],
+    trust_code: Annotated[
+        bool, typer.Option("--trust-code", help="Required: confirm the scenario is trusted code.")
+    ] = False,
+    shares: Annotated[
+        str,
+        typer.Option(help="Comma-separated --run-patience-share values to replay."),
+    ] = "0,0.02,0.05,0.1,0.2,0.5",
+    run_patience: Annotated[int, typer.Option(min=1, help="The floor of the run rule.")] = 30,
+    stratum_patience: Annotated[int, typer.Option(min=0)] = 10,
+    ranking: Annotated[
+        str, typer.Option(help="diverse, screening, coverage or random.")
+    ] = "diverse",
+) -> None:
+    """What each --run-patience-share would have run and found (offline, free).
+
+    Replays the stopping rules over the worlds a finished run executed. Make that run with
+    `--run-patience 0 --stratum-patience 0` and a --max-worlds that covers the eligible worlds;
+    it is the one run you pay for. Then choose the share from this table.
+    """
+    from isitright.packs.mcp.model import ScenarioError, load_scenario
+    from isitright.packs.mcp.ordering import OrderingError, compare_stopping
+
+    if not trust_code:
+        typer.echo("This executes the scenario's code; pass --trust-code.", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT)
+    try:
+        values = tuple(float(s) for s in shares.split(",") if s.strip())
+        data = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
+        scenario = load_scenario(data.cases[0].extensions["mcp"]["scenario_ref"])
+        rows = compare_stopping(
+            data,
+            report.parent,
+            scenario,
+            shares=values,
+            run_patience=run_patience,
+            stratum_patience=stratum_patience or None,
+            ranking=ranking,
+        )
+    except (OrderingError, ScenarioError, OSError, KeyError, ValueError) as error:
+        typer.echo(f"Stopping error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
+    typer.echo(
+        "share  patience  worlds run  worlds with findings  strata with findings  last finding at"
+    )
+    for r in rows:
+        last = "-" if r.last_finding_position is None else str(r.last_finding_position)
+        typer.echo(
+            f"{r.share:<6g} {r.run_patience:>8}  {r.worlds_run:>5}/{r.worlds_total:<5} "
+            f"{r.bad_found:>9}/{r.bad_total:<10} "
+            f"{r.strata_found:>10}/{r.strata_total:<9} {last:>10}"
+        )
+    typer.echo(
+        "Only worlds the run executed are replayed; a run that was stopped early understates what "
+        "a smaller share would have run. Every world run here is one agent run per trial."
+    )
 
 
 @agents_app.command("replay")

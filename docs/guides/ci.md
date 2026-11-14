@@ -56,7 +56,9 @@ and [replay](replay-and-export.md) the counterexample.
 
 A live-agent audit costs money and is noisy. If you run one in CI:
 
-- set `--max-money`, `--max-runs` and `--max-seconds` so a bad day cannot run away;
+- set `--max-money`, `--max-runs` and `--max-seconds` so a bad day cannot run away (since 0.9 the default run
+  stopping rule waits for 10% of the ranked worlds, so a quiet search goes on longer than before and costs more
+  runs unless these are set);
 - use `--worlds fixed` or a pinned list of `--world` ids for a stable regression check, and
   generated worlds on a schedule rather than on every pull request;
 - prefer `--fail-on invariant-violation`. An observed invariant violation is evidence about a run.

@@ -328,7 +328,8 @@ def audit_command(
             min=0.0,
             max=1.0,
             help="Scale --run-patience with the universe: the larger of it and this share of "
-            "the worlds ranked (0 = the fixed number).",
+            "the worlds ranked (0 = the fixed number). MORE WORLDS RUN than with a fixed 30, so "
+            "more paid agent runs are possible: set --max-money, --max-runs and --max-worlds.",
         ),
     ] = 0.10,
     max_runs: Annotated[int | None, typer.Option(min=1, help="Budget: agent runs.")] = None,

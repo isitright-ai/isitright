@@ -17,6 +17,19 @@ isitright agents run --trust-code --scenario my_scenario.py:SCENARIO \
 This runs the baseline 4 times, then up to 10 ranked worlds, and stops when 5 dollars of reported
 cost is spent.
 
+!!! warning "Default changed in 0.9: a run can now use more paid agent runs"
+    The run stopping rule used to stop after 30 consecutive worlds that added nothing new. It now
+    stops after the **larger of 30 and 10% of the worlds ranked** (`--run-patience-share 0.10`).
+    **The consequence is more runs:** among 1,000 ranked worlds the quiet stretch is 100 worlds, not
+    30, so the rule fires much later or never, and a search goes on until it reaches `--max-worlds`
+    (default 50), `--max-runs`, `--max-money` or `--max-seconds`. Every extra world is at least one more
+    agent run, and each is a paid model call if your agent calls a hosted model. The default keeps
+    more of the distinct findings when findings are rare (measured on one scenario: 21 of 21
+    instead of 5 of 21 at 6,000 worlds) and costs more to get them.
+    **Set a spend limit on every real run** (`--max-money`, `--max-runs`) and `--max-worlds` to the
+    number of worlds you are willing to pay for. `--run-patience-share 0` restores the old fixed
+    rule.
+
 ## Flags by goal
 
 | Goal | Flags |
@@ -25,7 +38,7 @@ cost is spent.
 | Control generation | `--attempts N` candidate worlds visited (default 20000, which takes minutes for a large [scenario](write-a-scenario.md)); `--max-worlds N` is a safety rail after ranking (default 50) |
 | Repeat runs | `--trials N` runs per world and for the baseline (default 4); `--baseline-trials N` when the baseline should differ |
 | Spend limits | `--max-money X` (needs agent-reported cost), `--max-runs N`, `--max-seconds S` |
-| Stop on rules | `--stratum-patience N` (default 10), `--run-patience N` (default 30) and `--run-patience-share S` (default 0.10); `0` turns a rule off |
+| Stop on rules | `--stratum-patience N` (default 10), `--run-patience N` (default 30) and `--run-patience-share S` (default 0.10: **the run rule waits for 10% of the worlds ranked, so more worlds run and more paid runs are possible; see the warning above**); `0` turns a rule off |
 | Order worlds | `--ranking diverse` (default), `screening`, `coverage`, `random` |
 | Statistics | `--sequential` (default) with `--max-trials N` (default 16); `--no-sequential` for counts only |
 | Shrink findings | `--minimize` (costs runs) |
@@ -66,6 +79,9 @@ directory with the full trace. See [Evidence](../concepts/evidence.md) and the
 
 ## Costs, in practice
 
+- **The default run rule scales with the universe (10% of the worlds ranked, floor 30), so it stops a
+  search later than 0.8 did: more worlds, more agent runs, more spend.** Cap it with `--max-worlds`,
+  `--max-runs` and `--max-money`.
 - Screening costs nothing: it replays the baseline trace on each candidate world without the agent.
 - Extra baseline runs are made, and billed, when a world needs more pairs than the baseline has.
 - `isitright agents order --report report.json --trust-code` re-ranks a finished run's executed
