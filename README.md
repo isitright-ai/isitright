@@ -157,6 +157,14 @@ Next: [agent quick start](https://docs.isitright.ai/get-started/agents/) (with t
 [onboarding with an LLM](https://docs.isitright.ai/onboarding/), which drafts hints, constraints and
 scenarios for you to review.
 
+## More quick starts
+
+Each runs offline, with no account and no API key, and prints what the page shows:
+
+- [Research agents](https://docs.isitright.ai/get-started/research/): a stand-in agent on a frozen corpus.
+- [Data analysis](https://docs.isitright.ai/get-started/data/): two recorded programs against a small table (needs `isitright[data]`).
+- [BigQuery and Presto/Trino](https://docs.isitright.ai/get-started/warehouses/): query pairs audited from a table definition alone (needs `isitright[duckdb]`).
+
 ## Concepts
 
 The [concepts overview](https://docs.isitright.ai/concepts/) defines these with one running example:

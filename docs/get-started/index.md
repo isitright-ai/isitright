@@ -33,7 +33,8 @@ isitright --help
 | none | SQLite engine, the core, the report model | Your queries target SQLite |
 | `mcp` | The MCP SDK | You audit an agent, or run any `agents` command |
 | `postgres` | A disposable local PostgreSQL server and `psycopg` | Your queries target PostgreSQL |
-| `duckdb` | DuckDB | You want a fast PostgreSQL candidate generator. Its findings are [emulated](../concepts/validity-and-fidelity.md) |
+| `duckdb` | DuckDB | You want a fast PostgreSQL candidate generator, or you audit BigQuery, Presto or Trino queries. Its findings are [emulated](../concepts/validity-and-fidelity.md) |
+| `data` | pandas and `psutil` | You audit an agent that writes Python over data files. `psutil` enforces the memory limit on Linux and macOS |
 
 ## The examples live in the repository
 
@@ -55,6 +56,12 @@ From a source checkout you can also use `uv sync --locked --extra dev --extra al
   minutes and needs no network or API key.
 - **[Agents](agents.md)**: audit a tool-using agent over MCP with scripted stand-ins. Takes a few
   minutes and needs no API key.
+- **[Research](research.md)**: audit a research agent that answers from a frozen corpus, with a
+  stand-in agent. Needs no API key.
+- **[Data analysis](data.md)**: audit two recorded programs against a small data task, offline.
+  Needs the `data` extra and no API key.
+- **[BigQuery and Presto/Trino](warehouses.md)**: audit queries written for a warehouse from a table
+  definition alone, with no account. Needs the `duckdb` extra.
 
 </div>
 

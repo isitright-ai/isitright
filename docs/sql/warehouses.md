@@ -91,15 +91,25 @@ error that names it. The values and the original texts are recorded in
 
 - State values are JSON: a struct is a mapping, an array a list, a map a list of `[key, value]`
   pairs. The declared type stays with the column, so loading into an engine is exact.
-- **Generation is scoped to the columns the queries read** (by `UNNEST`, dot access, or a function
-  on the column). A nested column no query reads is NULL if it can be, else its smallest valid
-  value; a referenced array holds one element, so emptying it is a change. This keeps a Google
-  Analytics row (hundreds of nested fields) small.
-- **Known limit: scoping is per column, not per path inside it.** If a query reads only
-  `items[].qty`, the whole `items` column is still generated and mutated, `sku` included.
-  That costs search budget (it is spent on fields no query reads) and can leave extra
-  fields in a counterexample; it never produces a wrong finding. Per-path scoping is
-  planned: it needs the references resolved through `UNNEST`, joins, CTEs and subqueries.
+- **Generation is scoped to the paths the queries read** (new in 0.9; 0.7 and 0.8 scoped to the
+  column). A nested column no query reads is NULL if it can be, else its smallest valid value. In a
+  column a query reads, only the fields it reads are generated and mutated: if a query reads only
+  `items[].qty`, `sku` and every other field of `items` start as NULL (where the type allows it) and
+  no mutation touches them, so a Google Analytics row (hundreds of nested fields) stays small and a
+  counterexample shows the fields that matter. An array a query iterates holds one element, so
+  emptying it is a change.
+- **What counts as read.** A reference is followed through dot access (`s.b.c`), array subscripts
+  (`items[OFFSET(0)].qty`), `UNNEST` aliases (BigQuery `UNNEST(items) AS i`, Presto and Trino
+  `UNNEST(items) AS u(qty, sku)`, in `FROM`, `CROSS JOIN` and `LEFT JOIN`), an `UNNEST` of an alias
+  (arrays inside arrays), and columns a CTE or a derived table passes through. Anything else reads
+  the **whole column**: a `SELECT *`, a map subscript, a value passed whole to a function
+  (`ARRAY_LENGTH(items)`), `SELECT AS STRUCT`, lambdas, and any chain that cannot be followed. The
+  fallback only gives up the narrowing; it never loses a counterexample.
+- **`--nested-scope column`** (or `CheckConfig(nested_scope="column")`) restores the 0.7 behavior.
+  The report records which scope ran and the paths per column in `extensions.sql.nested_scope`
+  (`[*].qty` is a field of every element; `(column) (array only)` is an array iterated without
+  reading its elements; `*` is the whole column). Per-path against per-column is tested on every
+  nested fixture of the suite and gives the same status on each.
 - **Mutations**: an array emptied or set to NULL, an element set to NULL, removed or duplicated,
   elements reversed, a struct field or a struct set to NULL, a map entry removed. Map entries are
   never reordered. Numeric leaves are moved by the JSON family.
@@ -207,6 +217,25 @@ isitright sql check --dialect presto --schema t.sql --reference gold.sql --candi
 isitright sends only inline text, one query per call. No table has to exist and no data leaves your
 network: the search ran offline from DDL, and the engine sees only query text.
 
+### PrestoDB
+
+The Presto fixtures are confirmed on **Trino**, which is not PrestoDB. To run them on PrestoDB
+through your own connection (your function, trusted code, your credentials; no table is read):
+
+```console
+python examples/sql/prestodb/smoke.py out.json --connection my_module:run --trust-code ^
+  --engine-version <server version> --observations tests/warehouse_native_observations.json
+```
+
+Each of the Presto fixtures is sent as inline text; the outcome (rows or an error) is compared with
+the fixture's recorded outcome and, with `--observations`, stored as a record for the engine
+`prestodb` beside the Trino and BigQuery ones. A connection error stops the run instead of being
+counted as an outcome. `examples/sql/prestodb/connection_example.py` is a function for the
+`presto-python-client` package that reads its settings from environment variables. **Status:** the
+script is tested against a fake connection only; no fixture states a difference between PrestoDB and
+Trino, because none has been observed (a difference can be recorded in a fixture's
+`extra["native_prestodb"]` after a real run).
+
 ### Trino
 
 `--confirm trino` uses the `trino` client (`isitright[trino]`, not part of `isitright[all]`)
@@ -260,8 +289,22 @@ and the difference say so). Example: the reference uses `SAFE_CAST(s AS INT64)` 
   artifact and is excluded, as for any other divergence. On BigQuery the error must come from running
   the query: an error at the dry run is a static error and leaves the finding unverified. A Trino
   server reports static and run-time errors alike, so there the check cannot tell them apart.
-- This applies to the BigQuery, Presto and Trino dialects. SQLite and PostgreSQL keep their earlier
-  rule (a query error on a world skips that world).
+- This applies to every dialect and engine since 0.9. On **PostgreSQL** (SQLSTATE class 22, data
+  exceptions such as an invalid integer, a division by zero, a numeric overflow, and class 21, a
+  scalar subquery that returns several rows), on the **DuckDB emulation of PostgreSQL**
+  (conversion, out-of-range and invalid-input errors) and on **SQLite** (`integer overflow`,
+  `malformed JSON`, `JSON cannot hold BLOB values`; SQLite has few, because a `CAST` never fails and
+  division by zero is NULL) a data error of the candidate is the finding, and a data error of the
+  reference skips that world. Every other error is as before: a query error on SQLite skips the
+  world, and on PostgreSQL it stops the audit as `INCONCLUSIVE`. A finding found on DuckDB is
+  re-run on PostgreSQL like any other.
+- **A failure to reach the engine is not a confirmation.** A dropped connection, a transport
+  timeout, or an HTTP 401, 403, 407, 408, 429 or 5xx while a native host runs the candidate leaves
+  the finding unverified; before 0.9 any exception from the engine was read as "the candidate
+  errors natively too". A function you supply with `--connection` should raise `OSError` (for
+  example `ConnectionError`) when it cannot reach the engine, and any other exception for an error
+  of the query. An engine that reports its own timeout as an ordinary query error is still read as
+  the candidate's error.
 - In the report the candidate's result is one `query_error` column holding the first line of the
   error message, so a replay and an exported eval case reproduce it.
 
@@ -275,9 +318,12 @@ Spider 2.0's evaluator needs options the strict default does not have, all recor
 ## Demos
 
 - `examples/sql/bigquery/`: a constructed schema and two queries, offline, a few seconds.
-- `examples/sql/spider2/`: the BigQuery tasks of Spider 2.0-lite whose published gold SQL passes in a published schemagate run (73 selected by a rule fixed before any audit ran; the rule and commits are in `selection.json`). Each task is audited from its table definitions only, under Spider's comparison settings and under isitright's strict default. Findings are emulated; none is confirmed on BigQuery unless you run the BigQuery steps. The scripts are `prepare.py` (selects and copies from two local clones), `run_demo.py` and `bigquery_steps.py`; the third-party licences are in `licenses/`. These are proposed fixtures, not a benchmark result.
+- `examples/sql/spider2/`: the BigQuery tasks of Spider 2.0-lite whose published gold SQL passes in a published schemagate run (73 selected by a rule fixed before any audit ran; the rule and commits are in `selection.json`). Each task is audited from its table definitions only, under Spider's comparison settings and under isitright's strict default. Findings are emulated; none is confirmed on BigQuery unless you run the BigQuery steps. The scripts are `prepare.py` (selects and copies from two local clones), `run_demo.py`, `clean_cases.py` and `bigquery_steps.py`; the third-party licences are in `licenses/`. These are proposed fixtures, not a benchmark result.
+  - A task with several accepted `condition_cols` lists (17 of the 73) is audited once per list, and a benchmark finding counts only if **no** list accepts the candidate's result on that world, as Spider accepts a prediction that matches any of its gold files (0.7 used the first list only).
+  - The baseline step (`bigquery_steps.py baseline`) compares the candidate with each of Spider's result files and uses them as the reference where the gold SQL matches none; the gold SQL is the reference otherwise. The report keeps both counts.
+  - `clean_cases.py` runs hand-written worlds for `bq402`, `bq025` and `bq398`, the three findings the 0.7 review found hard to read, under both comparisons, and writes the inline text for confirmation on BigQuery. `bigquery_steps.py smoke-detected` sends the fixtures the pack refuses (`LIMIT` inside `ARRAY_AGG`, geography) so BigQuery's outcome can be recorded.
 
-## Not supported in 0.7
+## Not supported
 
 Wildcard tables (rewritten in the Spider demo copy only), scripting (`DECLARE`, multiple
 statements), `MERGE` and other DML, geography types and `ST_` functions, BigQuery `JSON`,

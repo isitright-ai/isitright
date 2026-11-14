@@ -70,9 +70,24 @@ A program is replayed only if it reads only the task's files, uses no network an
 
 ## The host and what it does not protect
 
-Each run goes to a separate process with a fresh temporary directory, a scrubbed environment (no API keys or other variables are inherited), a wall-clock timeout and a memory limit (an address-space limit on POSIX, a Job Object on Windows). Nothing runs in the audit process, and nothing runs without `--trust-code` (`trust_code=True` in the API).
+Each run goes to a separate process with a fresh temporary directory, a scrubbed environment (no API keys or other variables are inherited), a wall-clock timeout and a memory limit (see below for how each platform enforces it). Nothing runs in the audit process, and nothing runs without `--trust-code` (`trust_code=True` in the API).
 
-The Windows limit caps the memory one process may commit. The runner puts itself in the Job Object before it runs any program, because a virtualenv's `python.exe` can be a launcher (for example when uv made the environment from a Microsoft Store Python) whose child, the process that runs your code, would not be in a job the audit process creates. If the limit cannot be set the runner exits and the run is reported as an error, never as an unlimited run. A program that exceeds the limit ends with the status `memory`. **macOS has no address-space limit** (`RLIMIT_AS` is not supported there), so the memory limit is not enforced on macOS: a warning says so, and only the timeout and the other containment apply. Do not run untrusted code on macOS expecting a memory cap.
+The Windows limit caps the memory one process may commit. The runner puts itself in the Job Object before it runs any program, because a virtualenv's `python.exe` can be a launcher (for example when uv made the environment from a Microsoft Store Python) whose child, the process that runs your code, would not be in a job the audit process creates. If the limit cannot be set the runner exits and the run is reported as an error, never as an unlimited run. A program that exceeds the limit ends with the status `memory`.
+
+### The memory limit, by platform
+
+`memory_limit_mb` (default 2048; `--memory-mb`) is enforced differently on each platform, and the host's description in the report says which (`memory_enforcement`):
+
+| Platform | `memory_enforcement` | How | Exact? |
+|---|---|---|---|
+| Windows | `job_object` | A Job Object caps the memory the runner may commit; an allocation over the limit raises `MemoryError` | Yes |
+| Linux, macOS, with `psutil` | `rss_watchdog` | The audit process reads the resident memory of the runner and its children every 50 ms and kills the runner's process group above the limit; the runner also watches its own peak as a second line (new in 0.9) | **Approximate** |
+| Linux, without `psutil` | `address_space` | `RLIMIT_AS`, which counts reserved address space, so NumPy or pandas can hit it far below their real use | Yes, but it measures the wrong thing |
+| macOS, without `psutil` | `none` | macOS has no `RLIMIT_AS`: a warning says the limit is not enforced; the timeout still is | No limit |
+
+`psutil` is part of the `data` extra, so a normal install of the data pack gets the watchdog. The watchdog's limit is **approximate**: a program can pass the limit between two readings, so the runner can use more than the limit before it is stopped. The run is reported with the status `memory` and the resident size that was read. A program stuck in one long C call is stopped by the watchdog, not by the runner's own check. Do not rely on the limit as a security boundary; for untrusted code use a container with a memory cap (`docker run --memory`), which isitright does not set up.
+
+MEMORY_OVERSHOOT_PLACEHOLDER
 
 By default every run starts a new process (`--reuse 1`). `--reuse N` keeps a process for N runs. That is several times faster, but modules a program imported stay loaded, so one run can affect the next. The report records which was used.
 
@@ -101,7 +116,7 @@ The policy is explicit and goes into every report with its basis.
 
 Two conventions here belong to the data pack, not to the core, and come from InfiAgent-DABench: answers are read as `@name[value]` pairs (a repeated block of pairs, such as one per continent, is a list of groups), and the number of decimals is read from phrases such as "rounded to two decimal places" in the question. A task from another source would use the same comparators with its own answer format.
 
-- **Numbers**: within `abs_tol + rel_tol * |expected|`. When the question asks for N decimal places the tolerance is one unit in the last place, because the two programs may round a boundary value differently; the basis says so. The relative term (1e-15) is only floating-point representation noise: near 2,000,000 two numbers 0.01 apart differ by about 0.0100000002 in floating point, so without it a rounding that differs by one unit at a tie (2243963.30 against 2243963.31) would count as a disagreement. When the question names no number of decimals the tolerance is floating-point noise only (1e-9, absolute and relative), so an answer that was rounded and a reference that was not disagree. This is deliberately loose where decimals are stated: a difference smaller than the tolerance is not found.
+- **Numbers**: within `abs_tol + rel_tol * |expected|`. When the question asks for N decimal places the tolerance is one unit in the last place, because the two programs may round a boundary value differently; the basis says so. On top of that the policy adds a margin of exactly **2 ulps** (units in the last place of the larger number, not of the decimals), which is floating-point representation noise: near 2,000,000 two numbers 0.01 apart differ by about 0.0100000002, so without a margin a rounding that differs by one unit at a tie (2243963.30 against 2243963.31) would count as a disagreement. (0.6 to 0.8 used a relative term of 1e-15, which is 4.5 to 9 ulps depending on the number.) **Per answer (new in 0.9):** when the clause of one named answer states its own precision, that answer uses it: "`r_value` rounded to two decimal places, and `p_value` to four" compares `p_value` with a tolerance of 0.0001 and `r_value` with 0.01 (0.6 used the fewest, 0.01, for both). A clause that names two precisions, or none, gives its answer the task's fewest. A task that states `abs_tol` in `task.yaml` applies it to every answer unless it also states `per_answer` (a mapping from the normalized answer name to its decimals) and `ulps`. When the question names no number of decimals the tolerance is floating-point noise only (1e-9, absolute and relative), so an answer that was rounded and a reference that was not disagree. This is deliberately loose where decimals are stated: a difference smaller than the tolerance is not found.
 - **Text**: equal after trimming and case folding (`text: none` for exact). One pair of quotes around a single value (`'Kuwait'`) is ignored.
 - **Named answers**: names are compared after normalization, values by their kind. A bare value stands for a task with one named answer. A list equals the same items in a comma-separated string, with or without brackets and quotes (`['a', 'b']`), and a list of names has no order.
 - **Groups**: when the first answer name comes round again (`@continent_name[...]` `@r[...]` ... repeated per continent) the answer is a list of groups. Groups are matched by the value of their first answer, so their order does not matter. A reference program returns the same shape as a list of dicts.
@@ -114,7 +129,7 @@ Hints come from the program (`ast`), the schema and the question text, never fro
 
 ## Constraints
 
-Domain rules use the core constraint language (`range`, `one_of`, `not_null`, `unique`), declared in `constraints.yaml`. With no rules a finding is `STRUCTURAL` only. A pandera schema can be imported (extra `data-schema`):
+Domain rules use the core constraint language (`range`, `one_of`, `not_null`, `unique`, and since 0.9 `row_count`), declared in `constraints.yaml`. `{kind: row_count, collection: orders, min: 3}` bounds a table's size (`min`, `max` or both); every generated world and every minimization step is checked against it, so a counterexample never has fewer rows than you declared. With no rules a finding is `STRUCTURAL` only. A pandera schema can be imported (extra `data-schema`):
 
 ```python
 from isitright.packs.data.pandera_import import constraints_from_pandera
@@ -176,7 +191,7 @@ A frozen finding: this program, on this world, in this host, gives an answer the
 
 Two cautions for reading a finding:
 
-- **Small minimized worlds.** Minimization keeps the fewest rows that keep the disagreement. For a statistic (a correlation, a standard deviation) that can leave two or three rows, where the reference answer is degenerate (the correlation of two points is always 1) and an agent that answers "undefined" is not obviously wrong. Look at the data before reading such a finding as a defect. The constraint language has no row-count rule yet.
+- **Small minimized worlds.** Minimization keeps the fewest rows that keep the disagreement. For a statistic (a correlation, a standard deviation) that can leave two or three rows, where the reference answer is degenerate (the correlation of two points is always 1) and an agent that answers "undefined" is not obviously wrong. Look at the data before reading such a finding as a defect, or declare `row_count` with a `min` (for a correlation, three rows) so that minimization cannot shrink the table below it.
 - **Validity tier.** With no declared rules a finding is `STRUCTURAL` only. A stray non-breaking space in a numeric text column is a world the data could contain, but nothing in the task says so. Declare the rules the data follows (`constraints.yaml`) before treating a finding as strong evidence.
 
 A live finding is also a count over a few runs of a stochastic agent: the same minimized world gave 3 of 3 matching runs in one live audit and 2 of 3 in another.

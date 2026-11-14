@@ -1,0 +1,6 @@
+Proposed fixture: pending owner review.
+
+Written by Claude, who also wrote the pack: the task (the question, six rows, the gold program) and
+the two programs in programs.jsonl. They are not from an agent: they were written by hand, to show
+one finding and one result with no finding, and the file says so in each record ("constructed_stand_in").
+This directory is separate from examples/data/dabench/, which needs a download.

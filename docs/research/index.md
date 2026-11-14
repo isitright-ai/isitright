@@ -70,6 +70,31 @@ short planted summary outranks a long document with the same term counts, becaus
 short documents. Real systems re-index and often use dense retrieval. Findings describe this
 retriever.
 
+### Other retrievers (new in 0.9)
+
+The tools sit on a retriever interface (`documents`, a deterministic `rank`, a `snippet`), and
+`--retriever` chooses one:
+
+- `bm25` is the retriever above.
+- `hashed-dense` is a deterministic stand-in for a dense retriever: each word adds +1 or -1 to one of
+  256 slots chosen by a hash (blake2b, independent of the interpreter's hash seed), the vector is
+  scaled to unit length and documents are ranked by cosine. It uses **no model and no corpus
+  statistics**. "Frozen" then means that the function is fixed: a document a mutation adds is
+  embedded by the same function and ranked against the others, and no other document's score
+  changes. What a planted document does to it is the plain similarity of its words: there is no
+  length bonus (as BM25 gives a short summary), and no re-indexing effect.
+- `hybrid` fuses the ranks of the two (reciprocal rank fusion, k = 60), ties by id.
+- `EmbeddingIndex(embed, documents)` in the Python API takes a function of one text that returns a
+  vector. `sentence_transformers_embedder(model)` builds one from a local `sentence-transformers`
+  model (not a dependency of isitright; it is tested only when the package is installed, and
+  whether a model's vectors are the same on another machine or version is yours to check: a
+  non-deterministic embedding breaks replay). For a real dense index frozen means the model and its
+  weights, plus any normalization statistics, fixed for the audit.
+
+The stand-ins are not a real retriever. With `hashed-dense` the credulous stand-in no longer sees the
+gold sentence in its top five results and abstains, so the audit ends at the baseline gate
+(`INCONCLUSIVE`, with the reason); that is the retriever's effect on one stand-in, not a finding.
+
 ## The tools
 
 Only two:
@@ -81,6 +106,24 @@ Anything else is an error: an unknown tool name, an extra argument, `k` outside 
 does not exist. The tools reach nothing outside the corpus: no network, no file system. They are
 served in process (stand-ins, frozen replay) or over MCP stdio
 (`python -m isitright.packs.research.serve`, needs the `mcp` extra) for an agent command.
+
+### HTTP for hosted agents
+
+Some hosted deep-research APIs reach tools only through a remote MCP server, and expect the tools
+`search` and `fetch`. `python -m isitright.packs.research.http_server --world-file W.json
+--stats-file S.json --run-dir DIR` serves the same two tools over streamable-HTTP MCP, with `fetch`
+as `open` under another name. It is the same `ToolHost`: the same refusals, the same frozen index,
+the same response edits, and the same `trace.jsonl` (which records `open`). It binds to 127.0.0.1,
+requires `Authorization: Bearer <token>` (a token generated at start and printed once, or read from
+the variable named by `--token-env`), and answers 401 to anything else before any tool is reached.
+Tested over a real local connection. **Its output format is not checked against any hosted API's
+required format.**
+
+A hosted API cannot reach 127.0.0.1: it needs a URL on the public internet (a tunnel or a host you
+control). That URL, with the token, lets anyone call the two tools and read the corpus of that
+world; nothing limits request rate. Use it for one run with a token made for it, and stop it
+afterwards. A non-loopback `--host` needs `--allow-public-bind`. isitright does not set up the
+tunnel.
 
 Fidelity is `SIMULATED`: a deterministic BM25 stands in for the retrieval stack the agent would
 use. A real agent still runs for real, but the pack cannot stop an agent process that has its own
@@ -207,6 +250,35 @@ its adapter.
 
 A recorded run's finding says "this recorded report on this world", never "this agent".
 
+## L2: support of a claim
+
+L0 (the cited id exists) and L1 (the quote occurs in the document) are checked. Whether the cited
+document *supports* the claim (L2) needs a judgment of meaning. 0.9 defines the interface and runs
+none: `SupportJudge.judge(claim, quote, document_text, answer, kind)` returns `SUPPORTED`,
+`NOT_SUPPORTED` or `CANNOT_JUDGE` with a basis, and carries a `JudgeLabel` (name, kind
+`deterministic_baseline`, `rule`, `model` or `human`, a version, and a `Validation` of counts
+against human labels, or none). `check_support(report, documents, judge, kind)` sends only citations
+that reached L1 and returns counts and a row per citation; L2 is reported beside L0 and L1 and
+changes neither the citation level nor any outcome.
+
+The one judge that ships is `QuoteContainsAnswer`, a rule: `SUPPORTED` when the report's own
+normalized answer occurs in the cited quote and the quote has no negation or retraction cue,
+otherwise `CANNOT_JUDGE`; it never says `NOT_SUPPORTED`, because a quote without the value may
+support the claim in other words. It cannot tell a fact from a hypothesis or a different subject and
+it is not validated. A judge that calls a model is yours to write; label it `model`, give its
+version and validate it on a labeled set before treating a verdict as evidence. The reports and
+`research check` still say L2 is not judged: the judge is an API, not a flag.
+
+## Retriever fidelity of a live agent
+
+For a recorded run the report states how closely the simulated retriever reproduces the results the
+agent saw (`frozen_fidelity`). An agent with a retriever of its own can give the same comparison for
+a live run: write `own_retrieval.jsonl` in the run directory, one `{"query": ..., "ids": [...]}` per
+search it ran on its own retriever. The report's `own_retriever_fidelity` then counts the queries,
+how many returned the same first result and the same set as the simulated retriever, and the mean
+overlap, with no threshold. An agent that writes nothing gets "nothing to compare". The results are
+as the agent reported them; they are not checked.
+
 ## Costs and safety
 
 The tools run no model and make no call. A stand-in audit of the constructed corpus takes seconds.
@@ -218,9 +290,10 @@ sandboxed.
 
 ## What is unsupported
 
-Free-text answers without a deterministic check (`CANNOT_JUDGE`), support of a claim by its
-document (L2), dense or hybrid retrievers (use `--agent-command` with the corpus served by your own
-stack and treat the result as unsimulated), tools other than `search` and `open`, corpora larger
+Free-text answers without a deterministic check (`CANNOT_JUDGE`), a model judge for support of a
+claim (L2; see below), a real dense or hybrid retriever (the hashed stand-in exists; to test your own, use
+`--agent-command` with the corpus served by your own stack and report the agent's own results, see
+"Retriever fidelity"), tools other than `search` and `open` (and `fetch`, its alias over HTTP), corpora larger
 than memory without a restricted per-task world (see the BrowseComp-Plus example), documents
 without dates for `supersede`.
 

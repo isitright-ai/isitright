@@ -11,7 +11,7 @@ and its limits with every result.
 | `REFERENCE_PROGRAM` | Run a reference program or procedure on the changed world | SQL: the reference query. Agents: the [scenario](../agents/write-a-scenario.md)'s reference procedure |
 | `INVARIANT` | A property that must hold in every run | Agents: "no refund exceeds the amount paid", "writes touch only the task's customer" |
 | `RELATIONAL`, `CONSTRUCTIVE` | A metamorphic relation (the answer must not change); a world built so the right behavior is known | The research pack: a reference procedure over the corpus says what the report should be after each mutation (a newer edition: use it or say so; a planted conflict: keep the answer or say so), and a relation covers duplicates, irrelevant additions and reordered results |
-| `JUDGE` | An LLM | Reserved; no judge is run. Whether a cited document supports a claim (level L2) is not judged |
+| `JUDGE` | An LLM | Reserved; no judge is run. Whether a cited document supports a claim (level L2) is not judged by default; the research pack has an interface for a judge and a deterministic baseline (see [Research agents](../research/index.md#l2-support-of-a-claim)) |
 
 A scenario's oracle usually combines two: invariants that must hold everywhere, and a reference
 procedure that drives the tools the way a careful agent would. The agent's run meets the oracle when

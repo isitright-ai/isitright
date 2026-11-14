@@ -25,6 +25,7 @@ Compare one query pair on perturbed worlds of a database or schema.
 | `--column-vectors` | off | Compare columns as independent sorted vectors when unordered |
 | `--null-as-zero` | off | Count NULL as 0 when comparing |
 | `--wall-time SECONDS` | none | Stop the search after this long; the report says it was stopped by the time cap |
+| `--nested-scope path\|column` | `path` | Nested columns (BigQuery, Presto, Trino): generate and mutate only the paths the queries read, or every field of a column they read (the 0.7 behavior). New in 0.9 |
 | `--confirm bigquery\|trino\|connection` | none | Re-run findings on a native host with the state inlined |
 | `--connection MODULE:FUNCTION`, `--trust-code` | none | The function for `--confirm connection`: `run(sql) -> (columns, rows)` |
 | `--bq-project`, `--max-bytes-billed`, `--env-file` | none, 100 MB | BigQuery project, cap on bytes billed per query, a file from which only `GOOGLE_APPLICATION_CREDENTIALS` is read |
@@ -167,7 +168,8 @@ Audit a research agent on mutated corpora (see [Research agents](../research/ind
 ```bash
 isitright research check CORPUS --task task.json --output DIR \
   (--stand-in NAME | --agent module:attr | --agent-command "..." | --recorded-run run.json) \
-  [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] [--runs K] [--max-runs N] \
+  [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] \
+  [--retriever bm25|hashed-dense|hybrid] [--runs K] [--max-runs N] \
   [--seconds S] [--max-money USD] [--timeout S] [--screen] [--no-minimize] \
   [--allow-failing-baseline] [--record-runs DIR] \
   [--fail-on none|domain-counterexample|any-counterexample]
@@ -178,6 +180,8 @@ isitright research check CORPUS --task task.json --output DIR \
 `{run_dir}` and writes `report.json` into `{run_dir}`. `--max-money` is refused for an agent that
 reports no cost. The output directory holds `report.json`, `findings-cases.md`, and per finding
 `N.replay.json` and `N.eval-case.json`.
+
+`--retriever` (new in 0.9) chooses the retriever behind the tools: `bm25` (the default, as in 0.8), `hashed-dense` (a deterministic hashed bag-of-words embedding, a stand-in for a dense retriever) or `hybrid` (reciprocal rank fusion of the two). The report and the replay artifact record the choice. The HTTP server for hosted agents is a module, `python -m isitright.packs.research.http_server`; see [Research agents](../research/index.md#http-for-hosted-agents).
 
 ## `isitright research replay ARTIFACT`
 
