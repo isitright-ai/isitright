@@ -190,7 +190,15 @@ def check_support(
             if squash(citation.quote) not in squash(text):
                 result.skipped += 1
                 continue
-            got = judge.judge(claim.text, citation.quote, text, report.answer, kind)
+            try:
+                got = judge.judge(claim.text, citation.quote, text, report.answer, kind)
+                if not isinstance(got, Judgement) or not isinstance(got.verdict, SupportVerdict):
+                    raise TypeError(f"the judge returned {type(got).__name__}, not a Judgement")
+            except Exception as error:  # a judge that fails has not judged: never "supported"
+                got = Judgement(
+                    SupportVerdict.CANNOT_JUDGE,
+                    f"the judge failed: {type(error).__name__}: {str(error)[:200]}",
+                )
             if got.verdict is SupportVerdict.SUPPORTED:
                 result.supported += 1
             elif got.verdict is SupportVerdict.NOT_SUPPORTED:

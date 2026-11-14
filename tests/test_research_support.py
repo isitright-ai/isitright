@@ -7,6 +7,8 @@ Claude, who also wrote the baseline rule).
 
 from __future__ import annotations
 
+from typing import Any
+
 from isitright.packs.research.runs import Citation, Claim, Report, check_citations
 from isitright.packs.research.support import (
     JudgeLabel,
@@ -132,3 +134,25 @@ def test_a_judge_leaves_l0_and_l1_alone() -> None:
     )
     assert before == after
     assert check_citations(r, DOCS).l0_failures == [] == check_citations(r, DOCS).l1_failures
+
+
+def test_a_judge_that_raises_or_returns_nonsense_has_not_judged() -> None:
+    class Raises:
+        label = QuoteContainsAnswer.label
+
+        def judge(self, *args: Any) -> Any:
+            raise ValueError("boom")
+
+    class Nonsense:
+        label = QuoteContainsAnswer.label
+
+        def judge(self, *args: Any) -> Any:
+            return "SUPPORTED"  # a bare string is not a Judgement
+
+    quote = "The Halvorsen Bridge was completed in 1962."
+    for judge in (Raises(), Nonsense()):
+        got = check_support(report("1962", quote), DOCS, judge, "number")  # type: ignore[arg-type]
+        assert (got.supported, got.not_supported, got.cannot_judge) == (0, 0, 1)
+        assert (
+            got.rows[0]["verdict"] == "CANNOT_JUDGE" and "the judge failed" in got.rows[0]["basis"]
+        )

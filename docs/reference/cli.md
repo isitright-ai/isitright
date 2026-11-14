@@ -174,7 +174,7 @@ Audit a research agent on mutated corpora (see [Research agents](../research/ind
 isitright research check CORPUS --task task.json --output DIR \
   (--stand-in NAME | --agent module:attr | --agent-command "..." | --recorded-run run.json) \
   [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] \
-  [--retriever bm25|hashed-dense|hybrid] [--seed N] [--runs K] [--max-runs N] \
+  [--retriever bm25|hashed-dense|hybrid] [--support-judge quote-contains-answer|module:attr] [--seed N] [--runs K] [--max-runs N] \
   [--seconds S] [--max-money USD] [--timeout S] [--screen] [--no-minimize] \
   [--allow-failing-baseline] [--record-runs DIR] \
   [--fail-on none|domain-counterexample|any-counterexample]
@@ -186,7 +186,7 @@ isitright research check CORPUS --task task.json --output DIR \
 reports no cost. The output directory holds `report.json`, `findings-cases.md`, and per finding
 `N.replay.json` and `N.eval-case.json`.
 
-`--retriever` (new in 0.9) chooses the retriever behind the tools: `bm25` (the default, as in 0.8), `hashed-dense` (a deterministic hashed bag-of-words embedding, a stand-in for a dense retriever) or `hybrid` (reciprocal rank fusion of the two). The report and the replay artifact record the choice. The HTTP server for hosted agents is a module, `python -m isitright.packs.research.http_server`; see [Research agents](../research/index.md#http-for-hosted-agents).
+`--support-judge` (new in 0.9) judges whether each cited quote supports its claim (L2) on the baseline run: `quote-contains-answer` is a shipped rule; `module:attr` or `file.py:attr` is a judge of your own and needs `--trust-code`. The result is under `extensions.research.support` of the case and changes no level or outcome. `--retriever` (new in 0.9) chooses the retriever behind the tools: `bm25` (the default, as in 0.8), `hashed-dense` (a deterministic hashed bag-of-words embedding, a stand-in for a dense retriever) or `hybrid` (reciprocal rank fusion of the two). The report and the replay artifact record the choice. The HTTP server for hosted agents is a module, `python -m isitright.packs.research.http_server`; see [Research agents](../research/index.md#http-for-hosted-agents).
 
 ## `isitright research replay ARTIFACT`
 

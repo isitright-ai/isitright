@@ -55,6 +55,46 @@ def load_agent(reference: str, task: ResearchTask) -> Agent:
     return agent  # type: ignore[no-any-return]
 
 
+def load_support_judge(reference: str) -> Any:
+    """A support judge for ``--support-judge``: ``quote-contains-answer`` (the shipped rule, no code
+    runs) or ``module:attr`` / ``path/to/file.py:attr``, an object with ``judge(...)`` and ``label``
+    or a callable of no arguments returning one. The second form is trusted code: the caller has
+    the consent (``--trust-code``)."""
+    if ":" not in reference:
+        from isitright.packs.research.support import QuoteContainsAnswer
+
+        if reference == "quote-contains-answer":
+            return QuoteContainsAnswer()
+        raise ExternalError(
+            f"unknown support judge {reference!r}: use quote-contains-answer, or module:attr "
+            "or file.py:attr for a judge of your own"
+        )
+    where, _, attr = reference.rpartition(":")
+    try:
+        if where.endswith(".py"):
+            path = Path(where).resolve()
+            sys.path.insert(0, str(path.parent))
+            module = importlib.import_module(path.stem)
+        else:
+            module = importlib.import_module(where)
+        target: Any = getattr(module, attr)
+    except (ImportError, AttributeError) as error:
+        raise ExternalError(f"cannot load support judge {reference!r}: {error}") from error
+    if isinstance(target, type) or (callable(target) and not hasattr(target, "judge")):
+        try:
+            judge = target()  # a class or a factory taking no arguments
+        except Exception as error:
+            raise ExternalError(f"cannot build support judge {reference!r}: {error}") from error
+    else:
+        judge = target
+    if not hasattr(judge, "judge") or not hasattr(judge, "label"):
+        raise ExternalError(
+            f"{reference!r} is not a support judge: it needs judge(claim, quote, document_text, "
+            "answer, kind) and label"
+        )
+    return judge
+
+
 def command_subject(
     argv: list[str],
     task: ResearchTask,

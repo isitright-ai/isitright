@@ -22,8 +22,8 @@ disagreement as a minimized, replayable counterexample.
   was tried.
 - It does not claim a flip rate here is comparable with any published figure (see
   [DRNoise](#relation-to-drnoise)).
-- It runs no model. A judge may be written behind an interface, but none is run, so support of a
-  claim by its cited document (level L2) is never judged.
+- It runs no model. Support of a claim by its cited document (level L2) is judged only when you give
+  `--support-judge`: a rule that ships, or a judge of your own, which may call a model.
 
 ## The corpus and the document model
 
@@ -161,7 +161,8 @@ retrieval cutoff `k`, date and number representation, units, timing.
   scenario is `NOT_DISCRIMINATING`: a refusing agent passes every trap.
 - **Relational.** The normalized answer must equal the baseline's.
 - **Invariant.** Citations: L0 the cited id exists; L1 the quote occurs in the cited document
-  (whitespace and case normalized; an empty quote is not a match); L2 (support) is not judged. The
+  (whitespace and case normalized; an empty quote is not a match); L2 (support) is judged only with
+  `--support-judge`. The
   report says the level reached. Two things are reported beside the level and never change it:
   claim coverage (claims that cite nothing) and retrieval provenance (a cited document that exists
   but that the trace never shows the agent retrieving: a correct-looking citation does not show the
@@ -253,8 +254,8 @@ A recorded run's finding says "this recorded report on this world", never "this 
 ## L2: support of a claim
 
 L0 (the cited id exists) and L1 (the quote occurs in the document) are checked. Whether the cited
-document *supports* the claim (L2) needs a judgment of meaning. 0.9 defines the interface and runs
-none: `SupportJudge.judge(claim, quote, document_text, answer, kind)` returns `SUPPORTED`,
+document *supports* the claim (L2) needs a judgment of meaning. 0.9 defines the interface and a
+flag, `--support-judge`, and runs a judge only when you name one: `SupportJudge.judge(claim, quote, document_text, answer, kind)` returns `SUPPORTED`,
 `NOT_SUPPORTED` or `CANNOT_JUDGE` with a basis, and carries a `JudgeLabel` (name, kind
 `deterministic_baseline`, `rule`, `model` or `human`, a version, and a `Validation` of counts
 against human labels, or none). `check_support(report, documents, judge, kind)` sends only citations
@@ -266,8 +267,22 @@ normalized answer occurs in the cited quote and the quote has no negation or ret
 otherwise `CANNOT_JUDGE`; it never says `NOT_SUPPORTED`, because a quote without the value may
 support the claim in other words. It cannot tell a fact from a hypothesis or a different subject and
 it is not validated. A judge that calls a model is yours to write; label it `model`, give its
-version and validate it on a labeled set before treating a verdict as evidence. The reports and
-`research check` still say L2 is not judged: the judge is an API, not a flag.
+version and validate it on a labeled set before treating a verdict as evidence.
+
+```console
+isitright research check corpus --task task.json --output out --stand-in careful   --support-judge quote-contains-answer
+isitright research check corpus --task task.json --output out --agent-command "..."   --trust-code --support-judge my_judges.py:MyJudge
+```
+
+`--support-judge quote-contains-answer` runs the rule above; no code of yours runs. Any other value is
+`module:attr` or `file.py:attr`, trusted code like `--agent` (it needs `--trust-code`): an object with
+`judge(claim, quote, document_text, answer, kind)` and a `label`, a class of that shape, or a function
+of no arguments that returns one. The judge reads the citations of the baseline run (the original
+corpus), not of every mutated world. The result is written to the case under
+`extensions.research.support` (judge label, whether it is validated, counts, one row per citation),
+an assumption names the judge, and a line is printed. A judge that raises or returns something that is
+not a `Judgement` has not judged: that citation is `CANNOT_JUDGE`, never `SUPPORTED`. L2 changes no
+citation level and no outcome.
 
 ## Retriever fidelity of a live agent
 
@@ -290,8 +305,8 @@ sandboxed.
 
 ## What is unsupported
 
-Free-text answers without a deterministic check (`CANNOT_JUDGE`), a model judge for support of a
-claim (L2; see below), a real dense or hybrid retriever (the hashed stand-in exists; to test your own, use
+Free-text answers without a deterministic check (`CANNOT_JUDGE`), a model judge that ships (you can pass your own with
+`--support-judge`; see below), a real dense or hybrid retriever (the hashed stand-in exists; to test your own, use
 `--agent-command` with the corpus served by your own stack and report the agent's own results, see
 "Retriever fidelity"), tools other than `search` and `open` (and `fetch`, its alias over HTTP), corpora larger
 than memory without a restricted per-task world (see the BrowseComp-Plus example), documents

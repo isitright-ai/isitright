@@ -234,3 +234,123 @@ def test_config_defaults_are_the_documented_ones() -> None:
     c = AuditConfig()
     assert (c.attempts, c.depth, c.sequential, c.max_pairs) == (500, 2, True, 16)
     assert isinstance(ResearchAudit(corpus(), task(), c).task, ResearchTask)
+
+
+# --- --support-judge (L2) ----------------------------------------------------------------------
+
+JUDGE = """
+from isitright.packs.research.support import Judgement, JudgeLabel, SupportVerdict
+
+
+class Judge:
+    label = JudgeLabel(name="test-judge", kind="rule", description="says not supported")
+
+    def judge(self, claim, quote, document_text, answer, kind):
+        return Judgement(SupportVerdict.NOT_SUPPORTED, "the test judge never agrees")
+
+
+class Failing:
+    label = JudgeLabel(name="failing", kind="model", description="raises", version="v0")
+
+    def judge(self, claim, quote, document_text, answer, kind):
+        raise RuntimeError("the model call failed")
+
+
+def make():
+    return Judge()
+
+
+NOT_A_JUDGE = object()
+"""
+
+
+def _support(out: Path) -> dict | None:
+    report = AuditReport.model_validate_json((out / "report.json").read_text(encoding="utf-8"))
+    return report.cases[0].extensions.get("research", {}).get("support")  # type: ignore[no-any-return]
+
+
+def _careful(out: Path, *extra: str):
+    return invoke(*base_args(out), "--stand-in", "careful", "--depth", "1", *extra)
+
+
+def test_without_a_support_judge_l2_is_not_judged(tmp_path: Path) -> None:
+    result = _careful(tmp_path / "o")
+    assert result.exit_code == 0 and "L2" not in result.output
+    assert _support(tmp_path / "o") is None
+
+
+def test_the_shipped_support_rule_needs_no_trust_and_reports_beside_l0_and_l1(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "o"
+    result = _careful(out, "--support-judge", "quote-contains-answer")
+    assert result.exit_code == 0, result.output
+    assert "L2 (quote-contains-answer, deterministic_baseline, not validated): 1 supported" in (
+        result.output
+    )
+    support = _support(out)
+    assert support is not None
+    assert (support["supported"], support["not_supported"], support["cannot_judge"]) == (1, 0, 0)
+    assert (
+        support["judge"]["kind"] == "deterministic_baseline" and not support["judge"]["validated"]
+    )
+    case = AuditReport.model_validate_json((out / "report.json").read_text("utf-8")).cases[0]
+    assert case.divergence_status.value == "NOT_FOUND_WITHIN_BUDGET"  # L2 changes no outcome
+    assert any("L2 was judged by quote-contains-answer" in a for a in case.assumptions)
+
+
+def test_a_judge_of_your_own_is_code_and_needs_trust(tmp_path: Path) -> None:
+    (tmp_path / "myjudge.py").write_text(JUDGE, encoding="utf-8")
+    spec = f"{tmp_path / 'myjudge.py'}:Judge"
+    refused = _careful(tmp_path / "a", "--support-judge", spec)
+    assert refused.exit_code == 2 and "--trust-code" in refused.output
+    assert not (tmp_path / "a").exists()
+    ok = _careful(tmp_path / "b", "--support-judge", spec, "--trust-code")
+    assert ok.exit_code == 0, ok.output
+    support = _support(tmp_path / "b")
+    assert support is not None and support["judge"]["name"] == "test-judge"
+    assert (support["supported"], support["not_supported"]) == (0, 1)
+    assert support["rows"][0]["basis"] == "the test judge never agrees"
+    assert "1 not supported" in ok.output
+    # a factory function works the same
+    assert (
+        _careful(
+            tmp_path / "c", "--support-judge", f"{tmp_path / 'myjudge.py'}:make", "--trust-code"
+        ).exit_code
+        == 0
+    )
+
+
+def test_a_judge_that_fails_has_not_judged_and_never_says_supported(tmp_path: Path) -> None:
+    (tmp_path / "myjudge.py").write_text(JUDGE, encoding="utf-8")
+    out = tmp_path / "o"
+    result = _careful(out, "--support-judge", f"{tmp_path / 'myjudge.py'}:Failing", "--trust-code")
+    assert result.exit_code == 0, result.output
+    support = _support(out)
+    assert support is not None
+    assert (support["supported"], support["not_supported"], support["cannot_judge"]) == (0, 0, 1)
+    assert "the judge failed: RuntimeError: the model call failed" in support["rows"][0]["basis"]
+    assert support["judge"]["kind"] == "model" and support["judge"]["validated"] is False
+    assert "model, not validated" in result.output
+
+
+@pytest.mark.parametrize(
+    ("spec", "message"),
+    [
+        ("no-such-rule", "unknown support judge"),
+        ("{file}:NOT_A_JUDGE", "is not a support judge"),
+        ("{file}:missing", "cannot load support judge"),
+        ("no_such_module_xyz:thing", "cannot load support judge"),
+    ],
+)
+def test_a_support_judge_that_cannot_be_loaded_is_an_input_error(
+    tmp_path: Path, spec: str, message: str
+) -> None:
+    (tmp_path / "myjudge.py").write_text(JUDGE, encoding="utf-8")
+    result = _careful(
+        tmp_path / "o",
+        "--support-judge",
+        spec.format(file=tmp_path / "myjudge.py"),
+        "--trust-code",
+    )
+    assert result.exit_code == 2 and message in result.output

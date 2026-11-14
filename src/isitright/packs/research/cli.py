@@ -113,6 +113,14 @@ def check_command(
     record_runs: Annotated[
         Path | None, typer.Option(help="Write each baseline run here as a recorded run.")
     ] = None,
+    support_judge: Annotated[
+        str | None,
+        typer.Option(
+            help="Judge whether each cited quote supports its claim (L2), reported beside L0 "
+            "and L1: quote-contains-answer (a rule that never says not supported), or a judge of "
+            "your own as module:attr or file.py:attr (trusted code: needs --trust-code)."
+        ),
+    ] = None,
     fail_on: Annotated[FailOn, typer.Option()] = FailOn.NONE,
 ) -> None:
     """Audit a research agent on mutated corpora."""
@@ -120,7 +128,12 @@ def check_command(
     from isitright.packs.research.agents import STAND_INS, ResearchTask
     from isitright.packs.research.audit import AuditConfig, ResearchAudit, ResearchInputError
     from isitright.packs.research.documents import CorpusError, load_corpus
-    from isitright.packs.research.external import ExternalError, command_subject, load_agent
+    from isitright.packs.research.external import (
+        ExternalError,
+        command_subject,
+        load_agent,
+        load_support_judge,
+    )
     from isitright.packs.research.replaying import write_outputs
     from isitright.packs.research.runs import read_run, write_run
 
@@ -129,6 +142,8 @@ def check_command(
         raise _fail("Choose exactly one of --stand-in, --agent, --agent-command, --recorded-run.")
     if (agent or agent_command) and not trust_code:
         raise _fail("This runs an agent: pass --trust-code (see --help).")
+    if support_judge is not None and ":" in support_judge and not trust_code:
+        raise _fail("A support judge of your own is code that runs here: pass --trust-code.")
     if output.exists():
         raise _fail("The output directory already exists; choose a new one.")
     try:
@@ -149,9 +164,11 @@ def check_command(
             allow_failing_baseline=allow_failing_baseline,
             declared_hints=declared,
         )
+        judge = load_support_judge(support_judge) if support_judge is not None else None
         audit = ResearchAudit(state, research_task, config)
-        if recorded_run is not None:
-            case = audit.check_frozen(read_run(recorded_run))
+        recorded = read_run(recorded_run) if recorded_run is not None else None
+        if recorded is not None:
+            case = audit.check_frozen(recorded)
         else:
             if stand_in is not None:
                 if stand_in not in STAND_INS:
@@ -165,6 +182,9 @@ def check_command(
                     _split(agent_command), research_task, audit.stats, timeout=timeout
                 )
             case = audit.check(subject)
+        support_line = None
+        if judge is not None:
+            support_line = _attach_support(case, judge, audit, recorded, research_task)
     except (ExternalError, CorpusError, ResearchInputError, ValueError, OSError) as error:
         raise _fail(f"Input error: {error}") from error
     written = write_outputs(output, case, audit.artifacts, audit.exports, audit.cannot_judge_rows)
@@ -173,10 +193,37 @@ def check_command(
         for i, run in enumerate(audit.baseline_runs, start=1):
             write_run(record_runs / f"baseline-{i}.json", run)
     typer.echo(case.headline)
+    if support_line:
+        typer.echo(support_line)
     for path in written:
         typer.echo(f"Wrote {path}")
     if policy_triggered(case, fail_on):
         raise typer.Exit(EXIT_POLICY_TRIGGERED)
+
+
+def _attach_support(case: Any, judge: Any, audit: Any, recorded: Any, task: Any) -> str | None:
+    """Run the L2 judge on the baseline run's citations and record the result with the case,
+    beside L0 and L1 (it changes no level and no outcome). Returns the line to print."""
+    from isitright.packs.research.documents import documents_of
+    from isitright.packs.research.support import check_support
+
+    runs = audit.baseline_runs or ([recorded] if recorded is not None else [])
+    if not runs:
+        return "L2: not judged (no baseline run to read the citations of)"
+    result = check_support(runs[0].report, documents_of(audit.state), judge, task.answer_type)
+    summary = result.to_json()
+    case.extensions.setdefault("research", {})["support"] = summary
+    label = judge.label
+    kind = f"{label.kind}, {'validated' if label.validation is not None else 'not validated'}"
+    case.assumptions.append(
+        f"L2 was judged by {label.name} ({kind}): {label.description} Its verdicts are reported "
+        "beside L0 and L1 and change neither the citation level nor any outcome."
+    )
+    return (
+        f"L2 ({label.name}, {kind}): {result.supported} supported, {result.not_supported} not "
+        f"supported, {result.cannot_judge} cannot judge, {result.skipped} not sent "
+        "(no document, no quote, or the quote is not in the document)"
+    )
 
 
 def _split(command: str) -> list[str]:
