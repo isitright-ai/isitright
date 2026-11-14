@@ -9,8 +9,8 @@ How the memory limit is enforced (``memory_enforcement()``):
 * Windows: a Job Object caps the memory the runner may commit; an allocation over the limit fails
   with ``MemoryError``. Exact.
 * Linux and macOS with ``psutil`` installed: a watchdog thread in this process reads the resident
-  memory of the runner every ``WATCH_INTERVAL`` seconds (and of its children every tenth time) and kills the process
-  group above the limit; inside the runner a thread watches its own peak resident memory as a
+  memory of the runner every ``WATCH_INTERVAL`` seconds (and of its children every tenth time) and
+  kills the process group above the limit; inside the runner a thread watches its own peak resident memory as a
   second line. Approximate: a program can pass the limit between two readings (measured overshoot
   in ``docs/data.md``).
 * Linux without ``psutil``: an address-space limit (``RLIMIT_AS``), which counts reserved virtual
