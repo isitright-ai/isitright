@@ -187,14 +187,18 @@ def test_the_runner_ends_itself_when_its_peak_memory_grows_past_the_limit() -> N
         "scale = 1 if sys.platform == 'darwin' else 1024\n"
         "now = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
         "_runner._watch_own_memory(now + 20 * 2**20)\n"
-        "x = b'x' * (100 * 2**20)\n"  # written, so resident (a zeroed bytearray is not)
+        "x = bytearray(100 * 2**20)\n"
+        "for i in range(0, len(x), 4096):\n"  # touch every page: untouched pages are not resident
+        "    x[i] = 1\n"
+        "after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
+        "print('peak before', now // 2**20, 'after', after // 2**20, 'MB', flush=True)\n"
         "time.sleep(10)\n"
         "print('survived')\n"
     )
     completed = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
     )
-    assert completed.returncode == _runner.MEMORY_EXIT, completed.stderr
+    assert completed.returncode == _runner.MEMORY_EXIT, (completed.stdout, completed.stderr)
     assert _runner.MEMORY_MARK in completed.stderr and "MB limit" in completed.stderr
     assert "survived" not in completed.stdout
 
