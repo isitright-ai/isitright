@@ -363,3 +363,41 @@ def test_a_blocked_operation_that_the_program_survives_is_recorded_not_rejected(
         assert run.status == "ok" and run.answer()[0] == 5 and "process" in run.violations[0]
     finally:
         host.close()
+
+
+def test_on_macos_the_limit_is_reported_and_warned_about_as_a_lower_bound(
+    world: tuple[Any, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from isitright.packs.data import host as host_module
+
+    monkeypatch.setattr(host_module.sys, "platform", "darwin")
+    monkeypatch.setattr(host_module, "memory_enforcement", lambda *a, **k: "rss_watchdog")
+    with pytest.warns(RuntimeWarning, match="lower bound"):
+        host = make_host(world, memory_mb=300)
+    described = host.describe()
+    assert described["memory_enforcement"] == "rss_watchdog"
+    assert "lower bound" in described["memory_limit_note"]
+    # no limit asked for: nothing to warn about
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        quiet = make_host(world, memory_mb=None)
+    assert "memory_limit_note" not in quiet.describe()
+
+
+@pytest.mark.parametrize(
+    ("platform", "enforcement", "noted"),
+    [
+        ("darwin", "rss_watchdog", True),
+        ("linux", "rss_watchdog", False),
+        ("win32", "job_object", False),
+        ("darwin", "none", False),  # its own warning says the limit is not enforced at all
+    ],
+)
+def test_only_the_macos_watchdog_is_called_a_lower_bound(
+    platform: str, enforcement: str, noted: bool
+) -> None:
+    from isitright.packs.data.host import memory_limit_note
+
+    assert (memory_limit_note(enforcement, platform) is not None) is noted

@@ -78,6 +78,20 @@ def memory_enforcement(platform: str | None = None, *, psutil_available: bool | 
     return "none" if platform == "darwin" else "address_space"
 
 
+MACOS_LIMIT_NOTE = (
+    "on macOS the memory limit is a lower bound: the watchdog reads resident memory, so a program "
+    "that allocates fast can use hundreds of MB more than memory_mb before it is stopped "
+    "(measured: median 57 to 347 MB over a 300 MB limit, up to 514 MB; docs/data.md). Leave "
+    "headroom, or run in a container with a memory cap"
+)
+
+
+def memory_limit_note(enforcement: str, platform: str | None = None) -> str | None:
+    """What the report and a warning say when the limit is only a lower bound (macOS watchdog)."""
+    platform = sys.platform if platform is None else platform
+    return MACOS_LIMIT_NOTE if platform == "darwin" and enforcement == "rss_watchdog" else None
+
+
 def _kill_group(pid: int) -> None:
     if sys.platform == "win32":  # pragma: no cover - the Job Object ends the tree there
         return
@@ -356,6 +370,9 @@ class DataHost:
         self.timeout_seconds = timeout_seconds
         self.memory_bytes = memory_mb * MB if memory_mb else None
         self.enforcement = memory_enforcement() if self.memory_bytes else "none"
+        self.memory_note = memory_limit_note(self.enforcement) if self.memory_bytes else None
+        if self.memory_note:
+            warnings.warn(self.memory_note, RuntimeWarning, stacklevel=2)
         self.outputs = outputs
         self.data_format = data_format
         self.reuse = max(1, reuse)
@@ -371,6 +388,7 @@ class DataHost:
             "timeout_seconds": self.timeout_seconds,
             "memory_limit_mb": self.memory_bytes // MB if self.memory_bytes else None,
             "memory_enforcement": self.enforcement,
+            **({"memory_limit_note": self.memory_note} if self.memory_note else {}),
             "data_format": self.data_format,
         }
 
