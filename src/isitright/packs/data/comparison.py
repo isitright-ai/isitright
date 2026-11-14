@@ -47,14 +47,35 @@ def decimals_in(text: str) -> int | None:
     return found[0] if found else None
 
 
-def decimals_per_answer(text: str) -> dict[str, int]:
-    """Decimals stated for one named answer ("r_value ... rounded to two decimal places, and
-    p_value ... to four"): the clause from an answer's name to the next answer's name or the end
-    of the sentence must name exactly one precision, else that answer gets none (and the task's
-    fewest applies). Names come from the ``@name[...]`` template; the template itself is skipped."""
+_DECIMAL_MENTION = re.compile(r"(?:(?:to|by)\s+(?:the\s+)?(?:nearest\s+)?)?(\w+)\s+decimal", re.I)
+
+
+def _decimals_in_order(text: str) -> list[int]:
+    """The decimals a text names, in the order it names them and with repeats."""
+    found = []
+    for match in _DECIMAL_MENTION.finditer(text):
+        word = match.group(1).lower()
+        if word.isdigit():
+            found.append(int(word))
+        elif word in _WORDS:
+            found.append(_WORDS[word])
+    return found
+
+
+def decimals_resolution(text: str) -> tuple[dict[str, int], dict[str, list[int]]]:
+    """Decimals stated for named answers: ``(resolved, undetermined)``.
+
+    The clause from an answer's name to the next answer's name or the end of the sentence names
+    one precision: that answer's. A sentence ending in "respectively" that lists as many answers
+    as precisions ("r_value and p_value are rounded to two decimal places and four decimal places
+    respectively") gives them in order. An answer whose clause names several precisions that
+    neither rule separates is ``undetermined``: the precisions it names are returned so the caller
+    can state that the question does not settle it (the 0.9 review: falling back to the coarsest
+    precision accepted two p-values that differ at the fourth decimal). Names come from the
+    ``@name[...]`` template; the template itself is skipped."""
     names = {normal_name(n): n for n, _ in _NAMED.findall(text)}
     if len(names) < 2:
-        return {}
+        return {}, {}
     plain = _NAMED.sub(" ", text)
     spots = sorted(
         (match.start(), key)
@@ -62,6 +83,7 @@ def decimals_per_answer(text: str) -> dict[str, int]:
         for match in re.finditer(rf"(?<![\w@]){re.escape(name.strip())}(?!\w)", plain)
     )
     out: dict[str, int] = {}
+    named: dict[str, list[int]] = {}
     for index, (start, key) in enumerate(spots):
         end = spots[index + 1][0] if index + 1 < len(spots) else len(plain)
         clause = plain[start:end]
@@ -69,7 +91,35 @@ def decimals_per_answer(text: str) -> dict[str, int]:
         digits = decimals_named(clause[: stop.start()] if stop else clause)
         if len(digits) == 1 and key not in out:
             out[key] = digits[0]
-    return out
+        elif len(digits) > 1:
+            named.setdefault(key, digits)
+    for sentence in re.split(r"\.(?:\s|$)", plain):
+        if "respectively" not in sentence.lower():
+            continue
+        listed: list[str] = []
+        for _, key in sorted(
+            (m.start(), key)
+            for key, name in names.items()
+            for m in re.finditer(rf"(?<![\w@]){re.escape(name.strip())}(?!\w)", sentence)
+        ):
+            if key not in listed:
+                listed.append(key)
+        in_order = _decimals_in_order(sentence)
+        if len(listed) == len(in_order) and len(listed) > 1:
+            for key, places in zip(listed, in_order, strict=True):
+                out[key] = places
+                named.pop(key, None)
+        elif len(listed) > 1 and len(set(in_order)) > 1:
+            for key in listed:  # "respectively" without a one-to-one pairing: none is settled
+                out.pop(key, None)
+                named[key] = sorted(set(in_order))
+    undetermined = {key: digits for key, digits in named.items() if key not in out}
+    return out, undetermined
+
+
+def decimals_per_answer(text: str) -> dict[str, int]:
+    """The precisions the text settles for named answers (see ``decimals_resolution``)."""
+    return decimals_resolution(text)[0]
 
 
 def normal_name(name: str) -> str:
@@ -162,6 +212,10 @@ class AnswerPolicy:
     ulps: int = 0
     per_answer: dict[str, int] = field(default_factory=dict)
     """Decimals stated for one named answer (normalized name); the others use ``abs_tol``."""
+    undetermined: dict[str, list[int]] = field(default_factory=dict)
+    """Answers whose clause names several precisions that the text does not separate. They are
+    compared at the finest precision named and reported as undetermined, never at the task's
+    coarser one."""
 
     @staticmethod
     def for_question(text: str) -> AnswerPolicy:
@@ -173,13 +227,18 @@ class AnswerPolicy:
         # rounding that differs by one unit at a tie (2243963.30 against 2243963.31) would
         # otherwise count as a disagreement. (0.6 to 0.8 used rel_tol 1e-15 and abs_tol x 1+1e-9,
         # 4.5 to 9 ulps.) Answers whose own clause names finer decimals get their own unit.
-        per_answer = {name: d for name, d in decimals_per_answer(text).items() if d != digits}
+        resolved, undetermined = decimals_resolution(text)
+        per_answer = {name: d for name, d in resolved.items() if d != digits}
+        for name, named in undetermined.items():
+            if max(named) != digits:
+                per_answer[name] = max(named)
         return AnswerPolicy(
             abs_tol=10.0**-digits,
             rel_tol=0.0,
             ulps=2,
             basis=f"question asks for {digits} decimal places: one unit in the last place",
             per_answer=per_answer,
+            undetermined=undetermined,
         )
 
     def describe(self) -> dict[str, Any]:
@@ -192,6 +251,17 @@ class AnswerPolicy:
             out["numbers_per_answer"] = {
                 name: self.numeric(name).describe() for name in sorted(self.per_answer)
             }
+        if self.undetermined:
+            out["precision_undetermined"] = {
+                name: {
+                    "named": digits,
+                    "used": max(digits),
+                    "note": "the question names several precisions for this answer that its text "
+                    "does not separate; the finest is used, so a difference at a coarser one is "
+                    "reported",
+                }
+                for name, digits in sorted(self.undetermined.items())
+            }
         if self.frame is not None:
             out["frame"] = self.frame.describe()
         return out
@@ -201,6 +271,11 @@ class AnswerPolicy:
         if answer is not None and answer in self.per_answer:
             digits = self.per_answer[answer]
             basis = f"the question asks for {digits} decimal places for {answer}"
+            if answer in self.undetermined:
+                basis = (
+                    f"the question names {sorted(self.undetermined[answer])} decimal places for "
+                    f"{answer} without saying which applies: the finest ({digits}) is used"
+                )
             return NumericComparator(10.0**-digits, 0.0, basis, self.ulps)
         return NumericComparator(self.abs_tol, self.rel_tol, self.basis, self.ulps)
 

@@ -228,17 +228,53 @@ def test_each_named_answer_gets_the_decimals_its_own_clause_states() -> None:
     )
 
 
-def test_a_clause_that_names_two_precisions_gives_no_answer_its_own() -> None:
+RESPECTIVELY = (
+    "Format: @r_value[r_value] @p_value[p_value] where r_value and p_value are rounded to "
+    "two decimal places and four decimal places respectively."
+)
+
+
+def test_respectively_gives_each_answer_its_precision_in_order() -> None:
+    policy = AnswerPolicy.for_question(RESPECTIVELY)
+    assert policy.per_answer == {"pvalue": 4} and policy.undetermined == {}
+    assert policy.abs_tol == 0.01
+    comparator = DataComparator(policy)
+    expected = "@r_value[0.53] @p_value[0.0012]"
+    assert comparator.compare(expected, "@r_value[0.539] @p_value[0.0012]").matches
+    outcome = comparator.compare(expected, "@r_value[0.53] @p_value[0.0019]")
+    assert not outcome.matches and "pvalue" in (outcome.difference or "")
+
+
+def test_respectively_follows_the_order_the_answers_are_listed_in() -> None:
     text = (
-        "Format: @r_value[r_value] @p_value[p_value] where r_value and p_value are rounded to "
+        "Format: @r_value[r_value] @p_value[p_value] where p_value and r_value are rounded to "
         "two decimal places and four decimal places respectively."
     )
     policy = AnswerPolicy.for_question(text)
-    assert policy.per_answer == {} and policy.abs_tol == 0.01  # the fewest, as before
-    # the clause of p_value names 4 and 6, and the task's fewest is 2 (from r_value): the first
-    # named precision must not be taken for p_value
+    assert policy.per_answer == {"rvalue": 4} and policy.abs_tol == 0.01  # p_value: 2, r_value: 4
+
+
+def test_a_precision_the_text_does_not_settle_is_reported_and_taken_at_its_finest() -> None:
+    # three answers, two precisions, "respectively": the pairing is not given
+    unmatched = (
+        "Format: @a[a] @b[b] @c[c] where a, b and c are rounded to two decimal places and four "
+        "decimal places respectively."
+    )
+    policy = AnswerPolicy.for_question(unmatched)
+    assert policy.undetermined == {"a": [2, 4], "b": [2, 4], "c": [2, 4]}
+    assert policy.per_answer == {"a": 4, "b": 4, "c": 4}
     split = (
         "Format: @r_value[r_value] @p_value[p_value] where r_value is rounded to two decimal "
         "places and p_value to four decimal places or to six decimal places."
     )
-    assert AnswerPolicy.for_question(split).per_answer == {}
+    policy = AnswerPolicy.for_question(split)
+    assert policy.undetermined == {"pvalue": [4, 6]} and policy.per_answer == {"pvalue": 6}
+    note = policy.describe()["precision_undetermined"]["pvalue"]
+    assert note["named"] == [4, 6] and note["used"] == 6 and "finest" in note["note"]
+    assert "without saying which applies" in policy.numeric("pvalue").describe()["basis"]
+    comparator = DataComparator(policy)
+    expected = "@r_value[0.53] @p_value[0.0012]"
+    assert not comparator.compare(expected, "@r_value[0.53] @p_value[0.00121]").matches
+    assert comparator.compare(expected, "@r_value[0.53] @p_value[0.0012000004]").matches
+    # a policy with nothing undetermined says nothing about it
+    assert "precision_undetermined" not in AnswerPolicy.for_question(PEARSON).describe()
