@@ -81,7 +81,7 @@ The Windows limit caps the memory one process may commit. The runner puts itself
 | Platform | `memory_enforcement` | How | Exact? |
 |---|---|---|---|
 | Windows | `job_object` | A Job Object caps the memory the runner may commit; an allocation over the limit raises `MemoryError` | Yes |
-| Linux, macOS, with `psutil` | `rss_watchdog` | The audit process reads the resident memory of the runner and its children every 50 ms and kills the runner's process group above the limit; the runner also watches its own peak as a second line (new in 0.9) | **Approximate** |
+| Linux, macOS, with `psutil` | `rss_watchdog` | The audit process reads the resident memory of the runner and its children every 10 ms (its children every tenth time) and kills the runner's process group above the limit; the runner also watches its own peak as a second line (new in 0.9) | **Approximate** |
 | Linux, without `psutil` | `address_space` | `RLIMIT_AS`, which counts reserved address space, so NumPy or pandas can hit it far below their real use | Yes, but it measures the wrong thing |
 | macOS, without `psutil` | `none` | macOS has no `RLIMIT_AS`: a warning says the limit is not enforced; the timeout still is | No limit |
 

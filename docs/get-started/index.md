@@ -6,10 +6,11 @@ isitright needs Python 3.11 or newer.
 python -m pip install isitright                 # the core and SQLite
 python -m pip install "isitright[mcp]"          # + the agent pack (MCP), and the research pack's stdio server
 python -m pip install "isitright[postgres]"     # + native PostgreSQL on a disposable local server
-python -m pip install "isitright[duckdb]"       # + DuckDB, as labeled emulation of PostgreSQL
+python -m pip install "isitright[duckdb]"       # + DuckDB, as labeled emulation of PostgreSQL, BigQuery, Presto and Trino
+python -m pip install "isitright[data]"         # + pandas and psutil, for the data-analysis pack
 python -m pip install "isitright[bigquery]"     # + BigQuery client, to confirm findings (NOT in [all])
 python -m pip install "isitright[trino]"        # + Trino client, to confirm findings (NOT in [all])
-python -m pip install "isitright[all]"          # all of the above except bigquery and trino
+python -m pip install "isitright[all]"          # all of the above except bigquery and trino (and the optional `data-schema` and `parquet` extras are included)
 ```
 
 The research pack runs with the base install: stand-in agents, agents given as code and recorded

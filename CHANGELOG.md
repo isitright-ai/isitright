@@ -8,8 +8,53 @@ Versions before 1.0 may break the API, the CLI and the report schema.
 Closes loose ends of 0.4 to 0.8 and adds no pack. Built and tested offline: no model, account or
 paid service was used.
 
+### Added
+
+- **Quick starts for the data-analysis pack and for BigQuery and Presto/Trino** (`docs/get-started/data.md`,
+  `warehouses.md`), each run offline on committed examples (`examples/data/quickstart/`,
+  `examples/sql/bigquery/`), with tests that run every command and check each line the page prints
+  (`tests/test_quickstarts.py`) and that every link, anchor and navigation entry resolves
+  (`tests/test_docs.py`).
+- **Nested scoping per path** (BigQuery, Presto, Trino): generation and the `nested_edit` family stay
+  on the paths a query reads inside a nested column (dot access, subscripts, `UNNEST` aliases,
+  CTEs). `--nested-scope column` restores the 0.7 behavior; the report records the scope and paths.
+- **Candidate errors on every engine.** A data error of the candidate where the reference returns a
+  result is a finding on SQLite, PostgreSQL and emulated PostgreSQL too (as for warehouses since 0.7);
+  a data error of the reference skips the world.
+- **PrestoDB through your own connection** (`examples/sql/prestodb/`): the Presto fixtures run on an
+  engine you reach with a function you supply; observations are kept per fixture and engine.
+- **Spider 2.0-lite demo:** every accepted `condition_cols` list is applied (a benchmark finding
+  counts only if no list accepts the candidate), Spider's result files are the baseline reference
+  where the gold SQL matches none, hand-written clean worlds for `bq402`, `bq025` and `bq398`,
+  `smoke-detected` for the fixtures the pack refuses.
+- **Data pack:** a resident-memory watchdog on Linux and macOS (`psutil`, now in the `data` extra);
+  numeric policy of exactly 2 ulps; decimals per named answer; a `row_count` rule in the constraint
+  language; string and list-of-string edits in the JSON family (the Memory scenario uses them).
+- **Research pack:** a retriever interface with a hashed dense stand-in, rank fusion and an adapter
+  for an embedding function you supply (`--retriever`); a streamable-HTTP MCP server for the two
+  tools (`search`, `fetch`) with a bearer token; L2 (support of a claim) behind a judge interface
+  with one deterministic baseline and no model judge; the agent's own retriever against the
+  simulated one on the same queries (`own_retrieval.jsonl`).
+- **`tools/measure_memory.py`** and a CI step that print the memory-limit overshoot on Linux and macOS.
+
+### Fixed
+
+- A failure to reach a native engine (a dropped connection, a transport timeout, an HTTP 401, 403,
+  407, 408, 429 or 5xx) was read as "the candidate errors natively too" and verified a
+  candidate-errors finding; it now leaves the finding unverified.
+- A timer whose target a composed world had removed raised `EditError` and ended the run; it now
+  reports that it found nothing to change.
+- The data host's runner ended itself when started from a large process on Linux (the child
+  inherits its parent's high-water mark); the check now fires only on growth.
+
 ### Changed
 
+- **Breaking, small:** `isitright data` numeric answers use `abs_tol = 10^-d`, `rel_tol = 0` and 2
+  ulps where 0.6 to 0.8 used a tolerance of `10^-d * (1 + 1e-9)` and `rel_tol = 1e-15`; a question
+  that states different decimals for different answers now compares each at its own precision.
+  `CheckConfig` gains `nested_scope` (default `path`: a nested column's unread fields are no longer
+  generated). On macOS the data host's memory limit is enforced when `psutil` is installed (it is in
+  the `data` extra); on Linux the watchdog replaces `RLIMIT_AS`.
 - **The version is written in one place**, `src/isitright/__about__.py`. `isitright --version`,
   the package metadata and the tests read it; the docs no longer state it. `tools/release.py X.Y.Z`
   (with `--dry-run`) sets it and renames the top changelog heading from `X.Y.Z.devN` to `X.Y.Z`;

@@ -46,6 +46,7 @@ Compare one query pair on perturbed worlds of a database or schema.
 | `--format json\|markdown\|both` | `both` | |
 | `--fail-on none\|domain-counterexample\|any-counterexample` | `none` | Exit code 3 |
 | `--verify-native` / `--no-verify-native` | on | Re-execute DuckDB findings on PostgreSQL when installed |
+| `--gold-trusted` / `--gold-untrusted` | unknown | State that the reference query is right or is not known to be; the report says so beside a finding (0.7) |
 
 Writes `case_report.json`, `case_report.md`, and for a counterexample `counterexample.sql` and
 `replay.json`. For `postgres` and `duckdb` the output directory must not already exist.
@@ -148,7 +149,11 @@ result. See [Data analysis agents](../data.md#long-audits-resume-and-the-run-cac
 
 `--agent module:callable --output DIR --trust-code [--programs FILE] [--pass-env NAME ...]
 [--baseline-runs N] [--max-trials N] [--max-worlds N] [--ranking diverse|screening|coverage|random]
-[--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]`. Live
+[--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]
+[--attempts N] [--seed N] [--agent-kwargs JSON] [--agent-timeout S] [--env-file FILE]`. `--attempts`
+(default 300) sets both the frozen check that finds the minimized world and the live world search;
+`--agent-kwargs` are the factory's keyword arguments as JSON; `--env-file` reads only the variables
+named by `--pass-env` from a dotenv-style file (a variable already in the environment wins). Live
 audit: the agent is run on ranked worlds, paired with its own baseline runs, in a separate process
 that sees only the variables named by `--pass-env`.
 
@@ -169,7 +174,7 @@ Audit a research agent on mutated corpora (see [Research agents](../research/ind
 isitright research check CORPUS --task task.json --output DIR \
   (--stand-in NAME | --agent module:attr | --agent-command "..." | --recorded-run run.json) \
   [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] \
-  [--retriever bm25|hashed-dense|hybrid] [--runs K] [--max-runs N] \
+  [--retriever bm25|hashed-dense|hybrid] [--seed N] [--runs K] [--max-runs N] \
   [--seconds S] [--max-money USD] [--timeout S] [--screen] [--no-minimize] \
   [--allow-failing-baseline] [--record-runs DIR] \
   [--fail-on none|domain-counterexample|any-counterexample]

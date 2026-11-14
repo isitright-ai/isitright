@@ -9,7 +9,7 @@ How the memory limit is enforced (``memory_enforcement()``):
 * Windows: a Job Object caps the memory the runner may commit; an allocation over the limit fails
   with ``MemoryError``. Exact.
 * Linux and macOS with ``psutil`` installed: a watchdog thread in this process reads the resident
-  memory of the runner and its children every ``WATCH_INTERVAL`` seconds and kills the process
+  memory of the runner every ``WATCH_INTERVAL`` seconds (and of its children every tenth time) and kills the process
   group above the limit; inside the runner a thread watches its own peak resident memory as a
   second line. Approximate: a program can pass the limit between two readings (measured overshoot
   in ``docs/data.md``).
@@ -54,8 +54,12 @@ from isitright.packs.data.mapping import write_state
 
 RUNNER = Path(__file__).with_name("_runner.py")
 MAX_CAPTURE = 64 * 1024
-WATCH_INTERVAL = 0.05
-"""Seconds between two readings of the runner's resident memory by the watchdog."""
+WATCH_INTERVAL = 0.01
+"""Seconds between two readings of the runner's own resident memory by the watchdog."""
+CHILDREN_EVERY = 10
+"""Every this many readings the runner's children are added in. Listing them walks every process of
+the machine (slow on macOS), a program cannot start any (the runner blocks it), and the extra
+reading is only for a native library that does."""
 MEMORY_MARK = "isitright runner: memory limit exceeded"
 """The line the runner writes to stderr before it ends itself over the limit (``_runner.py``)."""
 MB = 1024 * 1024
@@ -101,21 +105,31 @@ class _Watchdog:
         self._thread = threading.Thread(target=self._watch, name="isitright-watchdog", daemon=True)
         self._thread.start()
 
-    def resident(self) -> int | None:
-        """Bytes resident in the runner and its children, or None once the runner is gone."""
+    def resident(self, children: bool = True) -> int | None:
+        """Bytes resident in the runner (and, with ``children``, its children), or None once the
+        runner is gone."""
         try:
-            processes = [self._process, *self._process.children(recursive=True)]
+            processes = [self._process]
+            if children:
+                processes += self._process.children(recursive=True)
         except self._psutil.Error:
             return None
         total = 0
         for process in processes:
-            with suppress(self._psutil.Error):
+            try:
                 total += int(process.memory_info().rss)
+            except self._psutil.NoSuchProcess:
+                if process is self._process:
+                    return None
+            except self._psutil.Error:
+                pass
         return total
 
     def _watch(self) -> None:
+        tick = 0
         while not self._stop.is_set():
-            resident = self.resident()
+            resident = self.resident(children=tick % CHILDREN_EVERY == 0)
+            tick += 1
             if resident is None:
                 return
             if resident > self.limit:
