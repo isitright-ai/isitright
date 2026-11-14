@@ -10,9 +10,9 @@ How the memory limit is enforced (``memory_enforcement()``):
   with ``MemoryError``. Exact.
 * Linux and macOS with ``psutil`` installed: a watchdog thread in this process reads the resident
   memory of the runner every ``WATCH_INTERVAL`` seconds (and of its children every tenth time) and
-  kills the process group above the limit; inside the runner a thread watches its own peak resident memory as a
-  second line. Approximate: a program can pass the limit between two readings (measured overshoot
-  in ``docs/data.md``).
+  kills the process group above the limit; inside the runner a thread watches its own peak
+  resident memory as a second line. Approximate: a program can pass the limit between two readings
+  (measured overshoot in ``docs/data.md``).
 * Linux without ``psutil``: an address-space limit (``RLIMIT_AS``), which counts reserved virtual
   memory, so NumPy or pandas can hit it far below their real use.
 * macOS without ``psutil``: none (macOS has no ``RLIMIT_AS``); a warning says so.
