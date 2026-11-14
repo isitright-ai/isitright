@@ -180,14 +180,18 @@ def test_the_host_and_the_runner_agree_on_the_memory_mark() -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
 def test_the_runner_ends_itself_when_its_peak_memory_grows_past_the_limit() -> None:
-    """The limit is 20 MB above the starting peak; the program then allocates 100 MB."""
+    """The limit is 20 MB above the starting peak; the program then allocates that peak + 100 MB.
+
+    On Linux the starting peak is the parent's high-water mark (361 MB under pytest in CI on
+    2026-11-14), so an allocation smaller than it never raises ``ru_maxrss``.
+    """
     code = (
         "import resource, sys, time\n"
         "from isitright.packs.data import _runner\n"
         "scale = 1 if sys.platform == 'darwin' else 1024\n"
         "now = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
         "_runner._watch_own_memory(now + 20 * 2**20)\n"
-        "x = bytearray(100 * 2**20)\n"
+        "x = bytearray(now + 100 * 2**20)\n"  # past the inherited peak, or it cannot grow
         "for i in range(0, len(x), 4096):\n"  # touch every page: untouched pages are not resident
         "    x[i] = 1\n"
         "after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
