@@ -187,7 +187,7 @@ def test_the_runner_ends_itself_when_its_peak_memory_grows_past_the_limit() -> N
         "scale = 1 if sys.platform == 'darwin' else 1024\n"
         "now = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
         "_runner._watch_own_memory(now + 20 * 2**20)\n"
-        "x = bytearray(100 * 2**20)\n"
+        "x = b'x' * (100 * 2**20)\n"  # written, so resident (a zeroed bytearray is not)
         "time.sleep(10)\n"
         "print('survived')\n"
     )
