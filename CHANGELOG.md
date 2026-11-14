@@ -33,8 +33,11 @@ paid service was used.
 - **Research pack:** a retriever interface with a hashed dense stand-in, rank fusion and an adapter
   for an embedding function you supply (`--retriever`); a streamable-HTTP MCP server for the two
   tools (`search`, `fetch`) with a bearer token; L2 (support of a claim) behind a judge interface
-  with one deterministic baseline and no model judge; the agent's own retriever against the
+  with one deterministic baseline and no model judge, run by `research check --support-judge` (the
+  shipped rule, or a judge of your own with `--trust-code`) on the baseline run's citations; the agent's own retriever against the
   simulated one on the same queries (`own_retrieval.jsonl`).
+- **`--run-patience-share`** (default 0.10): the run stopping rule stops after the larger of
+  `--run-patience` and this share of the worlds ranked, so it scales with the universe.
 - **`tools/measure_memory.py`** and a CI step that print the memory-limit overshoot on Linux and macOS.
 
 ### Fixed
@@ -47,8 +50,23 @@ paid service was used.
 - The data host's runner ended itself when started from a large process on Linux (the child
   inherits its parent's high-water mark); the check now fires only on growth.
 
+- A native host's failure to build its client or connection (Trino, BigQuery) was not classified;
+  it is now always a host error. `engine_error` reads the HTTP status from `code`, `status_code`,
+  `http_status`, `response.status_code` or an `Http<NNN>Error` class name; a `code` outside 100 to
+  599 (a database's own error number) is not a status.
+- A question that says "r_value and p_value are rounded to two and four decimal places
+  respectively" gave both answers the coarser precision. "Respectively" now pairs them in order; a
+  precision the text does not settle is reported (`precision_undetermined`) and taken at its finest.
+- Spider demo: the native confirmation checked the first accepted column list instead of the variant
+  that produced the finding, a column list that does not fit the gold SQL's columns counted as a
+  rejection, and a failed cleanup of scratch tables did not show in `rewrite_equivalence`'s result.
+
 ### Changed
 
+- On macOS the data host warns that the memory limit is a lower bound and says so in the report.
+- **Breaking, small:** the default run stopping rule scales with the universe (10% of the worlds
+  ranked, with 30 as the floor) where 0.8 stopped after a fixed 30 quiet worlds. `--run-patience-share 0`
+  restores the fixed number. Runs of large universes cost more and keep more distinct findings.
 - **Breaking, small:** `isitright data` numeric answers use `abs_tol = 10^-d`, `rel_tol = 0` and 2
   ulps where 0.6 to 0.8 used a tolerance of `10^-d * (1 + 1e-9)` and `rel_tol = 1e-15`; a question
   that states different decimals for different answers now compares each at its own precision.
