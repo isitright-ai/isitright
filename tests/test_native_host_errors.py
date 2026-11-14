@@ -18,7 +18,8 @@ pytest.importorskip("duckdb")
 from isitright.core.evidence import DivergenceStatus
 from isitright.packs.sql import BigQueryHost, check
 from isitright.packs.sql.dialects import get_dialect
-from isitright.packs.sql.native import ConnectionHost, NativeHostError, TrinoHost
+from isitright.packs.sql.errors import SqlInputError
+from isitright.packs.sql.native import ConnectionHost, NativeHostError, TrinoHost, engine_error
 from isitright.packs.sql.sqlite_sandbox import QueryExecutionError
 
 DDL = "CREATE TABLE t (id INT64, s STRING)"
@@ -137,3 +138,125 @@ def test_the_trino_host_classifies_errors_the_same_way(
     with pytest.raises(kind) as raised:
         host.run_inline(INLINE, get_dialect("trino"), timeout_seconds=5, max_rows=10)
     assert type(raised.value) is kind
+
+
+# --- setup failures, the status matrix, and the shapes the client libraries use -------------
+#
+# The libraries (google-cloud-bigquery, trino) are optional extras and are not installed in the
+# test environment, so the exception shapes below imitate the documented ones: google.api_core's
+# errors carry the HTTP status in ``code``; google.auth's credential errors carry none; the trino
+# client raises ``Http<NNN>Error`` classes without a status attribute; requests' errors carry
+# ``response.status_code`` and are OSErrors. Unverified against the real libraries: see REVIEW.md.
+
+
+def _with_status(name: str, **attrs: Any) -> Exception:
+    return type(name, (Exception,), attrs)(f"{name} happened")
+
+
+@pytest.mark.parametrize("status", [401, 403, 407, 408, 429, 500, 502, 503, 504, 599])
+def test_statuses_that_refuse_or_fail_the_caller_leave_the_finding_unconfirmed(
+    status: int,
+) -> None:
+    for shape in (
+        _with_status("GoogleShaped", code=status),
+        _with_status("StatusCodeShaped", status_code=status),
+        _with_status("HttpStatusShaped", http_status=status),
+        _with_status("RequestsShaped", response=type("R", (), {"status_code": status})()),
+        _with_status(f"Http{status}Error"),
+    ):
+        assert type(engine_error(shape)) is NativeHostError, (status, type(shape).__name__)
+
+
+@pytest.mark.parametrize("status", [400, 404, 409, 412, 422, 499])
+def test_statuses_about_the_query_stay_the_querys_own_error(status: int) -> None:
+    for shape in (
+        _with_status("GoogleShaped", code=status),
+        _with_status("StatusCodeShaped", status_code=status),
+        _with_status("RequestsShaped", response=type("R", (), {"status_code": status})()),
+        _with_status(f"Http{status}Error"),
+    ):
+        assert type(engine_error(shape)) is QueryExecutionError, (status, type(shape).__name__)
+
+
+@pytest.mark.parametrize("number", [1476, 8134, 0, 7, 9999, True])
+def test_a_database_error_number_is_not_an_http_status(number: Any) -> None:
+    # an Oracle ORA-01476 (division by zero) or SQL Server 8134 in ``code`` is the query's error
+    assert type(engine_error(_with_status("OracleShaped", code=number))) is QueryExecutionError
+
+
+def test_credential_failures_are_host_errors_whatever_their_class_carries() -> None:
+    for name in ("DefaultCredentialsError", "RefreshError", "TransportError"):
+        assert type(engine_error(_with_status(name))) is NativeHostError
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 503])
+def test_bigquery_result_failures_by_status_do_not_confirm(status: int) -> None:
+    verification = _confirmed(_with_status("GoogleShaped", code=status)).findings[0]
+    assert verification.fidelity.verification.status == "NOT_VERIFIED"
+
+
+@pytest.mark.parametrize("status", [400, 404])
+def test_bigquery_result_failures_about_the_query_still_confirm(status: int) -> None:
+    finding = _confirmed(_with_status("GoogleShaped", code=status)).findings[0]
+    assert finding.fidelity.verification.status == "VERIFIED"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        _with_status("DefaultCredentialsError"),
+        ConnectionError("no route"),
+        RuntimeError("client could not be built"),
+        _with_status("GoogleShaped", code=400),  # even a query-shaped error: this is not a query
+    ],
+    ids=["credentials", "network", "generic", "query-shaped"],
+)
+def test_a_failure_to_build_the_bigquery_client_is_a_host_error(failure: BaseException) -> None:
+    def factory() -> Any:
+        raise failure
+
+    host = BigQueryHost(client_factory=factory, config_factory=lambda **kw: kw)
+    with pytest.raises(NativeHostError, match="cannot reach the engine"):
+        host.run_inline(INLINE, get_dialect("bigquery"), timeout_seconds=5, max_rows=10)
+    report = check(
+        reference_sql=SAFE, candidate_sql=PLAIN, dialect="bigquery", ddl=DDL, confirm=host
+    )
+    verification = report.findings[0].fidelity.verification
+    assert verification is not None and verification.status == "NOT_VERIFIED"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ConnectionRefusedError("refused"),
+        ValueError("bad connect arguments"),
+        _with_status("Http503Error"),
+        _with_status("GoogleShaped", code=400),
+    ],
+    ids=["refused", "value-error", "http-503", "query-shaped"],
+)
+def test_a_failure_to_open_the_trino_connection_is_a_host_error(failure: BaseException) -> None:
+    def connect() -> Any:
+        raise failure
+
+    host = TrinoHost(connect=connect)
+    with pytest.raises(NativeHostError, match="cannot reach the engine") as raised:
+        host.run_inline(INLINE, get_dialect("trino"), timeout_seconds=5, max_rows=10)
+    assert type(raised.value) is NativeHostError
+
+
+def test_a_missing_client_library_is_still_an_input_error_not_a_host_error() -> None:
+    def factory() -> Any:
+        raise SqlInputError("install isitright[bigquery]")
+
+    host = BigQueryHost(client_factory=factory, config_factory=lambda **kw: kw)
+    with pytest.raises(SqlInputError, match="install isitright"):
+        host.run_inline(INLINE, get_dialect("bigquery"), timeout_seconds=5, max_rows=10)
+
+    def connect() -> Any:
+        raise SqlInputError("install isitright[trino]")
+
+    with pytest.raises(SqlInputError):
+        TrinoHost(connect=connect).run_inline(
+            INLINE, get_dialect("trino"), timeout_seconds=5, max_rows=10
+        )

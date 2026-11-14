@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -45,22 +46,53 @@ UNREACHABLE_STATUS = frozenset({401, 403, 407, 408, 429})
 """HTTP statuses that say the engine was not reached or refused the caller, not the query."""
 
 
+_CREDENTIAL_ERRORS = frozenset(
+    {"DefaultCredentialsError", "RefreshError", "TransportError", "Unauthenticated"}
+)
+"""google.auth's failures to obtain or refresh credentials: they carry no HTTP status."""
+
+
+def _http_status(error: BaseException) -> int | None:
+    """The HTTP status an exception carries, by the shapes the client libraries use: ``code``
+    (google.api_core), ``status_code``, ``http_status``, ``response.status_code`` (requests), or a
+    class named ``Http<NNN>Error`` (the trino client). Only 100 to 599 counts: a ``code`` of a
+    database's own error number (Oracle's 1476, SQL Server's 8134) is not an HTTP status."""
+    for name in ("code", "status_code", "http_status"):
+        value = getattr(error, name, None)
+        if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
+            return value
+    response = getattr(error, "response", None)
+    value = getattr(response, "status_code", None)
+    if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
+        return value
+    match = re.fullmatch(r"Http(\d{3})Error", type(error).__name__)
+    return int(match.group(1)) if match else None
+
+
 def engine_error(error: BaseException) -> Exception:
     """What an exception raised while a native engine ran a query means.
 
     A failure to reach the engine (an ``OSError``: a network error, a refused connection, a timeout
-    of the transport) or an HTTP status that refuses the caller (authentication, quota) or reports
-    a server error (5xx) is a ``NativeHostError``: the finding stays unconfirmed. Anything else is
-    the query's own error (``QueryExecutionError``), which confirmation may read as "the candidate
-    errors natively too". Before 0.9 every exception was a query error, so a dropped connection on
-    the candidate's run confirmed a candidate-errors finding.
+    of the transport; or a credentials failure) or an HTTP status that refuses the caller
+    (authentication, quota) or reports a server error (5xx) is a ``NativeHostError``: the finding
+    stays unconfirmed. Anything else is the query's own error (``QueryExecutionError``), which
+    confirmation may read as "the candidate errors natively too". Before 0.9 every exception was a
+    query error, so a dropped connection on the candidate's run confirmed a candidate-errors
+    finding.
     """
-    code = getattr(error, "code", None)
-    if isinstance(error, OSError) or (
-        isinstance(code, int) and (code >= 500 or code in UNREACHABLE_STATUS)
+    status = _http_status(error)
+    if (
+        isinstance(error, OSError)
+        or type(error).__name__ in _CREDENTIAL_ERRORS
+        or (status is not None and (status >= 500 or status in UNREACHABLE_STATUS))
     ):
         return NativeHostError(f"{type(error).__name__}: {error}")
     return QueryExecutionError(f"{type(error).__name__}: {error}")
+
+
+def connect_error(error: BaseException) -> NativeHostError:
+    """A failure to build the client or connection: never a query's error."""
+    return NativeHostError(f"cannot reach the engine: {type(error).__name__}: {error}")
 
 
 @dataclass
@@ -168,7 +200,12 @@ class BigQueryHost(InlineHost):
             raise NativeHostError(
                 f"the query is {len(sql)} characters; BigQuery's limit is about 1 MB of text"
             )
-        client = self._client_now()
+        try:
+            client = self._client_now()
+        except SqlInputError:
+            raise  # the client library is not installed: the caller must be told so
+        except Exception as error:
+            raise connect_error(error) from error
         options: dict[str, Any] = {"use_query_cache": False, "labels": dict(self.labels)}
         try:
             dry = client.query(
@@ -247,7 +284,12 @@ class TrinoHost(InlineHost):
         )
 
     def _execute(self, sql: str, dialect: Dialect, timeout: float, max_rows: int) -> QueryResult:
-        connection = self._connection()
+        try:
+            connection = self._connection()
+        except SqlInputError:
+            raise
+        except Exception as error:
+            raise connect_error(error) from error
         try:
             cursor = connection.cursor()
             cursor.execute(sql)
