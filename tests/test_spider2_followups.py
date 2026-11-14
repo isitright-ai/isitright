@@ -76,8 +76,52 @@ def test_a_finding_one_list_rejects_and_another_accepts_is_not_a_benchmark_findi
     candidate = result(["name", "total"], [["a", 1], ["b", 3]])  # names agree, totals do not
     assert run_demo.accepted_by(gold, candidate, [[1], [0]], True) == [1]
     assert run_demo.accepted_by(gold, candidate, [[1]], True) == []
-    # a list that does not fit the reference's columns accepts nothing; it is not an error
+    # a list that does not fit the reference's columns accepts nothing, but it is not a rejection
     assert run_demo.accepted_by(gold, candidate, [[5]], True) == []
+
+
+def test_a_list_that_cannot_be_evaluated_is_not_a_rejection() -> None:
+    gold = result(["name", "total"], [["a", 1], ["b", 2]])
+    candidate = result(["name", "total"], [["a", 1], ["b", 3]])
+    assert run_demo.variant_outcomes(gold, candidate, [[1], [0], [5]], True) == [
+        "rejects",
+        "accepts",
+        "not_evaluable",
+    ]
+    # bq398's shape: a one-column gold result and the lists [[0], [1]]
+    one = result(["x"], [[1]])
+    other = result(["x"], [[2]])
+    assert run_demo.variant_outcomes(one, other, [[0], [1]], True) == ["rejects", "not_evaluable"]
+
+
+def _found(outcomes: list[str], sha: str = "s") -> dict[str, Any]:
+    return {
+        "status": "COUNTEREXAMPLE_FOUND",
+        "finding": {
+            "variant_outcomes": outcomes,
+            "accepted_by_variants": [i for i, o in enumerate(outcomes) if o == "accepts"],
+            "state_sha": sha,
+        },
+    }
+
+
+def test_a_finding_some_list_could_not_judge_is_unresolved_not_a_benchmark_finding() -> None:
+    unresolved = _found(["rejects", "not_evaluable"])
+    combined = run_demo.combine_variants(
+        [unresolved, {"status": "NOT_FOUND_WITHIN_BUDGET"}], ["benchmark[0]", "benchmark[1]"]
+    )
+    assert combined["status"] == "INCONCLUSIVE" and "finding" not in combined
+    assert combined["findings_unresolved"] == [
+        {"found_by": "benchmark[0]", "variant_outcomes": ["rejects", "not_evaluable"]}
+    ]
+
+
+def test_the_benchmark_finding_names_the_variant_that_produced_it() -> None:
+    entries = [{"status": "NOT_FOUND_WITHIN_BUDGET"}, _found(["rejects", "rejects"], "w1")]
+    combined = run_demo.combine_variants(entries, ["benchmark[0]", "benchmark[1]"])
+    assert combined["status"] == "COUNTEREXAMPLE_FOUND"
+    assert combined["found_by"] == "benchmark[1]" and combined["found_by_index"] == 1
+    assert combined["finding"]["state_sha"] == "w1"
 
 
 def test_variants_combine_into_one_benchmark_verdict() -> None:

@@ -18,6 +18,7 @@ attempts, as in 0.5). Spider's gold result files are not read.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -81,17 +82,21 @@ def benchmark_policy(variant: list[int] | None, ignore_order: bool) -> Any:
     ).model_copy(update={"effective_ordering": ordering})
 
 
-def accepted_by(
+ACCEPTS, REJECTS, NOT_EVALUABLE = "accepts", "rejects", "not_evaluable"
+
+
+def variant_outcomes(
     reference: dict, candidate: dict, variants: list[list[int] | None], ignore_order: bool
-) -> list[int]:
-    """Indexes of the variants under which the candidate's result matches the reference's. A
-    benchmark finding is one that no variant accepts, as Spider scores with any of its files."""
+) -> list[str]:
+    """What each accepted column list says about the candidate's result: ``accepts``, ``rejects``,
+    or ``not_evaluable`` (the list names a column the gold SQL's result does not have; it may belong
+    to a different published result file, so it is not evidence of disagreement)."""
     from isitright.packs.sql.comparison import ComparisonError, compare_results
     from isitright.packs.sql.models import QueryResult
 
     left, right = QueryResult.model_validate(reference), QueryResult.model_validate(candidate)
     out = []
-    for index, variant in enumerate(variants):
+    for variant in variants:
         try:
             outcome = compare_results(
                 left,
@@ -100,10 +105,23 @@ def accepted_by(
                 reference_has_order_by=False,
             )
         except ComparisonError:
-            continue  # a variant that does not fit the reference's columns accepts nothing
-        if outcome.matches:
-            out.append(index)
+            out.append(NOT_EVALUABLE)
+            continue
+        out.append(ACCEPTS if outcome.matches else REJECTS)
     return out
+
+
+def accepted_by(
+    reference: dict, candidate: dict, variants: list[list[int] | None], ignore_order: bool
+) -> list[int]:
+    """Indexes of the variants that accept the candidate's result."""
+    outcomes = variant_outcomes(reference, candidate, variants, ignore_order)
+    return [i for i, o in enumerate(outcomes) if o == ACCEPTS]
+
+
+def state_sha(state: dict) -> str:
+    """A fingerprint of a counterexample world, to tell later that the same world was checked."""
+    return hashlib.sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
 def audit_one(task_id: str, out: Path, cap: float, nested_scope: str = "path") -> dict:
@@ -208,13 +226,18 @@ def audit_one(task_id: str, out: Path, cap: float, nested_scope: str = "path") -
                     "found_on": finding.fidelity.found_on,
                     "verified_on": finding.fidelity.verified_on,
                 }
+                entry["finding"]["state_sha"] = state_sha(state)
                 if label != "strict":
-                    entry["finding"]["accepted_by_variants"] = accepted_by(
+                    outcomes = variant_outcomes(
                         finding.divergence["reference_result"],
                         finding.divergence["candidate_result"],
                         variants,
                         record["ignore_order"],
                     )
+                    entry["finding"]["variant_outcomes"] = outcomes
+                    entry["finding"]["accepted_by_variants"] = [
+                        i for i, o in enumerate(outcomes) if o == ACCEPTS
+                    ]
                 try:
                     entry["finding"]["replay_reproduced"] = replay_report(report)["reproduced"]
                     entry["finding"]["eval_cases_exported"] = len(export_eval_cases(report))
@@ -232,23 +255,43 @@ def audit_one(task_id: str, out: Path, cap: float, nested_scope: str = "path") -
         entry["wall_seconds"] = round(time.monotonic() - started, 1)
         result[label] = entry
     if len(variants) > 1:
-        result["benchmark"] = combine_variants([result[label] for label in labels])
+        result["benchmark"] = combine_variants([result[label] for label in labels], labels)
     return result
 
 
-def combine_variants(entries: list[dict]) -> dict:
-    """The benchmark verdict of a task with several accepted column lists: a finding counts only if
-    no accepted list takes the candidate's result on the finding's world (Spider accepts a
-    prediction that matches any of its gold files). Each variant's own audit is kept beside it."""
-    kept = [
-        e["finding"]
-        for e in entries
-        if e.get("status") == "COUNTEREXAMPLE_FOUND" and not e["finding"]["accepted_by_variants"]
+def _rejected_by_all(entry: dict) -> bool:
+    """A finding is a benchmark finding when every accepted list was evaluated and none accepts."""
+    if entry.get("status") != "COUNTEREXAMPLE_FOUND":
+        return False
+    outcomes = entry["finding"].get("variant_outcomes")
+    if outcomes is None:  # an entry without outcomes: fall back on the accepting indexes
+        return not entry["finding"]["accepted_by_variants"]
+    return all(o == REJECTS for o in outcomes)
+
+
+def combine_variants(entries: list[dict], labels: list[str] | None = None) -> dict:
+    """The benchmark verdict of a task with several accepted column lists. A finding counts only if
+    every list was evaluated on the finding's world and none accepts the candidate's result
+    (Spider accepts a prediction that matches any of its gold files). A list that cannot be
+    evaluated on the gold SQL's columns is not a rejection: a finding that no list accepts but some
+    list could not judge is reported as unresolved, and the task is INCONCLUSIVE. The variant that
+    produced the verdict's finding is recorded (``found_by``), so a later step checks that one."""
+    labels = labels or [f"benchmark[{i}]" for i in range(len(entries))]
+    found = [i for i, e in enumerate(entries) if e.get("status") == "COUNTEREXAMPLE_FOUND"]
+    kept = [i for i in found if _rejected_by_all(entries[i])]
+    unresolved = [
+        i
+        for i in found
+        if i not in kept
+        and not entries[i]["finding"]["accepted_by_variants"]
+        and NOT_EVALUABLE in entries[i]["finding"].get("variant_outcomes", [])
     ]
     statuses = [e.get("status") for e in entries]
     if kept:
         status = "COUNTEREXAMPLE_FOUND"
-    elif "COUNTEREXAMPLE_FOUND" in statuses:
+    elif unresolved:
+        status = "INCONCLUSIVE"  # no list accepts, and some list could not be evaluated
+    elif found:
         status = "NOT_FOUND_WITHIN_BUDGET"  # every finding is accepted under another list
     elif all(s == statuses[0] for s in statuses):
         status = statuses[0]
@@ -259,13 +302,20 @@ def combine_variants(entries: list[dict]) -> dict:
         "variants": len(entries),
         "variant_statuses": statuses,
         "findings_accepted_under_another_list": sum(
-            1
-            for e in entries
-            if e.get("status") == "COUNTEREXAMPLE_FOUND" and e["finding"]["accepted_by_variants"]
+            1 for i in found if entries[i]["finding"]["accepted_by_variants"]
         ),
+        "findings_unresolved": [
+            {
+                "found_by": labels[i],
+                "variant_outcomes": entries[i]["finding"].get("variant_outcomes"),
+            }
+            for i in unresolved
+        ],
     }
     if kept:
-        out["finding"] = kept[0]
+        out["finding"] = entries[kept[0]]["finding"]
+        out["found_by"] = labels[kept[0]]
+        out["found_by_index"] = kept[0]
     return out
 
 

@@ -588,9 +588,13 @@ def rewrite_equivalence(runner: Runner, project: str, dataset: str) -> dict[str,
                 runner.run(f"DROP TABLE IF EXISTS `{project}.{dataset}.{name}`")
             except Exception as error:  # report it; the owner can drop the table by hand
                 results.append({"drop_failed": name, "error": str(error)[:120]})
+    left_behind = [r["drop_failed"] for r in results if "drop_failed" in r]
     return {
         "checks": results,
-        "all_equal": all(r.get("equal", True) for r in results),
+        "all_equal": all(r["equal"] for r in results if "equal" in r)
+        and any("equal" in r for r in results),
+        "cleanup_ok": not left_behind,
+        "tables_left_behind": left_behind,  # drop these by hand
         **runner.summary(),
     }
 
@@ -604,6 +608,9 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
     from isitright.packs.sql import CheckConfig, check
     from isitright.packs.sql.constraints_file import load_constraint_schema
     from isitright.packs.sql.models import ColumnComparisonPolicy, OrderingPolicy
+
+    sys.path.insert(0, str(HERE))
+    import run_demo
 
     task_ids = [
         json.loads(line)["id"]
@@ -625,15 +632,17 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
             if summary.get(label, {}).get("status") != "COUNTEREXAMPLE_FOUND":
                 continue
             ordering = OrderingPolicy.UNORDERED if task["ignore_order"] else OrderingPolicy.ORDERED
-            cols = task["condition_cols"]
-            first = cols[0] if cols and isinstance(cols[0], list) else cols
+            variants = run_demo.reference_column_variants(task["condition_cols"])
+            recorded = summary[label].get("finding") or {}
+            # the benchmark verdict came from one variant's audit: confirm that variant's finding
+            found_by = summary[label].get("found_by_index", 0) if label == "benchmark" else None
             config = (
                 CheckConfig(
                     column_policy=ColumnComparisonPolicy.CONTAINED,
                     null_as_zero=True,
                     float_absolute_tolerance=0.01,
                     ordering_policy=ordering,
-                    reference_columns=[int(c) for c in first] or None if first else None,
+                    reference_columns=variants[found_by or 0],
                     wall_time_seconds=summary["settings"]["wall_time_cap_seconds"],
                 )
                 if label == "benchmark"
@@ -654,10 +663,29 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
                 confirm=host,
             )
             finding = report.findings[0] if report.findings else None
+            same_world = None
+            native_outcomes = None
+            if finding is not None and recorded.get("state_sha"):
+                same_world = (
+                    run_demo.state_sha(finding.divergence["candidate_state"])
+                    == recorded["state_sha"]
+                )
+            native = finding.divergence.get("native_results") if finding else None
+            if label == "benchmark" and native:
+                # the complete acceptance rule, on the native engine's own results
+                native_outcomes = run_demo.variant_outcomes(
+                    native["reference_result"],
+                    native["candidate_result"],
+                    variants,
+                    task["ignore_order"],
+                )
             out.append(
                 {
                     "id": task["id"],
                     "comparison": label,
+                    "found_by": summary[label].get("found_by") if label == "benchmark" else None,
+                    "same_world_as_recorded": same_world,
+                    "native_variant_outcomes": native_outcomes,
                     "status": report.divergence_status.value,
                     "verified_on": finding.fidelity.verified_on if finding else None,
                     "verification": finding.fidelity.verification.model_dump()
@@ -669,7 +697,17 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
                     else None,
                 }
             )
-    verified = sum(1 for e in out if e["verified_on"] == "NATIVE_INLINE")
+    for e in out:  # a confirmation counts only for the recorded world and, for the benchmark, if
+        # no accepted list takes the native result
+        e["confirms_recorded_finding"] = (
+            e["verified_on"] == "NATIVE_INLINE"
+            and e["same_world_as_recorded"] is not False
+            and (
+                e["native_variant_outcomes"] is None
+                or set(e["native_variant_outcomes"]) == {"rejects"}
+            )
+        )
+    verified = sum(1 for e in out if e["confirms_recorded_finding"])
     return {
         "confirmations": out,
         "verified": verified,
@@ -753,6 +791,14 @@ def main(argv: list[str]) -> None:
             default=str,
         )
     )
+    if result.get("tables_left_behind"):
+        names = ", ".join(result["tables_left_behind"])
+        print(
+            f"CLEANUP FAILED: drop these scratch tables by hand in {args.project}.{args.dataset}: "
+            f"{names}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
