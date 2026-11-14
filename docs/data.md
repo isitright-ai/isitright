@@ -87,7 +87,15 @@ The Windows limit caps the memory one process may commit. The runner puts itself
 
 `psutil` is part of the `data` extra, so a normal install of the data pack gets the watchdog. The watchdog's limit is **approximate**: a program can pass the limit between two readings, so the runner can use more than the limit before it is stopped. The run is reported with the status `memory` and the resident size that was read. A program stuck in one long C call is stopped by the watchdog, not by the runner's own check. Do not rely on the limit as a security boundary; for untrusted code use a container with a memory cap (`docker run --memory`), which isitright does not set up.
 
-MEMORY_OVERSHOOT_PLACEHOLDER
+**Measured overshoot** (`tools/measure_memory.py`, run by CI on GitHub-hosted runners, Python 3.12, limit 300 MB, 5 runs per program, the watchdog reading the runner every 10 ms; the figure is the runner's largest resident size after it was stopped, minus the limit):
+
+| Program | Linux (ubuntu-latest) median / max | macOS (macos-latest, Apple Silicon) median / max |
+|---|---|---|
+| `bytearray(1.5 GB)`, one call | 16 / 25 MB | 347 / 514 MB |
+| 1.5 GB in 16 MB chunks | 21 / 27 MB | 129 / 446 MB |
+| `numpy.ones` of 1.5 GB | 91 / 159 MB | 57 / 193 MB |
+
+All fifteen runs on each platform ended with the status `memory`. These are single measurements on shared runners, one run of the script (CI, 2026-11-13), not a bound: an earlier run with a 50 ms poll that listed child processes on every reading gave medians of 660 to 870 MB on macOS and 31 to 40 MB on Linux, which is why the poll is now 10 ms and children are read every tenth time. **The limit is approximate.** Leave about 200 MB of headroom on Linux and about 600 MB on macOS above the limit you set if the host has to survive a program that allocates all at once; on Windows the Job Object refuses the allocation itself (`tests/test_data_host.py` runs the one-call and chunked programs there).
 
 By default every run starts a new process (`--reuse 1`). `--reuse N` keeps a process for N runs. That is several times faster, but modules a program imported stay loaded, so one run can affect the next. The report records which was used.
 
