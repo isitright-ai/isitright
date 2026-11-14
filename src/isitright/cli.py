@@ -943,6 +943,15 @@ def agents_run_command(
             "finding (0 = never).",
         ),
     ] = 30,
+    run_patience_share: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=1.0,
+            help="Scale --run-patience with the universe: stop after the larger of --run-patience "
+            "and this share of the worlds ranked (default 0.10; 0 = the fixed number).",
+        ),
+    ] = 0.10,
     max_trials: Annotated[
         int, typer.Option(min=1, help="Most paired runs the sequential test may use per world.")
     ] = 16,
@@ -1009,7 +1018,9 @@ def agents_run_command(
             only=only,
             budget=Budget(money=max_money, runs=max_runs, seconds=max_seconds),
             ranking=ranking,  # type: ignore[arg-type]
-            rules=StoppingRules(stratum_patience or None, run_patience or None),
+            rules=StoppingRules(
+                stratum_patience or None, run_patience or None, run_patience_share or None
+            ),
             sequential=sequential,
             max_trials=max_trials,
             minimize=minimize,

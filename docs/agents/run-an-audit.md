@@ -25,7 +25,7 @@ cost is spent.
 | Control generation | `--attempts N` candidate worlds visited (default 20000, which takes minutes for a large [scenario](write-a-scenario.md)); `--max-worlds N` is a safety rail after ranking (default 50) |
 | Repeat runs | `--trials N` runs per world and for the baseline (default 4); `--baseline-trials N` when the baseline should differ |
 | Spend limits | `--max-money X` (needs agent-reported cost), `--max-runs N`, `--max-seconds S` |
-| Stop on rules | `--stratum-patience N` (default 10) and `--run-patience N` (default 30); `0` turns a rule off |
+| Stop on rules | `--stratum-patience N` (default 10), `--run-patience N` (default 30) and `--run-patience-share S` (default 0.10); `0` turns a rule off |
 | Order worlds | `--ranking diverse` (default), `screening`, `coverage`, `random` |
 | Statistics | `--sequential` (default) with `--max-trials N` (default 16); `--no-sequential` for counts only |
 | Shrink findings | `--minimize` (costs runs) |

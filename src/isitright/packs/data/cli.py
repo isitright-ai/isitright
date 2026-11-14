@@ -322,6 +322,15 @@ def audit_command(
     ] = "diverse",
     stratum_patience: Annotated[int, typer.Option(min=0)] = 10,
     run_patience: Annotated[int, typer.Option(min=0)] = 30,
+    run_patience_share: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=1.0,
+            help="Scale --run-patience with the universe: the larger of it and this share of "
+            "the worlds ranked (0 = the fixed number).",
+        ),
+    ] = 0.10,
     max_runs: Annotated[int | None, typer.Option(min=1, help="Budget: agent runs.")] = None,
     max_money: Annotated[
         float | None, typer.Option(min=0.0, help="Budget: money, as the agent reports it.")
@@ -388,6 +397,7 @@ def audit_command(
         ranking=ranking,  # type: ignore[arg-type]
         stratum_patience=stratum_patience or None,
         run_patience=run_patience or None,
+        run_patience_share=run_patience_share or None,
         max_worlds=max_worlds,
     )
     # The frozen step that finds the minimized world gets the same --attempts as the live search:

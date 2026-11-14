@@ -71,6 +71,7 @@ class LiveConfig:
     ranking: Ranking = "diverse"
     stratum_patience: int | None = 10
     run_patience: int | None = 30
+    run_patience_share: float | None = 0.10
     max_worlds: int | None = 40
     verify_minimized_runs: int = 3
     sprt: SprtConfig | None = None
@@ -271,7 +272,7 @@ def run_live(
         to_run = [w for w in worlds if w.id in set(only)]
     else:
         to_run = ranked if config.max_worlds is None else ranked[: config.max_worlds]
-    rules = StoppingRules(config.stratum_patience, config.run_patience)
+    rules = StoppingRules(config.stratum_patience, config.run_patience, config.run_patience_share)
     stop = StopState(rules, ranked)
     results: list[WorldRuns] = []
     not_run: dict[str, str] = {}

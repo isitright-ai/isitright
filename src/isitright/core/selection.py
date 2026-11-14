@@ -23,6 +23,7 @@ Any pack's world type works if it has ``id``, ``world`` (a `World`), ``role`` an
 from __future__ import annotations
 
 import heapq
+import math
 import random
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -210,7 +211,22 @@ class StoppingRules:
     stratum_patience: int | None = 10
     """Stop a stratum after this many worlds run without a finding (None: never)."""
     run_patience: int | None = 30
-    """Stop the run after this many consecutive worlds with no uncovered feature and no finding."""
+    """Stop the run after this many consecutive worlds with no uncovered feature and no finding.
+    With ``run_patience_share`` this is the floor: the patience never falls below it."""
+    run_patience_share: float | None = 0.10
+    """Scale the run patience with the universe: the larger of ``run_patience`` and this share of
+    the worlds ranked (0.05: stop after a quiet stretch of 5% of them). A fixed 30 is a long
+    stretch in a universe of 300 and a short one in 6,000, where findings are scattered through
+    the order (0.9 measurement: it kept 5 of 21 distinct findings on the shop; 10% kept all 21 and
+    all 7 of a universe of 600). None or 0: fixed."""
+
+    def effective_run_patience(self, universe: int) -> int | None:
+        """The quiet stretch that stops the run, for a universe of ``universe`` ranked worlds."""
+        if self.run_patience is None:
+            return None
+        if not self.run_patience_share:
+            return self.run_patience
+        return max(self.run_patience, math.ceil(self.run_patience_share * universe))
 
 
 @dataclass
@@ -262,11 +278,17 @@ class StopState:
         new = not features <= self.covered
         self.covered |= features
         self.quiet = 0 if (new or found) else self.quiet + 1
-        limit = self.rules.run_patience
+        limit = self.rules.effective_run_patience(len(self.universe))
         if limit is not None and self.quiet >= limit:
             self.run_stopped = (
                 f"run stopped: {self.quiet} consecutive worlds added no uncovered feature and "
-                "no finding"
+                f"no finding (run rule: {limit}"
+                + (
+                    f", {self.rules.run_patience_share:.0%} of {len(self.universe)} worlds"
+                    if limit > (self.rules.run_patience or 0)
+                    else ""
+                )
+                + ")"
             )
 
     def _stratum_reason(self, key: tuple[str, str, str], s: _Stratum) -> str:
@@ -312,7 +334,7 @@ class StopState:
             )
         return StoppingRecord(
             stratum_patience=self.rules.stratum_patience,
-            run_patience=self.rules.run_patience,
+            run_patience=self.rules.effective_run_patience(len(self.universe)),
             run_stop_reason=self.run_stopped
             or (f"{budget_reason} budget exhausted" if budget_reason else None),
             strata=rows,

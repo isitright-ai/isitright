@@ -51,8 +51,14 @@ strict class order, `coverage` orders by feature coverage, `random` is a seeded 
 ordering would have needed before the first finding.
 
 **Stopping rules.** A stratum stops after `--stratum-patience` worlds (default 10) without a finding.
-The run stops after `--run-patience` consecutive worlds (default 30) that added no uncovered feature
-and no finding. `0` turns a rule off. A stopped stratum is reported as "no finding in n of m worlds"
+The run stops after a stretch of consecutive worlds that added no uncovered feature and no finding.
+The stretch is the larger of `--run-patience` (default 30) and `--run-patience-share` (default 0.10)
+of the worlds ranked, so it grows with the universe: a fixed 30 is a long stretch among 300 worlds
+and a short one among 6,000. The report states the number used. In a measurement on the shop
+scenario with a scripted agent whose findings are rare, the fixed 30 stopped after 288 of 6,000
+worlds and kept 5 of 21 distinct findings; 10% of the universe kept all 21 (and all 7 of a universe of
+600), at 4,789 worlds run. It is one scenario and two scripted agents; the cost is more runs. `0` turns
+a rule off (`--run-patience-share 0` restores the fixed number). A stopped stratum is reported as "no finding in n of m worlds"
 with the reason. That is not evidence of correctness.
 
 ## Sequential testing per world

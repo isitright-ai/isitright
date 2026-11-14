@@ -101,7 +101,8 @@ Run an agent on the [baseline](../concepts/live-agents.md#baseline-first) and on
 | `--attempts N` | `20000` | Candidate worlds the generation may visit |
 | `--ranking diverse\|screening\|coverage\|random` | `diverse` | |
 | `--stratum-patience N` | `10` | `0` = never |
-| `--run-patience N` | `30` | `0` = never |
+| `--run-patience N` | `30` | `0` = never; the floor of the run rule |
+| `--run-patience-share S` | `0.10` | The run rule stops after the larger of `--run-patience` and this share of the worlds ranked; `0` = the fixed number |
 | `--max-trials N` | `16` | Most paired runs per world for the [sequential test](../concepts/live-agents.md#sequential-testing-per-world) |
 | `--sequential` / `--no-sequential` | on | |
 | `--minimize` / `--no-minimize` | off | Costs runs |
@@ -149,8 +150,8 @@ result. See [Data analysis agents](../data.md#long-audits-resume-and-the-run-cac
 
 `--agent module:callable --output DIR --trust-code [--programs FILE] [--pass-env NAME ...]
 [--baseline-runs N] [--max-trials N] [--max-worlds N] [--ranking diverse|screening|coverage|random]
-[--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]
-[--attempts N] [--seed N] [--agent-kwargs JSON] [--agent-timeout S] [--env-file FILE]`. `--attempts`
+[--stratum-patience N] [--run-patience N] [--run-patience-share S] [--max-runs N] [--max-money X]
+[--max-seconds S] [--attempts N] [--seed N] [--agent-kwargs JSON] [--agent-timeout S] [--env-file FILE]`. `--attempts`
 (default 300) sets both the frozen check that finds the minimized world and the live world search;
 `--agent-kwargs` are the factory's keyword arguments as JSON; `--env-file` reads only the variables
 named by `--pass-env` from a dotenv-style file (a variable already in the environment wins). Live
