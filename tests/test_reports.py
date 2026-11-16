@@ -130,7 +130,8 @@ def test_case_markdown_leads_with_explanation_and_copyable_replay(
     assert "## Technical details" in markdown
     expected_report = str(output / "case_report.json")
     assert expected_report in finding["replay"]["command"]
-    assert finding["replay"]["artifact"] == str(output / "replay.json")
+    # 0.8.1: the artifact is named relative to the report file, and the command is absolute
+    assert finding["replay"]["artifact"] == "replay.json"
     assert (
         payload["cases"][0]["headline"]
         == "Original-data mismatch: queries return different results"
@@ -138,22 +139,22 @@ def test_case_markdown_leads_with_explanation_and_copyable_replay(
     assert (output / "replay.json").is_file() and (output / "counterexample.sql").is_file()
 
 
-def test_replay_paths_fall_back_to_absolute_across_windows_drives(
+def test_replay_command_is_absolute_and_the_artifact_is_relative_to_the_report(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
+    """0.8.1: nothing depends on the working directory or on the drive the report is on (the old
+    test checked a fall back to absolute paths when a relative path could not be made)."""
     output = tmp_path / "artifacts"
-
-    def cross_drive_error(path: object, start: object) -> str:
-        del path, start
-        raise ValueError("path is on a different mount")
-
-    monkeypatch.setattr("isitright.packs.sql.reports.os.path.relpath", cross_drive_error)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    monkeypatch.chdir(other)
     write_case_report(_counterexample_case("cross-drive", generated=False), output)
     payload = json.loads((output / "case_report.json").read_text(encoding="utf-8"))
     finding = payload["cases"][0]["findings"][0]
 
     assert str((output / "case_report.json").resolve()) in finding["replay"]["command"]
-    assert finding["replay"]["artifact"] == str((output / "replay.json").resolve())
+    assert finding["replay"]["command"].startswith("isitright sql replay ")
+    assert finding["replay"]["artifact"] == "replay.json"
 
 
 def test_suite_markdown_separates_original_and_generated_findings(

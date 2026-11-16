@@ -7,11 +7,29 @@ pointed at, whatever the platform that wrote the report or the one that reads it
 
 from __future__ import annotations
 
+import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
 class UnsafePathError(ValueError):
     """A path taken from a report would leave its base directory."""
+
+
+_PLAIN = re.compile(r"[A-Za-z0-9_@%+=:,./\\-]+")
+
+
+def quote_for_command(text: str) -> str:
+    """A path or argument for a command line a person will paste: double quotes only when needed
+    (they work in POSIX shells, cmd and PowerShell alike)."""
+    if _PLAIN.fullmatch(text):
+        return text
+    return '"' + text.replace('"', '\\"') + '"'
+
+
+def command_path(path: Path) -> str:
+    """The absolute location of ``path``, quoted for a printed command that must work from any
+    working directory."""
+    return quote_for_command(str(path.resolve()))
 
 
 def contained_path(base: Path, name: str, *, what: str = "path") -> Path:

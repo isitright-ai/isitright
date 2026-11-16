@@ -10,7 +10,7 @@ from typing import Any
 from isitright.core.entities import EntitySchema
 from isitright.core.evidence import AuditReport, CaseReport, EvalCase, Finding, totals_of
 from isitright.core.mutations import World
-from isitright.core.paths import contained_path
+from isitright.core.paths import command_path, contained_path
 from isitright.core.replay import (
     ReplayArtifact,
     ReplayResult,
@@ -57,9 +57,15 @@ def write_report(
                 path = contained_path(target, name, what="data file name")
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(text, encoding="utf-8", newline="")
+    number = 0
     for case in report.cases:
         for finding in case.findings:
+            number += 1
             finding.replay.artifact = f"{finding_dir(finding)}/replay.json"
+            finding.replay.command = (
+                f"isitright data replay {command_path(output_dir / 'report.json')} "
+                f"--finding {number} --trust-code"
+            )
     (output_dir / "report.json").write_text(
         json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -92,7 +98,7 @@ def markdown(report: AuditReport) -> str:
                 f"- {finding.headline}. Difference: {finding.divergence.get('difference')}.",
                 f"  Gold answer: {finding.divergence.get('gold_answer')!r}; "
                 f"program answer: {finding.divergence.get('program_answer')!r}.",
-                f"  Replay: `{finding.replay.artifact}`.",
+                f"  Replay: `{finding.replay.command}`.",
             ]
         for error in case.errors:
             lines.append(f"- {error['code']}: {error['message']}")
