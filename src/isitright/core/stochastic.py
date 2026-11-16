@@ -86,6 +86,37 @@ def is_bad(outcome: RunOutcome) -> bool:
     return outcome.violated or outcome.outcome is Outcome.NOT_MET
 
 
+def is_judged(outcome: RunOutcome) -> bool:
+    """A run that can enter a pair: it ended without a subject error and was judged."""
+    return not outcome.error and (
+        outcome.violated or outcome.outcome in (Outcome.MET, Outcome.NOT_MET)
+    )
+
+
+def run_paired_with_baseline(
+    run_once: Callable[[int], RunOutcome],
+    baseline: list[RunOutcome],
+    test: PairedSprt,
+    budget: Budget,
+    max_runs: int,
+) -> None:
+    """Run a world once per real baseline run (up to ``max_runs``), pairing run i with baseline i.
+
+    ``run_once`` records its own outcome and cost. The test stops when the baseline runs that were
+    made are used up: a pair never contains a run that did not happen. A pair in which either run
+    errored or could not be judged is left out of the test (the runs stay in the counts).
+    """
+    test.baseline_runs = len(baseline)
+    for index in range(min(max_runs, len(baseline))):
+        if not budget.can_run():
+            break
+        outcome = run_once(index)
+        if not (is_judged(baseline[index]) and is_judged(outcome)):
+            continue
+        if test.add(is_bad(baseline[index]), is_bad(outcome)) is not Decision.CONTINUE:
+            break
+
+
 def mcnemar_exact(only_baseline: int, only_world: int) -> float:
     """Two-sided exact McNemar p-value on discordant pairs (a binomial test at p = 1/2)."""
     n = only_baseline + only_world

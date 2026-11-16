@@ -47,6 +47,7 @@ from isitright.core.stochastic import (
     Budget,
     RunOutcome,
     is_bad,
+    run_paired_with_baseline,
     run_repeated,
     stability,
     stability_sequential,
@@ -494,20 +495,18 @@ class ResearchAudit:
         wr: WorldResult,
         budget: Budget,
     ) -> None:
-        test = PairedSprt(SprtConfig(max_pairs=self.config.max_pairs))
+        usable = min(self.config.max_pairs, len(baseline_outcomes))
+        test = PairedSprt(SprtConfig(min_pairs=min(4, usable), max_pairs=usable))
         wr.sequential = test
         run_trial = self._trial(subject, world, baseline, fact, wr, world.fingerprint())
-        for pair in range(self.config.max_pairs):
-            if not budget.can_run():
-                break
+
+        def run_once(pair: int) -> RunOutcome:
             outcome = run_trial(pair)
             budget.record_run(outcome.cost)
             wr.outcomes.append(outcome)
-            if outcome.error:
-                continue
-            base_bad = is_bad(baseline_outcomes[pair]) if pair < len(baseline_outcomes) else False
-            if test.add(base_bad, is_bad(outcome)) is not Decision.CONTINUE:
-                break
+            return outcome
+
+        run_paired_with_baseline(run_once, baseline_outcomes, test, budget, usable)
 
     def _observability(self, wr: WorldResult, baseline: RecordedRun) -> None:
         """A planted or changed document no query can retrieve is unobservable: a corpus or
@@ -1164,13 +1163,7 @@ class ResearchAudit:
                     limits=["L2 (support of the claim) is not judged"],
                 ),
             ],
-            stability=stability(
-                baseline_outcomes,
-                [o for wr in results.values() for o in wr.outcomes][: len(baseline_outcomes) or 1],
-                len(baseline_outcomes) or 1,
-            )
-            if subject.stochastic and baseline_outcomes
-            else None,
+            stability=None,
             search=record,
             findings=findings,
             worlds=worlds,
