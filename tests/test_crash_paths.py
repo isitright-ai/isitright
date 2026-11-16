@@ -186,3 +186,20 @@ def test_decimals_that_are_numerically_equal_still_match_and_nan_never_does() ->
     nan = float("nan")
     rows = [[_value(CanonicalValueKind.FLOAT, nan)]]
     assert not compare_results(_result(rows), _result(list(rows)), policy=policy).matches
+
+
+def test_a_result_with_other_values_never_matches_even_with_the_same_number_of_rows() -> None:
+    policy = ComparisonPolicy(ordering=OrderingPolicy.UNORDERED)
+    one, two, three = (_value(CanonicalValueKind.INTEGER, n) for n in (1, 2, 3))
+    outcome = compare_results(_result([[one], [two]]), _result([[one], [three]]), policy=policy)
+    assert outcome.matches is False and outcome.difference == "unordered row multiset differs"
+    text = _value(CanonicalValueKind.TEXT, "1")
+    assert not compare_results(_result([[one]]), _result([[text]]), policy=policy).matches
+
+
+@pytest.mark.parametrize("text", ["NaN", "Infinity", "-Infinity"])
+def test_a_non_finite_decimal_never_equals_anything_not_even_itself(text: str) -> None:
+    policy = ComparisonPolicy(ordering=OrderingPolicy.UNORDERED)
+    cell = _value(CanonicalValueKind.DECIMAL, text)
+    other = _value(CanonicalValueKind.DECIMAL, text)
+    assert not compare_results(_result([[cell]]), _result([[other]]), policy=policy).matches

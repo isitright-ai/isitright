@@ -96,7 +96,8 @@ def test_research_pairs_every_run_with_the_baseline_run_of_the_same_index() -> N
     test = result.sequential
     assert test is not None
     assert (test.pairs, test.world_only, test.baseline_only) == (4, 4, 0)
-    assert test.decision is not Decision.RATE_INCREASE  # four pairs cannot reach the boundary
+    # four pairs cannot reach the boundary; running out of baseline runs ends the test
+    assert test.decision is Decision.UNDECIDED
 
 
 def test_enough_real_pairs_can_still_show_a_rate_increase() -> None:
@@ -210,4 +211,6 @@ def test_the_data_pack_never_runs_more_world_runs_than_it_has_baseline_runs(
         assert finding.live is not None and finding.live.runs <= 2, finding.live
         assert finding.stability is not None and finding.stability.sequential is not None
         assert finding.stability.sequential.pairs <= 2
+        # the baseline runs ran out, which ends the test instead of leaving it open
+        assert finding.stability.sequential.decision is not Decision.CONTINUE
         assert "baseline run(s) that were made" in finding.stability.sequential.note

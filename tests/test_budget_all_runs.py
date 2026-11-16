@@ -54,7 +54,7 @@ def _spent_runs(report: Any) -> int:
     return int(report.extensions["research"]["budget"]["spent"]["runs"])
 
 
-@pytest.mark.parametrize("max_runs", [6, 12, 25])
+@pytest.mark.parametrize("max_runs", range(4, 41))
 def test_research_executes_exactly_the_runs_it_reports_and_no_more_than_max_runs(
     max_runs: int,
 ) -> None:
