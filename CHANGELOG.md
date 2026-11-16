@@ -3,6 +3,72 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
+## 0.8.1 - Hotfix
+
+A hotfix from an independent review of 0.8.0 (three reviews, each finding checked against the
+code). It changes no report schema (still 0.8). The release was built and tested offline.
+
+### Security
+
+- **`data export` wrote files outside its output directory.** The data pack took file names from
+  the `data_files` keys of a report and joined them to the output directory without checking them,
+  so a report with a key such as `../../x.txt` or an absolute path wrote outside it. The same trust
+  was placed in other names read from a report. Affected: `data export` (and the data report
+  writer) in 0.6.0 to 0.8.0; the data pack first shipped in 0.6.0. An attack needs someone to run
+  the command on a report written by somebody else. Every path read from a report is now joined
+  with `isitright.core.paths.contained_path`, which refuses an absolute path, a drive or UNC
+  prefix, any `..` component, an NTFS stream name and any path that resolves outside the base
+  (links included). `data export`, `data replay`, `research export`, `agents export` and
+  `agents replay` exit with code 2 and write nothing outside the output directory. `SECURITY.md`
+  now covers the agent, data and research packs and report import and export. Do not run `data
+  export` from 0.6.0 to 0.8.0 on a report you did not write.
+
+### Fixed
+
+- **Rate comparisons in the research and data packs were unsound before 0.8.1.** The research pack
+  paired runs 5 to 16 of a world against a baseline run that never happened and was assumed to
+  pass; the data pack reused its baseline outcomes in a cycle. With equal failure rates in both
+  worlds the research rule claimed a rate increase in about 6% of audits at a 30% failure rate and
+  27% at 50%. A rate claim (`RATE_INCREASE`) from 0.8.0 in these two packs should be treated as
+  unsupported. A world is now paired only with baseline runs that were made, a run that errored or
+  could not be judged is left out of its pair, and the report says how many pairs the comparison
+  rests on. The research pack's case-level `stability`, which pooled worlds, is removed; the
+  baseline counts are in `extensions.research.baseline.counts`.
+- **Every agent run is under the budget.** The research pack checked the run budget only for world
+  runs. Baseline runs after the first, minimization runs and confirmation runs now check it and
+  record their cost, and an errored run keeps its cost. The agents pack's minimization steps check
+  the budget before each trial. If the run budget is spent before a finding's confirmation run, the
+  finding is reported on the unminimized world and says so.
+- **Replay commands exist and work from any directory.** The SQL report printed `isitright replay`
+  (the command is `isitright sql replay`), the research report printed a bare file name, and the
+  data and agents reports printed none. Each report now prints a command with the absolute path of
+  the report or artifact, and artifact paths are stored relative to the report file.
+- **An agents report no longer fails to build** when a world id or an invariant name uses a verdict
+  word (`wrong-zip`, `no-failure-allowed`): the headline points at the report, which keeps the name.
+- **The unordered SQL row comparison no longer recurses once per row** (a `RecursionError` on
+  thousands of equal rows) and is no longer quadratic for exact values: 100,000 identical rows
+  compare in well under two seconds. Tolerance matching is an iterative maximum flow over classes
+  of equal rows.
+
+### Changed
+
+- **At the default settings the research and data packs report counts, not rate claims.** A world
+  has at most as many pairs as the baseline has runs (4 in research, 3 in data by default), and a
+  rate increase needs 7 discordant pairs at the default test. Raise the baseline runs to 7 or more
+  to allow a claim. A fresh baseline run for every pair, as the agents pack makes, is planned for
+  0.9.0.
+- In the data pack a world now runs at most as many times as there are baseline runs; it used to run
+  up to `max_trials` with the baseline outcomes cycled.
+
+### Documentation
+
+- Corrected statements the code does not support: semantic fixtures are drafts and most are not
+  yet reviewed; the agent command starts in the launch directory, not the run directory, with your
+  full environment; principle 7 no longer implies the agent is contained; ties under `ORDER BY`
+  are compared by position and not detected; the pairing rule per pack; exit code 1 also means a
+  replay that did not reproduce, and a SQLite `INCONCLUSIVE` exits 0. The CI guide warns that
+  `agent.log` can hold secrets.
+
 ## 0.8.0 - Research agents
 
 Agents that answer a question by searching a frozen corpus and citing documents are audited by
