@@ -34,6 +34,7 @@ from isitright.core.evidence import (
     ValidityRecord,
     WorldRecord,
     safe_detail,
+    safe_name,
     totals_of,
 )
 from isitright.core.minimize import NoisyMinimization, minimize_path_noisy
@@ -1108,8 +1109,15 @@ def _search_record(
 def _finding_headline(
     violated: list[str], reached_unmet: bool, affected: int, evaluated: int, world: str
 ) -> str:
-    what = f"Invariant '{violated[0]}' violated" if violated else "Expected behavior not reached"
-    return f"{what} in {affected} of {evaluated} runs on world {world} (attribution not assessed)"
+    what = (
+        f"Invariant '{safe_name(violated[0], 'invariant name')}' violated"
+        if violated
+        else "Expected behavior not reached"
+    )
+    return (
+        f"{what} in {affected} of {evaluated} runs on world {safe_name(world, 'world id')} "
+        "(attribution not assessed)"
+    )
 
 
 def _headline(

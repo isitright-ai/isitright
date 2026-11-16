@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
+from collections import Counter, deque
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import cast
@@ -107,23 +109,161 @@ def _unordered_rows_match(
     candidate_rows: list[list[CanonicalValue]],
     policy: ComparisonPolicy,
 ) -> bool:
-    """Find a complete row matching even when float tolerance overlaps."""
-    matched_reference_by_candidate: list[int | None] = [None] * len(candidate_rows)
+    """Whether the rows match as multisets under the policy.
 
-    def assign(reference_index: int, visited_candidates: set[int]) -> bool:
-        for candidate_index, candidate_row in enumerate(candidate_rows):
-            if candidate_index in visited_candidates or not _rows_equal(
-                reference_rows[reference_index], candidate_row, policy
-            ):
-                continue
-            visited_candidates.add(candidate_index)
-            previous_reference = matched_reference_by_candidate[candidate_index]
-            if previous_reference is None or assign(previous_reference, visited_candidates):
-                matched_reference_by_candidate[candidate_index] = reference_index
-                return True
+    Rows are grouped by everything that must be exactly equal: every non-float cell, and every
+    float cell too when the policy compares floats exactly. A reference row can only match a
+    candidate row of the same group, so the groups are counted (a counted multiset) and only the
+    float cells of a group are matched with a tolerance. Within a group, equal float parts are one
+    class with a count, and the classes are matched by an iterative maximum flow, so the result
+    does not depend on the order of the rows and no recursion is used.
+    """
+    reference_groups = _group_rows(reference_rows, policy, "reference")
+    candidate_groups = _group_rows(candidate_rows, policy, "candidate")
+    if reference_groups.keys() != candidate_groups.keys():
         return False
+    for key, reference_floats in reference_groups.items():
+        candidate_floats = candidate_groups[key]
+        if len(reference_floats) != len(candidate_floats):
+            return False
+        if not reference_floats[0]:
+            continue  # no float cells to compare: equal groups of equal size match
+        if not _floats_match(reference_floats, candidate_floats, policy):
+            return False
+    return True
 
-    return all(assign(index, set()) for index in range(len(reference_rows)))
+
+_NEVER_EQUAL = object()
+
+
+def _exact_key(value: CanonicalValue, side: str, serial: int) -> object:
+    """A hashable key that is equal for two cells exactly when `_values_equal` says so, for a cell
+    that is not compared with a tolerance. A cell that equals nothing (NaN, a non-finite decimal)
+    gets a key no other cell has."""
+    kind = value.kind
+    raw = value.value
+    if kind is CanonicalValueKind.DECIMAL:
+        try:
+            number = Decimal(cast(str, raw))
+        except InvalidOperation:
+            return (kind, _NEVER_EQUAL, side, serial)
+        if not number.is_finite():
+            return (kind, _NEVER_EQUAL, side, serial)
+        return (kind, number)  # equal decimals hash alike (1.0 and 1.00)
+    if kind is CanonicalValueKind.FLOAT:
+        as_float = float(cast(float, raw))
+        if math.isnan(as_float):
+            return (kind, _NEVER_EQUAL, side, serial)
+        return (kind, as_float)
+    if isinstance(raw, list | dict):
+        return (kind, json.dumps(raw, sort_keys=True))
+    return (kind, raw)
+
+
+def _group_rows(
+    rows: list[list[CanonicalValue]], policy: ComparisonPolicy, side: str
+) -> dict[tuple[object, ...], list[tuple[float, ...]]]:
+    """Group rows by their exactly-compared cells. Each group lists the float parts of its rows
+    (empty tuples when the policy compares floats exactly)."""
+    tolerant = policy.float_mode is not FloatComparisonMode.EXACT
+    groups: dict[tuple[object, ...], list[tuple[float, ...]]] = {}
+    serial = 0
+    for row in rows:
+        key: list[object] = []
+        floats: list[float] = []
+        for cell in row:
+            serial += 1
+            if tolerant and cell.kind is CanonicalValueKind.FLOAT:
+                key.append((cell.kind, "within tolerance"))
+                floats.append(float(cast(float, cell.value)))
+            else:
+                key.append(_exact_key(cell, side, serial))
+        groups.setdefault(tuple(key), []).append(tuple(floats))
+    return groups
+
+
+def _floats_close(left: float, right: float, policy: ComparisonPolicy) -> bool:
+    return math.isclose(
+        left,
+        right,
+        rel_tol=policy.float_relative_tolerance,
+        abs_tol=policy.float_absolute_tolerance,
+    )
+
+
+def _floats_match(
+    reference: list[tuple[float, ...]],
+    candidate: list[tuple[float, ...]],
+    policy: ComparisonPolicy,
+) -> bool:
+    reference_classes = Counter(reference)
+    candidate_classes = Counter(candidate)
+    reference_keys = list(reference_classes)
+    candidate_keys = list(candidate_classes)
+    edges = [
+        [
+            index
+            for index, other in enumerate(candidate_keys)
+            if all(_floats_close(a, b, policy) for a, b in zip(row, other, strict=True))
+        ]
+        for row in reference_keys
+    ]
+    return _saturates(
+        [reference_classes[key] for key in reference_keys],
+        [candidate_classes[key] for key in candidate_keys],
+        edges,
+    )
+
+
+def _saturates(left_counts: list[int], right_counts: list[int], edges: list[list[int]]) -> bool:
+    """Whether every unit on the left can be matched to a distinct unit on the right: a maximum
+    flow from a source through the classes to a sink, by shortest augmenting paths (iterative)."""
+    total = sum(left_counts)
+    if total != sum(right_counts):
+        return False
+    n, m = len(left_counts), len(right_counts)
+    source, sink = n + m, n + m + 1
+    capacity: dict[tuple[int, int], int] = {}
+    neighbors: list[list[int]] = [[] for _ in range(n + m + 2)]
+
+    def add(u: int, v: int, units: int) -> None:
+        if (u, v) not in capacity:
+            capacity[(u, v)] = 0
+            capacity.setdefault((v, u), 0)
+            neighbors[u].append(v)
+            neighbors[v].append(u)
+        capacity[(u, v)] += units
+
+    for i, units in enumerate(left_counts):
+        add(source, i, units)
+        for j in edges[i]:
+            add(i, n + j, total)
+    for j, units in enumerate(right_counts):
+        add(n + j, sink, units)
+    flow = 0
+    while flow < total:
+        parent: dict[int, int] = {source: source}
+        queue = deque([source])
+        while queue and sink not in parent:
+            node = queue.popleft()
+            for following in neighbors[node]:
+                if following not in parent and capacity[(node, following)] > 0:
+                    parent[following] = node
+                    queue.append(following)
+        if sink not in parent:
+            return False
+        push = total
+        node = sink
+        while node != source:
+            push = min(push, capacity[(parent[node], node)])
+            node = parent[node]
+        node = sink
+        while node != source:
+            capacity[(parent[node], node)] -= push
+            capacity[(node, parent[node])] += push
+            node = parent[node]
+        flow += push
+    return True
 
 
 def _align_columns(
