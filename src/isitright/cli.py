@@ -18,6 +18,7 @@ from isitright.core.evidence import (
     FailOn,
     policy_triggered,
 )
+from isitright.core.paths import UnsafePathError
 from isitright.packs.data.cli import data_app
 from isitright.packs.research.cli import research_app
 from isitright.packs.sql import (
@@ -1155,6 +1156,9 @@ def agents_replay_command(
     try:
         data = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
         outcomes = replay_runs(data, None, report.parent, findings_only=findings_only)
+    except UnsafePathError as error:
+        typer.echo(f"Input error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
     except Exception as error:
         typer.echo(f"Replay error: {error}", err=True)
         raise typer.Exit(EXIT_INTERNAL_ERROR) from error

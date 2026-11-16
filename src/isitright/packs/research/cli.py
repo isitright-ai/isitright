@@ -16,6 +16,7 @@ from typing import Annotated, Any
 import typer
 
 from isitright.core.evidence import FailOn, policy_triggered
+from isitright.core.paths import UnsafePathError, contained_path
 
 research_app = typer.Typer(
     help="Audit research agents: documents planted, removed, superseded or retracted in a corpus."
@@ -216,9 +217,15 @@ def export_command(
         for finding in case.findings:
             if not finding.replay.artifact:
                 continue
-            path = report.parent / finding.replay.artifact
+            try:
+                path = contained_path(
+                    report.parent, finding.replay.artifact, what="replay artifact"
+                )
+                number = finding.finding_id.rsplit(":", 1)[1]
+                target = contained_path(output, f"{number}.eval-case.json", what="finding id")
+            except (UnsafePathError, IndexError) as error:
+                raise _fail(f"Input error: {error}") from error
             data: dict[str, Any] = export_case(load_artifact(path))
-            target = output / f"{finding.finding_id.rsplit(':', 1)[1]}.eval-case.json"
             target.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", "utf-8")
             typer.echo(f"Wrote {target}")
             count += 1

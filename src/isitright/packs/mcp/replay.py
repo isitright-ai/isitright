@@ -16,6 +16,7 @@ from typing import Any
 from isitright.core.evidence import AuditReport, EvalCase
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome
+from isitright.core.paths import contained_path
 from isitright.packs.mcp.model import (
     WORLD_CHANGE,
     McpScenario,
@@ -82,7 +83,7 @@ def replay_events(
 
 
 def replay_run(scenario: McpScenario, run: dict[str, Any], output_dir: Path) -> ReplayOutcome:
-    run_dir = output_dir / run["run_dir"]
+    run_dir = contained_path(output_dir, str(run["run_dir"]), what="run directory")
 
     def outcome(ok: bool, detail: str) -> ReplayOutcome:
         return ReplayOutcome(run["world_id"], run["trial"], ok, detail)

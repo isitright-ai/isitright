@@ -39,6 +39,7 @@ from isitright.core.evidence import (
 from isitright.core.minimize import NoisyMinimization, minimize_path_noisy
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome, Role, controls_status
+from isitright.core.paths import contained_path
 from isitright.core.search import Progress
 from isitright.core.sequential import Decision, PairedSprt, RateSprtConfig, SprtConfig
 from isitright.core.stochastic import (
@@ -581,7 +582,7 @@ def _baseline_trace(
     for run in base.runs:
         if run["run_status"] != "COMPLETED":
             continue
-        directory = output_dir / run["run_dir"]
+        directory = contained_path(output_dir, str(run["run_dir"]), what="run directory")
         if (directory / "state_before.json").is_file():
             return run["run_dir"], [dict(e) for e in read_trace(directory / "trace.jsonl")]
     return None, None
@@ -1235,7 +1236,9 @@ def export_eval_cases(scenario_ref: str, report: AuditReport, output_dir: Path) 
     case = report.cases[0]
     cases: list[EvalCase] = []
     for finding in case.findings:
-        run_dir = output_dir / finding.divergence["example_run_dir"]
+        run_dir = contained_path(
+            output_dir, str(finding.divergence["example_run_dir"]), what="run directory"
+        )
         world = json.loads((run_dir / "world.json").read_text(encoding="utf-8"))
         run = next(
             r

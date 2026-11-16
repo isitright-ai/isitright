@@ -10,6 +10,7 @@ from typing import Any
 from isitright.core.entities import EntitySchema
 from isitright.core.evidence import AuditReport, CaseReport, EvalCase, Finding, totals_of
 from isitright.core.mutations import World
+from isitright.core.paths import contained_path
 from isitright.core.replay import (
     ReplayArtifact,
     ReplayResult,
@@ -47,13 +48,15 @@ def write_report(
     output_dir.mkdir(parents=True, exist_ok=True)
     for case in report.cases:
         for finding in case.findings:
-            target = output_dir / finding_dir(finding)
+            target = contained_path(output_dir, finding_dir(finding), what="finding directory")
             target.mkdir(parents=True, exist_ok=True)
             artifact = artifacts.get(finding.finding_id)
             if artifact is not None:
                 write_artifact(target / "replay.json", artifact)
             for name, text in (finding.divergence.get("data_files") or {}).items():
-                (target / name).write_text(text, encoding="utf-8", newline="")
+                path = contained_path(target, name, what="data file name")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8", newline="")
     for case in report.cases:
         for finding in case.findings:
             finding.replay.artifact = f"{finding_dir(finding)}/replay.json"
@@ -148,11 +151,13 @@ def export_eval_cases(report: AuditReport, output_dir: Path) -> list[EvalCase]:
     for case in report.cases:
         for finding in case.findings:
             name = safe_id(finding.finding_id)
-            target = output_dir / name
-            target.mkdir(parents=True, exist_ok=True)
+            target = contained_path(output_dir, name, what="finding id")
             files = finding.divergence.get("data_files") or {}
+            paths = {file: contained_path(target, file, what="data file name") for file in files}
+            target.mkdir(parents=True, exist_ok=True)
             for file, text in files.items():
-                (target / file).write_text(text, encoding="utf-8", newline="")
+                paths[file].parent.mkdir(parents=True, exist_ok=True)
+                paths[file].write_text(text, encoding="utf-8", newline="")
             (target / "gold.py").write_text(
                 str(finding.divergence.get("gold_program", "")), encoding="utf-8"
             )
