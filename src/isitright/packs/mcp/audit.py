@@ -537,6 +537,8 @@ def _minimize_world(
     results: dict[str, tuple[RunWorld, WorldResult]] = {}
 
     def run(world: World) -> bool:
+        if not budget.can_run_after_search():
+            return False  # the budget is spent: not shown to reproduce, so the step is kept
         label = "+".join(str(i) for i, m in enumerate(rw.world.path) if m in world.path)
         sub_id = f"{rw.id}.min_{label or 'none'}"
         if sub_id not in results:

@@ -244,6 +244,22 @@ class Budget:
     def can_attempt(self) -> bool:
         return self._check() is None
 
+    def can_run_after_search(self) -> bool:
+        """Whether one more run fits the money, time and run limits.
+
+        The attempts limit bounds the search for worlds. It does not stop the runs that follow the
+        search (minimization and confirmation), so it is not part of this check.
+        """
+        if self.money is not None and self.spent_money >= self.money:
+            self.exhausted = self.exhausted or "money"
+        elif self.seconds is not None and self.elapsed() >= self.seconds:
+            self.exhausted = self.exhausted or "seconds"
+        elif self.runs is not None and self.spent_runs >= self.runs:
+            self.exhausted = self.exhausted or "runs"
+        else:
+            return True
+        return False
+
     def can_run(self) -> bool:
         return self._check() is None
 
