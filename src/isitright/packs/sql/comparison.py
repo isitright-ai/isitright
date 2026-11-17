@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import math
 import re
+from bisect import bisect_left, bisect_right
 from collections import Counter, deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import cast
@@ -199,78 +201,161 @@ def _floats_close(left: float, right: float, policy: ComparisonPolicy) -> bool:
     )
 
 
+def _window(value: float, policy: ComparisonPolicy) -> float | None:
+    """A distance that every float close to ``value`` lies within, or None when there is no bound.
+
+    ``isclose`` holds when |a - b| <= max(rel * max(|a|, |b|), abs). Take the b with the larger
+    magnitude: |b| <= |a| + |a - b|, so for rel < 1 the distance is at most rel * |a| / (1 - rel),
+    or abs. The bound is widened a little so rounding cannot exclude a close value; the candidates
+    inside the window are still checked with ``isclose`` itself.
+    """
+    rel = policy.float_relative_tolerance
+    if rel >= 1.0:
+        return None
+    reach = max(rel * abs(value) / (1.0 - rel), policy.float_absolute_tolerance)
+    return reach * (1.0 + 1e-9) + 1e-300
+
+
 def _floats_match(
     reference: list[tuple[float, ...]],
     candidate: list[tuple[float, ...]],
     policy: ComparisonPolicy,
 ) -> bool:
+    """Whether the float parts of two equally sized groups of rows can be paired one to one, every
+    pair within the tolerance in every position.
+
+    Equal float parts are one class with a count. Each reference class looks only at the candidate
+    classes whose first float lies in a window around its own (found by bisection on the sorted
+    first floats), so the work does not grow with the product of the two sides. Equal classes are
+    paired first; what is left is paired by shortest augmenting paths, one at a time, which does not
+    use recursion. This decides the same question as a maximum flow over every close pair.
+    """
     reference_classes = Counter(reference)
     candidate_classes = Counter(candidate)
     reference_keys = list(reference_classes)
     candidate_keys = list(candidate_classes)
-    edges = [
-        [
-            index
-            for index, other in enumerate(candidate_keys)
-            if all(_floats_close(a, b, policy) for a, b in zip(row, other, strict=True))
-        ]
-        for row in reference_keys
-    ]
-    return _saturates(
-        [reference_classes[key] for key in reference_keys],
-        [candidate_classes[key] for key in candidate_keys],
-        edges,
-    )
-
-
-def _saturates(left_counts: list[int], right_counts: list[int], edges: list[list[int]]) -> bool:
-    """Whether every unit on the left can be matched to a distinct unit on the right: a maximum
-    flow from a source through the classes to a sink, by shortest augmenting paths (iterative)."""
-    total = sum(left_counts)
-    if total != sum(right_counts):
+    supply = [reference_classes[key] for key in reference_keys]
+    demand = [candidate_classes[key] for key in candidate_keys]
+    if sum(supply) != sum(demand):
         return False
-    n, m = len(left_counts), len(right_counts)
-    source, sink = n + m, n + m + 1
-    capacity: dict[tuple[int, int], int] = {}
-    neighbors: list[list[int]] = [[] for _ in range(n + m + 2)]
 
-    def add(u: int, v: int, units: int) -> None:
-        if (u, v) not in capacity:
-            capacity[(u, v)] = 0
-            capacity.setdefault((v, u), 0)
-            neighbors[u].append(v)
-            neighbors[v].append(u)
-        capacity[(u, v)] += units
+    # candidate classes that can match something, ordered by their first float
+    order = sorted(
+        (j for j, key in enumerate(candidate_keys) if not any(math.isnan(x) for x in key)),
+        key=lambda j: candidate_keys[j][0] if candidate_keys[j] else 0.0,
+    )
+    firsts = [candidate_keys[j][0] if candidate_keys[j] else 0.0 for j in order]
+    edge_cache: dict[int, list[int]] = {}
 
-    for i, units in enumerate(left_counts):
-        add(source, i, units)
-        for j in edges[i]:
-            add(i, n + j, total)
-    for j, units in enumerate(right_counts):
-        add(n + j, sink, units)
-    flow = 0
-    while flow < total:
-        parent: dict[int, int] = {source: source}
-        queue = deque([source])
-        while queue and sink not in parent:
-            node = queue.popleft()
-            for following in neighbors[node]:
-                if following not in parent and capacity[(node, following)] > 0:
-                    parent[following] = node
-                    queue.append(following)
-        if sink not in parent:
-            return False
-        push = total
-        node = sink
-        while node != source:
-            push = min(push, capacity[(parent[node], node)])
-            node = parent[node]
-        node = sink
-        while node != source:
-            capacity[(parent[node], node)] -= push
-            capacity[(node, parent[node])] += push
-            node = parent[node]
-        flow += push
+    def edges(i: int) -> list[int]:
+        cached = edge_cache.get(i)
+        if cached is not None:
+            return cached
+        row = reference_keys[i]
+        found: list[int] = []
+        if not any(math.isnan(x) for x in row):
+            if not row:
+                low, high = 0, len(order)
+            else:
+                first = row[0]
+                reach = _window(first, policy) if math.isfinite(first) else 0.0
+                if reach is None:
+                    low, high = 0, len(order)
+                else:
+                    low = bisect_left(firsts, first - reach)
+                    high = bisect_right(firsts, first + reach)
+            for position in range(low, high):
+                j = order[position]
+                other = candidate_keys[j]
+                if all(_floats_close(a, b, policy) for a, b in zip(row, other, strict=True)):
+                    found.append(j)
+        edge_cache[i] = found
+        return found
+
+    flow: dict[tuple[int, int], int] = {}
+    matched_to: list[dict[int, int]] = [{} for _ in candidate_keys]  # j -> {i: units}
+    left = list(supply)
+    free = list(demand)
+
+    def push(i: int, j: int, units: int) -> None:
+        flow[(i, j)] = flow.get((i, j), 0) + units
+        matched_to[j][i] = matched_to[j].get(i, 0) + units
+
+    # pair equal classes first (a class equals itself unless it holds a NaN)
+    index_of = {key: j for j, key in enumerate(candidate_keys)}
+    for i, key in enumerate(reference_keys):
+        j = index_of.get(key)
+        if j is not None and not any(math.isnan(x) for x in key):
+            units = min(left[i], free[j])
+            if units:
+                push(i, j, units)
+                left[i] -= units
+                free[j] -= units
+
+    for start in range(len(reference_keys)):
+        while left[start] > 0:
+            if not _augment(start, left, free, edges, flow, matched_to):
+                return False
+    return True
+
+
+def _augment(
+    start: int,
+    left: list[int],
+    free: list[int],
+    edges: Callable[[int], list[int]],
+    flow: dict[tuple[int, int], int],
+    matched_to: list[dict[int, int]],
+) -> bool:
+    """Find one shortest augmenting path from reference class ``start`` (which still has units to
+    place) to a candidate class with a free unit, alternating over unused and used pairs, and push
+    the largest amount it can carry. Returns False when there is none."""
+    # nodes are ("r", i) or ("c", j); parent links rebuild the path
+    parent: dict[tuple[str, int], tuple[str, int] | None] = {("r", start): None}
+    queue: deque[tuple[str, int]] = deque([("r", start)])
+    end: int | None = None
+    while queue and end is None:
+        kind, index = queue.popleft()
+        if kind == "r":
+            for j in edges(index):
+                reached = ("c", j)
+                if reached in parent:
+                    continue
+                parent[reached] = (kind, index)
+                if free[j] > 0:
+                    end = j
+                    break
+                queue.append(reached)
+        else:
+            for i in matched_to[index]:
+                taken = ("r", i)
+                if taken not in parent and matched_to[index][i] > 0:
+                    parent[taken] = (kind, index)
+                    queue.append(taken)
+    if end is None:
+        return False
+    # the amount: what the start still has, what the end still has, and the flow taken back
+    amount = min(left[start], free[end])
+    node: tuple[str, int] | None = ("c", end)
+    while node is not None and parent[node] is not None:
+        before = parent[node]
+        assert before is not None
+        if node[0] == "r":  # a step back along a used pair: from candidate ``before`` to ref node
+            amount = min(amount, matched_to[before[1]][node[1]])
+        node = before
+    node = ("c", end)
+    while parent[node] is not None:
+        before = parent[node]
+        assert before is not None
+        if node[0] == "c":  # forward: reference class ``before`` -> candidate class node
+            flow[(before[1], node[1])] = flow.get((before[1], node[1]), 0) + amount
+            matched_to[node[1]][before[1]] = matched_to[node[1]].get(before[1], 0) + amount
+        else:  # backward: candidate class ``before`` gives back to reference class node
+            flow[(node[1], before[1])] -= amount
+            matched_to[before[1]][node[1]] -= amount
+        node = before
+    left[start] -= amount
+    free[end] -= amount
     return True
 
 
