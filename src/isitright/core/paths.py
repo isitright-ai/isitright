@@ -53,9 +53,16 @@ def contained_path(base: Path, name: str, *, what: str = "path") -> Path:
         raise UnsafePathError(f"unsafe {what}: {name!r} leaves its directory")
     if any(":" in part for part in parts):
         raise UnsafePathError(f"unsafe {what}: {name!r} names a drive or an NTFS stream")
+    if any(part == "." or part.endswith((".", " ")) for part in parts):
+        raise UnsafePathError(
+            f"unsafe {what}: {name!r} is not a plain file name "
+            "(a '.' component, or a name ending in a dot or a space)"
+        )
     target = base.joinpath(*parts)
     resolved_base = base.resolve()
     resolved = target.resolve()
-    if resolved != resolved_base and not resolved.is_relative_to(resolved_base):
+    if resolved == resolved_base:
+        raise UnsafePathError(f"unsafe {what}: {name!r} names the directory itself")
+    if not resolved.is_relative_to(resolved_base):
         raise UnsafePathError(f"unsafe {what}: {name!r} resolves outside {base}")
     return target
