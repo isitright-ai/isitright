@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from collections import Counter, deque
@@ -155,9 +154,18 @@ def _exact_key(value: CanonicalValue, side: str, serial: int) -> object:
         if math.isnan(as_float):
             return (kind, _NEVER_EQUAL, side, serial)
         return (kind, as_float)
-    if isinstance(raw, list | dict):
-        return (kind, json.dumps(raw, sort_keys=True))
-    return (kind, raw)
+    return (kind, _nested_key(raw))
+
+
+def _nested_key(value: object) -> object:
+    """A hashable key for a JSON value that is equal exactly when Python's ``==`` is, which is what
+    the ordered comparison uses for these kinds: [1] and [1.0], {"n": 2} and {"n": 2.0}, and [True]
+    and [1] are equal, and the key order of an object does not matter."""
+    if isinstance(value, list):
+        return ("list", tuple(_nested_key(item) for item in value))
+    if isinstance(value, dict):
+        return ("dict", frozenset((key, _nested_key(item)) for key, item in value.items()))
+    return value
 
 
 def _group_rows(
