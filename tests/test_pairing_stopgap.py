@@ -25,9 +25,8 @@ from isitright.packs.research.audit import WorldResult
 
 from .research_fixtures import audit
 
-AUDITS = 2000
-SIGNIFICANCE = 0.05
-MARGIN = 3 * (SIGNIFICANCE * (1 - SIGNIFICANCE) / AUDITS) ** 0.5
+AUDITS = 4000
+FALSE_CLAIM_LIMIT = 0.01
 
 
 def _outcome(bad: bool) -> RunOutcome:
@@ -44,9 +43,10 @@ def _paired_decision(
     world_runs: list[int] | None = None,
     make_outcome: Callable[[random.Random, float], RunOutcome] | None = None,
     baseline_outcomes: list[RunOutcome] | None = None,
+    prebuilt: Any = None,
 ) -> WorldResult:
     """One research ``_paired`` call with a scripted subject (the pack's real loop)."""
-    a = audit(max_pairs=max_pairs)
+    a = prebuilt or audit(max_pairs=max_pairs)
     make = make_outcome or (lambda r, p: _outcome(r.random() < p))
     base = baseline_outcomes or [make(rng, baseline_rate) for _ in range(baselines)]
     calls: list[int] = world_runs if world_runs is not None else []
@@ -64,15 +64,37 @@ def _paired_decision(
     return result
 
 
-@pytest.mark.parametrize("rate", [0.3, 0.5])
-def test_equal_failure_rates_rarely_give_a_rate_increase_in_research(rate: float) -> None:
-    rng = random.Random(20261116)
+@pytest.mark.parametrize("baselines", [4, 7, 16])
+@pytest.mark.parametrize("rate", [0.2, 0.3, 0.5])
+def test_equal_failure_rates_rarely_give_a_rate_increase_in_research(
+    rate: float, baselines: int
+) -> None:
+    """At 4 baseline runs a claim is impossible; at 7 and 16 it is possible, so this can fail."""
+    rng = random.Random(20261116 + baselines)
+    shared = audit(max_pairs=16)
     claims = sum(
-        _paired_decision(rng, baseline_rate=rate, world_rate=rate).sequential.decision  # type: ignore[union-attr]
+        _paired_decision(
+            rng, baseline_rate=rate, world_rate=rate, baselines=baselines, prebuilt=shared
+        ).sequential.decision  # type: ignore[union-attr]
         is Decision.RATE_INCREASE
         for _ in range(AUDITS)
     )
-    assert claims / AUDITS <= SIGNIFICANCE + MARGIN, f"{claims} of {AUDITS} audits claimed it"
+    assert claims / AUDITS <= FALSE_CLAIM_LIMIT, f"{claims} of {AUDITS} audits claimed it"
+
+
+def test_16_baseline_runs_detect_a_rise_from_10_to_70_percent_at_least_80_percent_of_the_time() -> (
+    None
+):
+    rng = random.Random(16)
+    shared = audit(max_pairs=16)
+    detected = sum(
+        _paired_decision(
+            rng, baseline_rate=0.10, world_rate=0.70, baselines=16, prebuilt=shared
+        ).sequential.decision  # type: ignore[union-attr]
+        is Decision.RATE_INCREASE
+        for _ in range(AUDITS)
+    )
+    assert detected / AUDITS >= 0.80, f"{detected} of {AUDITS}"
 
 
 def test_research_never_runs_more_world_runs_than_it_has_baseline_runs() -> None:

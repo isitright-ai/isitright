@@ -8,6 +8,7 @@ start but not before each trial.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -134,3 +135,82 @@ def test_agents_minimization_checks_the_budget_before_every_trial(
     )
     assert len(executed) == 3, "a money budget of 3 pays for 3 runs of cost 1, not 20"
     assert budget.spent_runs == 3
+
+
+# -- agents pack: a real audit of the shop example with minimization on -------------------------
+
+SHOP = Path(__file__).parents[1] / "examples" / "agents" / "shop"
+SHOP_REF = f"{SHOP / 'scenario.py'}:SCENARIO"
+
+COUNTING_AGENT = """\
+import os
+import runpy
+
+with open(os.environ["COUNT_FILE"], "a", encoding="utf-8") as handle:
+    handle.write("x\\n")
+runpy.run_path({agent!r}, run_name="__main__")
+"""
+
+
+@pytest.fixture(scope="module")
+def composed_trap_world() -> str:
+    from isitright.core.oracles import Role
+    from isitright.packs.mcp.generate import generate_worlds
+    from isitright.packs.mcp.model import load_scenario
+
+    found, _ = generate_worlds(load_scenario(SHOP_REF), attempts=2000, depth=2)
+    return next(
+        w for w in found if w.role is Role.TRAP and w.observable and len(w.families) == 2
+    ).id
+
+
+@pytest.mark.parametrize("limit", [9, 14, 25])
+def test_a_real_agents_audit_runs_exactly_the_runs_it_reports_and_never_more_than_the_limit(
+    limit: int, composed_trap_world: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wrapper agent counts its own invocations. With minimization on, the number of
+    invocations equals the budget's spent runs and the runs listed in the report, and stays within
+    the limit; a minimization that ran out of runs is reported as not minimized."""
+    import sys
+
+    from isitright.core.stochastic import Budget
+    from isitright.packs.mcp.audit import run_scenario
+
+    wrapper = tmp_path / "counting_agent.py"
+    wrapper.write_text(
+        COUNTING_AGENT.format(agent=str(SHOP / "scripted_agent.py")), encoding="utf-8"
+    )
+    counter = tmp_path / "invocations.txt"
+    counter.write_text("", encoding="utf-8")
+    monkeypatch.setenv("COUNT_FILE", str(counter))
+    monkeypatch.setenv("SHOP_AGENT_MODE", "careless")
+    budget = Budget(runs=limit)
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{wrapper}"',
+        output_dir=tmp_path / "out",
+        worlds="generated",
+        k=2,
+        only=[composed_trap_world],
+        sequential=False,
+        attempts=2000,
+        minimize=True,
+        budget=budget,
+        trust_code=True,
+        timeout_seconds=120,
+    )
+    case = report.cases[0]
+    invocations = len(counter.read_text(encoding="utf-8").split())
+    listed = len(case.extensions["mcp"]["runs"])
+    assert invocations == budget.spent_runs == listed
+    assert invocations <= limit
+    (finding,) = case.findings
+    record = finding.minimization
+    assert record["status"] in {"MINIMIZED", "OUT_OF_RUNS"}
+    if record["status"] == "OUT_OF_RUNS":
+        assert record["minimal"] is False
+        assert record["mutations_after"] == record["mutations_before"] == len(finding.mutation_path)
+    else:
+        assert record["minimal"] is True and record["mutations_after"] < record["mutations_before"]
+    if limit < 20:
+        assert record["status"] == "OUT_OF_RUNS"  # too few runs to finish: cut short and said so
