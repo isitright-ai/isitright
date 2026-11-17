@@ -139,11 +139,13 @@ def test_case_markdown_leads_with_explanation_and_copyable_replay(
     assert (output / "replay.json").is_file() and (output / "counterexample.sql").is_file()
 
 
-def test_replay_command_is_absolute_and_the_artifact_is_relative_to_the_report(
+def test_replay_command_names_no_directory_and_the_artifact_is_relative_to_the_report(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
-    """0.8.1: nothing depends on the working directory or on the drive the report is on (the old
-    test checked a fall back to absolute paths when a relative path could not be made)."""
+    """0.8.1: a report names no directory of the machine that wrote it. The command carries the
+    report's location as a placeholder and the artifact is named relative to the report file; the
+    old test of a fall back to absolute paths (when a relative path could not be made) no longer
+    applies because no path is made."""
     output = tmp_path / "artifacts"
     other = tmp_path / "elsewhere"
     other.mkdir()
@@ -152,9 +154,9 @@ def test_replay_command_is_absolute_and_the_artifact_is_relative_to_the_report(
     payload = json.loads((output / "case_report.json").read_text(encoding="utf-8"))
     finding = payload["cases"][0]["findings"][0]
 
-    assert str((output / "case_report.json").resolve()) in finding["replay"]["command"]
-    assert finding["replay"]["command"].startswith("isitright sql replay ")
+    assert finding["replay"]["command"] == "isitright sql replay <case_report.json>"
     assert finding["replay"]["artifact"] == "replay.json"
+    assert str(tmp_path) not in json.dumps(payload)
 
 
 def test_suite_markdown_separates_original_and_generated_findings(

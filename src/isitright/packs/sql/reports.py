@@ -16,7 +16,7 @@ from isitright.core.evidence import (
     ReplayRecord,
     totals_of,
 )
-from isitright.core.paths import command_path
+from isitright.core.paths import replay_placeholder
 from isitright.core.replay import write_artifact
 from isitright.packs.sql.models import (
     CanonicalValue,
@@ -108,7 +108,7 @@ def with_artifacts(case: CaseReport, destination: Path) -> CaseReport:
     findings: list[Finding] = []
     for finding in case.findings:
         replay = ReplayRecord(
-            command=f"isitright sql replay {command_path(destination / 'case_report.json')}",
+            command=f"isitright sql replay {replay_placeholder(destination, 'case_report.json')}",
             artifact="replay.json",  # relative to the report file
         )
         findings.append(finding.model_copy(update={"replay": replay}))
@@ -211,7 +211,7 @@ def render_case(case: CaseReport) -> str:
                 "",
                 "## Reproduce this finding",
                 "",
-                "The command names the report by its absolute path, so it runs from any directory:",
+                "Replace the part in angle brackets with the location of the report file:",
                 "",
                 "```console",
                 finding.replay.command or "Replay command unavailable",

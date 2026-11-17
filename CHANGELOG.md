@@ -39,10 +39,13 @@ code). It changes no report schema (still 0.8). The release was built and tested
   record their cost, and an errored run keeps its cost. The agents pack's minimization steps check
   the budget before each trial. If the run budget is spent before a finding's confirmation run, the
   finding is reported on the unminimized world and says so.
-- **Replay commands exist and work from any directory.** The SQL report printed `isitright replay`
+- **Replay commands exist and survive moving the report.** The SQL report printed `isitright replay`
   (the command is `isitright sql replay`), the research report printed a bare file name, and the
-  data and agents reports printed none. Each report now prints a command with the absolute path of
-  the report or artifact, and artifact paths are stored relative to the report file.
+  data and agents reports printed none. Each report now prints the right command with the report
+  file's location as a placeholder in angle brackets (`<report.json>`), which the reader replaces
+  with where the file is; artifact paths are stored relative to the report file. Nothing in a
+  report, a replay artifact or a printed hint names the directory the audit wrote to, so a
+  downloaded CI artifact replays from any directory.
 - **An agents report no longer fails to build** when a world id or an invariant name uses a verdict
   word (`wrong-zip`, `no-failure-allowed`): the headline points at the report, which keeps the name.
 - **The unordered SQL row comparison no longer recurses once per row** (a `RecursionError` on

@@ -7,7 +7,6 @@ pointed at, whatever the platform that wrote the report or the one that reads it
 
 from __future__ import annotations
 
-import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
@@ -15,21 +14,19 @@ class UnsafePathError(ValueError):
     """A path taken from a report would leave its base directory."""
 
 
-_PLAIN = re.compile(r"[A-Za-z0-9_@%+=:,./\\-]+")
+def replay_placeholder(output_dir: Path | str, filename: str) -> str:
+    """Where a printed replay command names a report file, as a placeholder in angle brackets.
 
-
-def quote_for_command(text: str) -> str:
-    """A path or argument for a command line a person will paste: double quotes only when needed
-    (they work in POSIX shells, cmd and PowerShell alike)."""
-    if _PLAIN.fullmatch(text):
-        return text
-    return '"' + text.replace('"', '\\"') + '"'
-
-
-def command_path(path: Path) -> str:
-    """The absolute location of ``path``, quoted for a printed command that must work from any
-    working directory."""
-    return quote_for_command(str(path.resolve()))
+    A report is moved (a CI artifact is downloaded), so nothing it says may name the directory it
+    was written to, and the command cannot hold a location that is true on the reader's machine.
+    The reader replaces the placeholder with the file's location. The placeholder is the path the
+    user gave for the output directory when that was relative (so it also reads as the location
+    from where the audit ran), and the bare file name otherwise: never an absolute path.
+    """
+    given = PureWindowsPath(str(output_dir))
+    local = not (given.is_absolute() or given.drive or given.root or ".." in given.parts)
+    shown = str(Path(output_dir) / filename) if local else filename
+    return f"<{shown}>"
 
 
 def contained_path(base: Path, name: str, *, what: str = "path") -> Path:

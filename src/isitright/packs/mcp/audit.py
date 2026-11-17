@@ -40,7 +40,7 @@ from isitright.core.evidence import (
 from isitright.core.minimize import NoisyMinimization, minimize_path_noisy
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome, Role, controls_status
-from isitright.core.paths import command_path, contained_path
+from isitright.core.paths import contained_path, replay_placeholder
 from isitright.core.search import Progress
 from isitright.core.sequential import Decision, PairedSprt, RateSprtConfig, SprtConfig
 from isitright.core.stochastic import (
@@ -1161,7 +1161,7 @@ def write_report(report: AuditReport, output_dir: Path) -> None:
     for case in report.cases:
         for finding in case.findings:
             finding.replay.command = (
-                f"isitright agents replay --report {command_path(output_dir / 'report.json')} "
+                f"isitright agents replay --report {replay_placeholder(output_dir, 'report.json')} "
                 "--findings-only --trust-code"
             )
     (output_dir / "report.json").write_text(

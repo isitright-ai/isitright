@@ -10,7 +10,7 @@ from typing import Any
 from isitright.core.entities import EntitySchema
 from isitright.core.evidence import AuditReport, CaseReport, EvalCase, Finding, totals_of
 from isitright.core.mutations import World
-from isitright.core.paths import command_path, contained_path
+from isitright.core.paths import contained_path, replay_placeholder
 from isitright.core.replay import (
     ReplayArtifact,
     ReplayResult,
@@ -63,7 +63,7 @@ def write_report(
             number += 1
             finding.replay.artifact = f"{finding_dir(finding)}/replay.json"
             finding.replay.command = (
-                f"isitright data replay {command_path(output_dir / 'report.json')} "
+                f"isitright data replay {replay_placeholder(output_dir, 'report.json')} "
                 f"--finding {number} --trust-code"
             )
     (output_dir / "report.json").write_text(
@@ -98,7 +98,8 @@ def markdown(report: AuditReport) -> str:
                 f"- {finding.headline}. Difference: {finding.divergence.get('difference')}.",
                 f"  Gold answer: {finding.divergence.get('gold_answer')!r}; "
                 f"program answer: {finding.divergence.get('program_answer')!r}.",
-                f"  Replay: `{finding.replay.command}`.",
+                f"  Replay: `{finding.replay.command}` (replace the part in angle brackets with "
+                "the location of the report file).",
             ]
         for error in case.errors:
             lines.append(f"- {error['code']}: {error['message']}")

@@ -15,7 +15,7 @@ from typing import Any
 
 from isitright.core.evidence import AuditReport, CaseReport, EvalCase, Totals, totals_of
 from isitright.core.mutations import World
-from isitright.core.paths import command_path
+from isitright.core.paths import replay_placeholder
 from isitright.core.replay import (
     ReplayArtifact,
     ReplayResult,
@@ -130,7 +130,9 @@ def write_outputs(
         digest = write_artifact(path, artifact)
         finding.replay.artifact = path.name
         finding.replay.artifact_sha256 = digest
-        finding.replay.command = f"isitright research replay {command_path(path)}"
+        finding.replay.command = (
+            f"isitright research replay {replay_placeholder(out_dir, path.name)}"
+        )
         export = EvalCase.model_validate(exports[finding.finding_id])
         export_path = out_dir / f"{number}.eval-case.json"
         export_path.write_text(
