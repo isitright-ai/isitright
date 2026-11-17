@@ -54,8 +54,10 @@ code). It changes no report schema (still 0.8). The release was built and tested
 
 - **At the default settings the research and data packs report counts, not rate claims.** A world
   has at most as many pairs as the baseline has runs (4 in research, 3 in data by default), and a
-  rate increase needs 7 discordant pairs at the default test. Raise the baseline runs to 7 or more
-  to allow a claim. A fresh baseline run for every pair, as the agents pack makes, is planned for
+  rate increase needs 7 discordant pairs at the default test. To allow a claim, use 16 baseline
+  runs (research `--runs 16`; data `--baseline-runs 16 --max-trials 16`): in a simulation, a rise
+  in failures from 10% to 70% was detected 86% of the time with 16 baseline runs and 3.7% of the
+  time with 7. A fresh baseline run for every pair, as the agents pack makes, is planned for
   0.9.0.
 - In the data pack a world now runs at most as many times as there are baseline runs; it used to run
   up to `max_trials` with the baseline outcomes cycled.
