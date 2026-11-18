@@ -481,7 +481,7 @@ def run_scenario(
             skip(rw, f"safety rail: --max-worlds {rail} reached")
     report = build_report(
         scenario,
-        reference_text,
+        scenario_ref,  # as the user typed it; the absolute form above only launches the servers
         agent_command,
         k,
         results,

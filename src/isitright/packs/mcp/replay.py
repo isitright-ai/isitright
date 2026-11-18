@@ -164,13 +164,33 @@ def replay_report(
     return [replay_run(scenario, run, output_dir) for run in runs]
 
 
-def rerun_eval_case(case: EvalCase, scenario: McpScenario | None = None) -> dict[str, Any]:
-    """Replay an exported case offline and re-judge it; `reproduced` means the same disagreement."""
+def recorded_scenario_message(recorded: str, error: object) -> str:
+    """Why the scenario a report or case recorded cannot be loaded, and what to pass instead."""
+    return (
+        f"the scenario recorded as {recorded!r} cannot be loaded ({error}); "
+        "say where it is now with --scenario REF (an exported case: pass scenario=REF)"
+    )
+
+
+def rerun_eval_case(case: EvalCase, scenario: McpScenario | str | None = None) -> dict[str, Any]:
+    """Replay an exported case offline and re-judge it; `reproduced` means the same disagreement.
+
+    ``scenario`` is a loaded scenario or a reference (``file.py:SCENARIO``) that replaces the one
+    the case recorded, for a scenario that has moved."""
     payload = case.payload
     try:
-        scenario = scenario or load_scenario(payload["scenario_ref"])
-    except ScenarioError as error:  # pragma: no cover - a stale reference
-        return {"reproduced": False, "detail": str(error)}
+        if isinstance(scenario, str):
+            scenario = load_scenario(scenario)
+        elif scenario is None:
+            try:
+                scenario = load_scenario(payload["scenario_ref"])
+            except ScenarioError as error:
+                return {
+                    "reproduced": False,
+                    "detail": recorded_scenario_message(payload["scenario_ref"], error),
+                }
+    except ScenarioError as error:
+        return {"reproduced": False, "detail": f"cannot load the scenario given: {error}"}
     if scenario.external is not None:
         return {
             "reproduced": False,

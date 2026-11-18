@@ -46,6 +46,10 @@ code). It changes no report schema (still 0.8). The release was built and tested
   with where the file is; artifact paths are stored relative to the report file. Nothing in a
   report, a replay artifact or a printed hint names the directory the audit wrote to, so a
   downloaded CI artifact replays from any directory.
+- **An agents report and its scenario can both move.** The report stores the scenario reference
+  as you typed it (it stored an absolute path made at run time). `isitright agents replay` takes
+  `--scenario REF` to say where the scenario is now, and a recorded reference that cannot be
+  loaded exits with code 2 and names `--scenario`; `rerun_eval_case` takes a reference too.
 - **An agents report no longer fails to build** when a world id or an invariant name uses a verdict
   word (`wrong-zip`, `no-failure-allowed`): the headline points at the report, which keeps the name.
 - **The unordered SQL row comparison no longer recurses once per row** (a `RecursionError` on

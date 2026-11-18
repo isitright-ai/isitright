@@ -72,6 +72,7 @@ Both are plain functions that return a result dict:
 from isitright.core.evidence import EvalCase
 from isitright.packs.sql.replaying import rerun_eval_case  # SQL
 # from isitright.packs.mcp.replay import rerun_eval_case           # agents (takes the scenario too)
+# agents: rerun_eval_case(case, "new/place/scenario.py:SCENARIO") when the scenario has moved
 
 import json
 
