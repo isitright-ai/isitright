@@ -207,6 +207,35 @@ def write_mcp_config(
     return path
 
 
+def record_mcp_config(path: Path, output_dir: Path, *, scenario_ref: str) -> None:
+    """Rewrite ``mcp.json`` once the run is over, as a record that names no location of this host.
+
+    While the agent runs, the file holds absolute paths so its MCP client can start the server from
+    any working directory. Afterwards a path inside the output directory is written relative to it
+    (the file is then valid wherever the output directory is copied), and the scenario is the
+    reference as the user typed it. A path outside the output directory, and the interpreter in
+    ``command``, are left as they are.
+    """
+    config = json.loads(path.read_text(encoding="utf-8"))
+    server = config["mcpServers"]["isitright"]
+    root = output_dir.resolve()
+    rewritten: list[str] = []
+    previous = ""
+    for argument in server["args"]:
+        if previous == "--scenario":
+            rewritten.append(scenario_ref)
+        elif Path(argument).is_absolute():
+            try:
+                rewritten.append(Path(argument).resolve().relative_to(root).as_posix())
+            except (ValueError, OSError):
+                rewritten.append(argument)
+        else:
+            rewritten.append(argument)
+        previous = argument
+    server["args"] = rewritten
+    path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
 def read_state(path: Path) -> ServiceState:
     value: ServiceState = json.loads(path.read_text(encoding="utf-8"))
     return value

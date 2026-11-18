@@ -73,6 +73,7 @@ from isitright.packs.mcp.runner import (
     collect,
     harness_identity,
     read_trace,
+    record_mcp_config,
     run_agent,
     split_command,
     write_mcp_config,
@@ -238,6 +239,7 @@ def _record_run(
     harness: tuple[str | None, str | None],
     result: WorldResult,
     require_cost: bool = False,
+    recorded_ref: str | None = None,
 ) -> RunOutcome:
     relative = f"runs/{rw.id}/{trial}"
     run_dir = output_dir / relative
@@ -254,6 +256,7 @@ def _record_run(
     started = time.monotonic()
     status, exit_code = run_agent(argv, run_dir, mcp_config, run_dir / "task.txt", rw.id, timeout)
     duration = time.monotonic() - started
+    record_mcp_config(mcp_config, output_dir, scenario_ref=recorded_ref or scenario_ref)
     fallback = scenario.layout.to_service(rw.world.state)
     run = collect(run_dir, status, round(duration, 3), harness, fallback)
     if require_cost and status == "COMPLETED" and "money" not in run.extra:
@@ -417,6 +420,7 @@ def run_scenario(
             harness,
             result,
             budget.money is not None,
+            scenario_ref,  # recorded as typed; the absolute form above launched the servers
         )
         if progress is not None:
             progress(rw.id, _marker(outcome))

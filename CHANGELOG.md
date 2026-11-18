@@ -50,6 +50,10 @@ code). It changes no report schema (still 0.8). The release was built and tested
   as you typed it (it stored an absolute path made at run time). `isitright agents replay` takes
   `--scenario REF` to say where the scenario is now, and a recorded reference that cannot be
   loaded exits with code 2 and names `--scenario`; `rerun_eval_case` takes a reference too.
+- **`runs/*/mcp.json` names no path of the machine that wrote it.** Once a run is over, the paths
+  in the file that lie inside the output directory are rewritten relative to it and the scenario is
+  the reference as typed (the agent still gets absolute paths while it runs). The interpreter in
+  `command` is left as it is.
 - **An agents report no longer fails to build** when a world id or an invariant name uses a verdict
   word (`wrong-zip`, `no-failure-allowed`): the headline points at the report, which keeps the name.
 - **The unordered SQL row comparison no longer recurses once per row** (a `RecursionError` on

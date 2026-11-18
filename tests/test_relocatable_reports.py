@@ -7,9 +7,9 @@ Each report prints its command with a placeholder in angle brackets, named after
 (``<report.json>``); the reader replaces it with the file's location.
 
 For every pack: write a report, copy the whole output directory to a different parent, delete the
-original, substitute the placeholder, and run the command from a third directory. The raw run
-directories of the agents pack (``runs/``: agent logs, ``mcp.json``) are records of what ran and are
-not read by a replay, so they are left out of the leak check.
+original, substitute the placeholder, and run the command from a third directory. The leak check
+covers every text file isitright wrote, the run directories of the agents pack included; the only
+exception is ``agent.log``, which is whatever the agent printed.
 """
 
 from __future__ import annotations
@@ -47,8 +47,7 @@ def _assert_no_leak(moved: Path, original: Path, stdout: str) -> None:
     needles = _spellings(original)
     texts = {"<stdout>": stdout}
     for path in moved.rglob("*"):
-        relative = path.relative_to(moved).parts
-        if path.is_file() and path.suffix in TEXT_SUFFIXES and "runs" not in relative:
+        if path.is_file() and path.suffix in TEXT_SUFFIXES and path.name != "agent.log":
             texts[str(path.relative_to(moved))] = path.read_text(encoding="utf-8", errors="replace")
     leaks = [name for name, text in texts.items() if any(n in text for n in needles)]
     assert not leaks, f"the original directory is named in: {leaks}"
