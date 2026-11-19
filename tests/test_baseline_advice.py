@@ -54,12 +54,30 @@ def test_no_text_in_the_repository_advises_seven_baseline_runs() -> None:
         assert "baseline runs to 7" not in text, path
 
 
-def test_the_live_agents_page_and_the_changelog_say_16_and_give_the_reason() -> None:
+def _power_by_pairs(max_pairs: int, min_pairs: int, seed: int) -> float:
+    """Pairs made of fresh runs (0.9.0): a rise from 10% to 70%, up to ``max_pairs`` pairs."""
+    rng = random.Random(seed)
+    detected = 0
+    for _ in range(TRIALS):
+        test = PairedSprt(SprtConfig(min_pairs=min_pairs, max_pairs=max_pairs))
+        for _ in range(max_pairs):
+            test.add(rng.random() < 0.10, rng.random() < 0.70)
+            if test.decision is not Decision.CONTINUE:
+                break
+        detected += test.decision is Decision.RATE_INCREASE
+    return detected / TRIALS
+
+
+def test_the_pair_limit_figures_in_the_docs_come_from_this_simulation() -> None:
+    assert 0.35 <= _power_by_pairs(10, 3, seed=10) <= 0.43  # "about 40%"
+    assert 0.82 <= _power_by_pairs(16, 4, seed=16) <= 0.90  # "about 85%"
+
+
+def test_the_live_agents_page_and_the_changelog_give_the_pair_limit_and_the_reason() -> None:
     page = (ROOT / "docs" / "concepts" / "live-agents.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    for text in (page, changelog):
-        section = text.split("## 0.8.1")[1].split("## 0.8.0")[0] if text is changelog else text
-        assert re.search(r"16 baseline\s+runs", section), "the advice names 16 baseline runs"
-        assert "86%" in section and "3.7%" in section, "the reason quotes the simulation"
-    assert "--baseline-runs 16 --max-trials 16" in page  # the data pack caps runs at --max-trials
-    assert "--runs 16" in page  # the research pack
+    section = changelog.split("## 0.9.0")[1].split("## 0.8.1")[0]
+    assert re.search(r"16\s+pairs", page) and "about 85%" in page
+    assert "fresh" in page and "baseline run" in page
+    assert re.search(r"16\s+in\s+all\s+three\s+packs", section), "the changelog names 16 pairs"
+    assert "about 40%" in section and "about 85%" in section, "the reason quotes the simulation"

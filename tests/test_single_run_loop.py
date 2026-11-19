@@ -6,7 +6,8 @@ them.
 This test walks the source tree and fails on such a call. Two forms are caught:
 
 * a call ``<anything ending in "subject">.execute(...)``;
-* a call ``<anything>.execute(target, seed)``, with a second argument named like a seed.
+* a call ``<anything>.execute(target, seed)``, with a second argument named like a seed;
+* a call to ``run_agent``, which starts an agent command, outside a method named ``execute``.
 
 A call is allowed inside `SubjectRunner.run` and inside a method named ``execute`` (an adapter that
 turns the runner's call into the subject's own: it is the subject, not a caller). Anything else
@@ -35,6 +36,13 @@ def _is_subject_call(node: ast.Call) -> bool:
     return False
 
 
+def _is_raw_agent_start(node: ast.Call) -> bool:
+    func = node.func
+    return (isinstance(func, ast.Name) and func.id == "run_agent") or (
+        isinstance(func, ast.Attribute) and func.attr == "run_agent"
+    )
+
+
 def _allowed_scope(stack: list[str]) -> bool:
     return stack[-1:] == ["execute"] or stack[-2:] == ["SubjectRunner", "run"]
 
@@ -47,7 +55,11 @@ def find_violations(root: Path) -> list[str]:
         def visit(node: ast.AST, stack: list[str], path: Path = path) -> None:
             if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
                 stack = [*stack, node.name]
-            if isinstance(node, ast.Call) and _is_subject_call(node) and not _allowed_scope(stack):
+            if (
+                isinstance(node, ast.Call)
+                and (_is_subject_call(node) or _is_raw_agent_start(node))
+                and not _allowed_scope(stack)
+            ):
                 found.append(f"{path.relative_to(root).as_posix()}:{node.lineno}")
             for child in ast.iter_child_nodes(node):
                 visit(child, stack)
@@ -85,6 +97,15 @@ def test_the_scan_catches_a_call_made_outside_the_runner(tmp_path: Path) -> None
         encoding="utf-8",
     )
     assert find_violations(tmp_path) == ["pack.py:2", "pack.py:4", "pack.py:12"]
+
+
+def test_starting_an_agent_outside_an_execute_method_is_caught(tmp_path: Path) -> None:
+    (tmp_path / "pack.py").write_text(
+        "def audit(argv):\n    return run_agent(argv)\n"
+        "class Subject:\n    def execute(self, target, seed):\n        return run_agent(1)\n",
+        encoding="utf-8",
+    )
+    assert find_violations(tmp_path) == ["pack.py:2"]
 
 
 def test_a_database_cursor_is_not_a_subject(tmp_path: Path) -> None:

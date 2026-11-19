@@ -297,7 +297,7 @@ def run_live(
         results.append(target)
         paired = runner.run_paired(target, comparison, sprt_config)
         target.sprt = paired.test
-        target.baselines = paired.baseline_outcomes
+        target.baselines = list(base.outcomes)
         stop.record(w, any(is_bad(o) for o in target.outcomes))
     verification = _verify_minimized(audit, runner, base, frozen_world, config)
     return _report(

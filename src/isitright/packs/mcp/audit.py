@@ -248,6 +248,7 @@ class _Launched:
     duration: float
     relative: str
     seed: int
+    trial: int
 
 
 class _AgentCommand:
@@ -270,10 +271,12 @@ class _AgentCommand:
         self.output_dir = output_dir
         self.timeout = timeout
         self.harness = harness
+        self.trials: dict[str, int] = {}
+        """Runs made so far per world id: the baseline's runs share one numbering."""
 
     def execute(self, target: RunTarget, seed: int, /) -> _Launched:
         rw = target.rw
-        trial = len(target.result.runs) + 1
+        trial = self.trials[rw.id] = self.trials.get(rw.id, 0) + 1
         relative = f"runs/{rw.id}/{trial}"
         run_dir = self.output_dir / relative
         run_dir.mkdir(parents=True)
@@ -294,7 +297,7 @@ class _AgentCommand:
         record_mcp_config(mcp_config, self.output_dir, scenario_ref=self.recorded_ref)
         fallback = self.scenario.layout.to_service(rw.world.state)
         run = collect(run_dir, status, round(duration, 3), self.harness, fallback)
-        return _Launched(run, status, exit_code, duration, relative, seed)
+        return _Launched(run, status, exit_code, duration, relative, seed, trial)
 
 
 def _judge_launched(
@@ -338,7 +341,7 @@ def _judge_launched(
         result.runs.append(
             {
                 "world_id": rw.id,
-                "trial": len(result.runs) + 1,
+                "trial": launched.trial,
                 "seed": launched.seed,
                 "run_status": status,
                 "exit_code": launched.exit_code,
@@ -478,6 +481,9 @@ def run_scenario(
         seed=seed,
     )
     base_target = RunTarget(baseline_rw, base)
+    comparison = RunTarget(baseline_rw, WorldResult(baseline_rw))
+    """Fresh baseline runs made for the pairs; `base` keeps the runs made before the search."""
+    extra.append(comparison.result)
     if anything_to_audit:
         runner.run_repeated(base_target, baseline_k, "baseline")
     generated = [rw for rw in prepared if rw.generated is not None]
@@ -518,7 +524,7 @@ def run_scenario(
             skip(rw, reason)
             continue
         results.append(result)
-        _run_world(runner, RunTarget(rw, result), base_target, config, k, sequential)
+        _run_world(runner, RunTarget(rw, result), base_target, comparison, config, k, sequential)
         found = any(is_bad(o) for o in result.outcomes)
         if rw.generated is not None:
             stop.record(rw.generated, found)
@@ -647,6 +653,7 @@ def _run_world(
     runner: SubjectRunner[RunTarget, _Launched],
     target: RunTarget,
     base: RunTarget,
+    comparison: RunTarget,
     config: SprtConfig,
     k: int,
     sequential: bool,
@@ -655,7 +662,7 @@ def _run_world(
     if not sequential or all(o.error for o in base.result.outcomes):  # no baseline run to pair with
         runner.run_repeated(target, k, "search")
         return
-    paired = runner.run_paired(target, base, config)
+    paired = runner.run_paired(target, comparison, config)
     target.result.sequential = paired.test
     target.result.paired_baseline = paired.baseline_outcomes
 

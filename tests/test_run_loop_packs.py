@@ -192,6 +192,7 @@ def test_research_sequential_records_say_how_the_pairs_were_made() -> None:
 
     a = audit(depth=1, runs=3, allow_failing_baseline=True, minimize=False)
     report = a.check(_flaky_research_subject(a, 0.5, 0.5))
+    assert report.stability is None, "no case-level stability: it pooled runs of different worlds"
     records = [f.stability.sequential for f in report.findings if f.stability]
     assert records
     for record in records:

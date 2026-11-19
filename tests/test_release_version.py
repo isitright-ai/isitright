@@ -26,8 +26,12 @@ def test_llms_txt_names_the_package_version() -> None:
 
 def test_the_top_changelog_heading_is_the_package_version() -> None:
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    first = re.search(r"^## (\S+)", text, re.MULTILINE)
-    assert first is not None and first.group(1) == isitright.__version__
+    released = [
+        m.group(1)
+        for m in re.finditer(r"^## (\S+)(.*)$", text, re.MULTILINE)
+        if "Unreleased" not in m.group(2)
+    ]
+    assert released and released[0] == isitright.__version__
 
 
 def test_the_version_is_the_hotfix_release() -> None:

@@ -164,8 +164,6 @@ class WorldResult:
     runs: list[RecordedRun] = field(default_factory=list)
     judged: list[Judged] = field(default_factory=list)
     outcomes: list[RunOutcome] = field(default_factory=list)
-    paired_baseline: list[RunOutcome] = field(default_factory=list)
-    """The fresh baseline runs this world's pairs were made with (empty when not paired)."""
     sequential: PairedSprt | None = None
     role: Role = Role.TRAP
     role_basis: str = ""
@@ -488,7 +486,6 @@ class ResearchAudit:
                 ),
             )
             wr.outcomes = paired.world_outcomes
-            wr.paired_baseline = paired.baseline_outcomes
             wr.sequential = paired.test
         else:
             wr.outcomes = [e.outcome for e in self._runner.run_repeated(placed, k, "search")]
@@ -693,7 +690,7 @@ class ResearchAudit:
             validity=validity_record(shown.validity, shown.unobservable),
             oracles=_oracle_records(worst),
             stability=stability_sequential(
-                original.paired_baseline, original.outcomes, k, original.sequential
+                baseline_outcomes, original.outcomes, k, original.sequential
             )
             if original.sequential is not None
             and original.sequential.decision is not Decision.CONTINUE
