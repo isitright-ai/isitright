@@ -94,7 +94,10 @@ A **comparator** states what "the same output" means.
 - **SQL:** results compare as multisets unless the reference query has a top-level `ORDER BY`.
   Columns match `positional` (default), `by_name` or `names_and_positions`. Floats compare `exact`
   or with `isclose` (relative 1e-9, absolute 1e-12). The effective policy is recorded in every
-  report. Ambiguity (collations, nondeterminism, ties under `LIMIT`) yields `INCONCLUSIVE` or
-  `UNSUPPORTED`.
+  report. Rows are compared by position when the reference has a top-level `ORDER BY`. isitright
+  does not detect ties in the sort keys: a candidate that orders tied rows differently from the
+  reference can be reported as a counterexample, and a `LIMIT` that cuts through a tie is not
+  flagged. A comparison policy that is ambiguous for the results (duplicate result column names
+  under `by_name`) yields `INCONCLUSIVE`; unsupported SQL yields `UNSUPPORTED`.
 - **Agents:** the final state is normalized by your scenario (drop service-assigned ids and
   free-text reasons) and compared with the reference's. Calls are compared after `normalize_call`.

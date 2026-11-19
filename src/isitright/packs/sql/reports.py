@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections import Counter
 from enum import StrEnum
 from pathlib import Path
@@ -17,6 +16,7 @@ from isitright.core.evidence import (
     ReplayRecord,
     totals_of,
 )
+from isitright.core.paths import replay_placeholder
 from isitright.core.replay import write_artifact
 from isitright.packs.sql.models import (
     CanonicalValue,
@@ -107,10 +107,9 @@ def with_artifacts(case: CaseReport, destination: Path) -> CaseReport:
         return case
     findings: list[Finding] = []
     for finding in case.findings:
-        report_path = _display(destination / "case_report.json")
         replay = ReplayRecord(
-            command=f"isitright replay {report_path}",
-            artifact=_display(destination / "replay.json"),
+            command=f"isitright sql replay {replay_placeholder(destination, 'case_report.json')}",
+            artifact="replay.json",  # relative to the report file
         )
         findings.append(finding.model_copy(update={"replay": replay}))
     return case.model_copy(update={"findings": findings})
@@ -122,14 +121,6 @@ def _dump(report: AuditReport) -> str:
 
 def _safe(case_id: str, index: int) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in (case_id or f"case-{index}"))
-
-
-def _display(path: Path) -> str:
-    resolved = path.resolve()
-    try:
-        return os.path.relpath(resolved, Path.cwd().resolve())
-    except ValueError:
-        return str(resolved)
 
 
 # --- Markdown -----------------------------------------------------------------------------------
@@ -220,7 +211,7 @@ def render_case(case: CaseReport) -> str:
                 "",
                 "## Reproduce this finding",
                 "",
-                "Run this from the directory where the isitright command was launched:",
+                "Replace the part in angle brackets with the location of the report file:",
                 "",
                 "```console",
                 finding.replay.command or "Replay command unavailable",

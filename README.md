@@ -197,8 +197,9 @@ uv build
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), which also covers building the documentation. Semantic
-fixtures (entity schemas, constraints, hints, oracle rules, expected results) are owner-approved;
-drafts carry a "Proposed fixture" header.
+fixtures (entity schemas, constraints, hints, oracle rules, expected results) are drafted by the
+coding agent and need the owner's approval. A draft carries a "Proposed fixture: pending owner
+review" header, and most of the 0.4 to 0.8 fixtures still carry it: they have not been reviewed.
 
 ## Background
 

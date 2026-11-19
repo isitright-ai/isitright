@@ -29,10 +29,13 @@ These are design rules the tool holds itself to. They explain behaviors that can
 6. **No model or API dependency in the core.** LLM-based pieces, such as
    [proposed hints](concepts/hints.md#provenance), are optional and labeled.
 7. **[Safe by default](#safety).** Perturbed worlds live in disposable instances, in-process engines
-   or isitright-hosted fakes. Your data and systems are never modified.
+   or isitright-hosted fakes, and isitright never writes to your databases or services. A live agent
+   under test is not contained: it runs with your environment variables, network and file access.
 8. **[Observed failures are not reliability claims](concepts/live-agents.md#observed-failure-versus-rate-claim).**
    A rate claim needs repeated runs and a test.
-9. **Fixtures that encode semantics are owner-approved.** Agents may draft; people approve. See
+9. **Fixtures that encode semantics need a person's approval.** Agents may draft; people approve.
+   Drafts carry a "Proposed fixture: pending owner review" header, and many fixtures in the
+   repository still carry it: they have not been reviewed. See
    [Onboarding with an LLM](onboarding/index.md#the-rules-for-llm-drafted-inputs).
 10. **Trusted code only.** [Scenarios](agents/write-a-scenario.md), mutators, oracles and validators
     are Python and run only with `--trust-code`.

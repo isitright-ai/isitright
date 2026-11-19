@@ -17,7 +17,7 @@ from __future__ import annotations
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -50,8 +50,14 @@ from isitright.core.selection import (
     StopState,
     rank_worlds,
 )
-from isitright.core.sequential import Decision, PairedSprt, SprtConfig
-from isitright.core.stochastic import Budget, RunOutcome, is_bad, stability_sequential
+from isitright.core.sequential import PairedSprt, SprtConfig
+from isitright.core.stochastic import (
+    Budget,
+    RunOutcome,
+    is_bad,
+    run_paired_with_baseline,
+    stability_sequential,
+)
 from isitright.core.subjects import Cost, SubjectKind
 from isitright.core.world import State, diff_states
 from isitright.packs.data.adapters import AgentRun, DataAgent
@@ -292,18 +298,22 @@ def run_live(
         if reason is not None:
             not_run[w.id] = reason
             continue
-        target = WorldRuns(w, baselines=list(base.outcomes), sprt=PairedSprt(sprt_config))
+        usable = min(config.max_trials, len(base.outcomes))
+        world_config = replace(
+            sprt_config,
+            min_pairs=max(1, min(sprt_config.min_pairs, usable)),
+            max_pairs=max(1, min(sprt_config.max_pairs, usable)),
+        )
+        target = WorldRuns(w, baselines=list(base.outcomes), sprt=PairedSprt(world_config))
         results.append(target)
-        for number in range(config.max_trials):
-            if not budget.can_run():
-                break
-            outcome = trial(target, number)
-            if not base.outcomes:
-                break
-            paired = base.outcomes[number % len(base.outcomes)]
-            assert target.sprt is not None
-            if target.sprt.add(is_bad(paired), is_bad(outcome)) is not Decision.CONTINUE:
-                break
+        assert target.sprt is not None
+        run_paired_with_baseline(
+            lambda number, target=target: trial(target, number),  # type: ignore[misc]
+            base.outcomes,
+            target.sprt,
+            budget,
+            usable,
+        )
         stop.record(w, any(is_bad(o) for o in target.outcomes))
     verification = _verify_minimized(audit, agent, base, frozen_world, config, budget, progress)
     return _report(

@@ -23,7 +23,7 @@ emulated findings never fail.
 | Code | Meaning |
 |---|---|
 | `0` | Completed |
-| `1` | Internal error, or `INCONCLUSIVE` |
+| `1` | Internal error; a replay that did not reproduce; or `INCONCLUSIVE` from `agents run` or from `sql check` on PostgreSQL or DuckDB (a SQLite check that is `INCONCLUSIVE` exits `0`) |
 | `2` | Invalid input, including no valid world, or `--max-money` with an agent that reports no cost |
 | `3` | The opt-in `--fail-on` policy triggered |
 
@@ -48,6 +48,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with: {name: sql-audit, path: artifacts/sql-audit}
 ```
+
+!!! warning "Reports and agent logs can hold secrets"
+    An `agents run` output directory holds `agent.log` (the agent's stdout and stderr) and the
+    recorded traces for every run. The agent command runs with the job's environment, so a log can
+    contain tokens the agent printed or a tool echoed. Do not upload that directory as a public or
+    widely readable artifact without checking it, and prefer uploading `report.md` and `report.json`.
 
 Upload the report directory whether or not the job fails, so a reviewer can open `suite_report.md`
 and [replay](replay-and-export.md) the counterexample.

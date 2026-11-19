@@ -75,7 +75,7 @@ world* (your gold query re-run on the new database; a reference procedure for an
 |---|---|
 | [`COUNTEREXAMPLE_FOUND`](concepts/evidence.md#divergence_status) | In a valid changed world, your subject and the oracle disagree. Open the finding, read the world, decide which side is wrong |
 | `NOT_FOUND_WITHIN_BUDGET` | isitright tried the worlds its budget allowed and found no disagreement. This says nothing about worlds it did not try, so it is never a claim that the agent is correct |
-| `INCONCLUSIVE` | It could not decide, for example because result order was ambiguous or no agent run completed. The report says why |
+| `INCONCLUSIVE` | It could not decide, for example because the comparison policy was ambiguous for the results or no agent run completed. The report says why |
 | `UNSUPPORTED` | The input uses something isitright does not handle, such as an unsupported SQL feature. It is rejected, not guessed at |
 
 Alongside the status, each finding says how much to trust it: whether the changed world obeys your

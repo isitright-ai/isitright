@@ -14,6 +14,7 @@ from typing import Annotated, Any
 import typer
 
 from isitright.core.evidence import AuditReport, DivergenceStatus
+from isitright.core.paths import UnsafePathError, contained_path
 
 data_app = typer.Typer(
     help="Audit data-analysis agents: recorded programs (frozen) and agents (live)."
@@ -434,7 +435,13 @@ def replay_command(
     if finding > len(findings):
         typer.echo("The report has no such finding with a replay artifact.", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT)
-    artifact = report.parent / str(findings[finding - 1].replay.artifact)
+    try:
+        artifact = contained_path(
+            report.parent, str(findings[finding - 1].replay.artifact), what="replay artifact"
+        )
+    except UnsafePathError as error:
+        typer.echo(f"Input error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
     result = load_and_replay(artifact, trust_code=True)
     typer.echo(
         "Reproduced both answers and the disagreement."
@@ -456,7 +463,11 @@ def export_command(
     from isitright.packs.data.reports import export_eval_cases
 
     audit = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
-    cases = export_eval_cases(audit, output)
+    try:
+        cases = export_eval_cases(audit, output)
+    except UnsafePathError as error:
+        typer.echo(f"Input error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
     index = output / "cases.jsonl"
     index.write_text(
         "".join(

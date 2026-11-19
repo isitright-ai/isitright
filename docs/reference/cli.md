@@ -111,7 +111,10 @@ Run an agent on the [baseline](../concepts/live-agents.md#baseline-first) and on
 
 ## `isitright agents replay`
 
-`--report FILE --trust-code [--findings-only]`. Replay recorded runs offline and check they reproduce.
+`--report FILE --trust-code [--findings-only] [--scenario REF]`. Replay recorded runs offline and
+check they reproduce. The report records the scenario reference as you typed it; when the scenario
+file has moved (or you replay from another directory), `--scenario file.py:SCENARIO` says where it is
+now. Without it, a recorded reference that cannot be loaded exits with code 2 and names `--scenario`.
 
 ## `isitright agents export REPORT --output FILE`
 
