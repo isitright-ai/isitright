@@ -82,38 +82,23 @@ def test_a_budget_without_room_for_the_baseline_still_makes_one_baseline_run() -
     assert len(calls) == 1
 
 
-def test_an_errored_run_records_its_cost() -> None:
-    from isitright.packs.research.runs import RecordedRun
-
-    a = audit()
-    base_run = a.stand_in(_Stochastic()).execute(a.base, 0)
-    failing = RecordedRun.model_validate(
-        {**base_run.model_dump(), "status": "SUBJECT_ERROR", "cost": {"money": 0.5}}
-    )
-    subject = SimpleNamespace(execute=lambda world, seed: failing)
-    from isitright.packs.research.audit import WorldResult
-
-    outcome = a._trial(subject, a.base, base_run, None, WorldResult(a.base, a.base_validity), "t")(
-        0
-    )  # type: ignore[arg-type]
-    assert outcome.error and outcome.cost.money == pytest.approx(0.5)
-
-
 # -- agents pack: minimization steps ---------------------------------------------------------
 
 
 def test_agents_minimization_checks_the_budget_before_every_trial(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from isitright.core.stochastic import SubjectRunner
     from isitright.packs.mcp import audit as mcp_audit
 
     monkeypatch.setattr(mcp_audit, "reference_outcome", lambda scenario, world: None)
     monkeypatch.setattr(mcp_audit, "World", lambda base: SimpleNamespace(path=[]))
     executed: list[int] = []
 
-    def run_trial(step: Any, result: Any, trial: int) -> RunOutcome:
-        executed.append(trial)
-        return RunOutcome(Outcome.NOT_MET, cost=Cost(money=1.0))
+    class Subject:
+        def execute(self, target: Any, seed: int, /) -> RunOutcome:
+            executed.append(seed)
+            return RunOutcome(Outcome.NOT_MET, cost=Cost(money=1.0))
 
     def many_steps(start: Any, path: list[Any], run: Any, **kwargs: Any) -> Any:
         for _ in range(20):
@@ -122,16 +107,16 @@ def test_agents_minimization_checks_the_budget_before_every_trial(
 
     monkeypatch.setattr(mcp_audit, "minimize_path_noisy", many_steps)
     budget = Budget(money=3.0)
+    runner = SubjectRunner(Subject(), lambda _t, value, _tag: value, budget)
     rw = SimpleNamespace(id="w", world=SimpleNamespace(path=[]), generated=None)
     base = SimpleNamespace(outcomes=[RunOutcome(Outcome.MET)])
     mcp_audit._minimize_world(
         SimpleNamespace(base=None),
         rw,
         base,
-        run_trial,
-        budget,
+        runner,  # type: ignore[arg-type]
         [],
-        20,  # type: ignore[arg-type]
+        20,
     )
     assert len(executed) == 3, "a money budget of 3 pays for 3 runs of cost 1, not 20"
     assert budget.spent_runs == 3

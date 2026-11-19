@@ -1,0 +1,666 @@
+{
+  "case_id": "halvorsen-completed:credulous:5",
+  "expected": {
+    "behavior": "NOT_APPLICABLE",
+    "expectation": "ABSTAIN_OR_FLAG",
+    "outcome": "NOT_MET",
+    "subject_rerun_same_report": true,
+    "trace_reproduced": true
+  },
+  "format": "isitright-replay",
+  "host": {
+    "fidelity": "SIMULATED",
+    "index_stats": {
+      "avgdl": 21.375,
+      "df": {
+        "000": 1,
+        "12": 1,
+        "140": 1,
+        "18": 1,
+        "1874": 1,
+        "1893": 1,
+        "1911": 1,
+        "1954": 1,
+        "1958": 1,
+        "1962": 1,
+        "1967": 1,
+        "1975": 1,
+        "1981": 1,
+        "1998": 1,
+        "2": 1,
+        "2015": 1,
+        "2024": 1,
+        "3": 2,
+        "31": 1,
+        "400": 1,
+        "41": 2,
+        "6": 1,
+        "8": 2,
+        "a": 5,
+        "alder": 1,
+        "all": 1,
+        "allocated": 1,
+        "and": 9,
+        "approach": 1,
+        "are": 3,
+        "at": 2,
+        "automated": 1,
+        "be": 1,
+        "beach": 1,
+        "been": 1,
+        "before": 1,
+        "began": 1,
+        "beside": 1,
+        "board": 1,
+        "boat": 1,
+        "bridge": 6,
+        "built": 3,
+        "by": 4,
+        "canal": 1,
+        "car": 3,
+        "carries": 1,
+        "central": 1,
+        "centre": 1,
+        "centuries": 1,
+        "climb": 1,
+        "closed": 1,
+        "closes": 1,
+        "collection": 1,
+        "completed": 5,
+        "construction": 1,
+        "container": 1,
+        "continue": 1,
+        "counts": 1,
+        "crosses": 1,
+        "crossing": 1,
+        "cyclists": 1,
+        "dawn": 1,
+        "day": 2,
+        "days": 1,
+        "deck": 1,
+        "departure": 1,
+        "designed": 1,
+        "digest": 1,
+        "district": 1,
+        "each": 2,
+        "earlier": 2,
+        "eastgate": 1,
+        "edition": 2,
+        "eight": 1,
+        "election": 1,
+        "employed": 1,
+        "entry": 1,
+        "euros": 3,
+        "evenings": 1,
+        "every": 3,
+        "ferries": 1,
+        "ferry": 4,
+        "festival": 1,
+        "finished": 1,
+        "first": 1,
+        "fish": 1,
+        "five": 2,
+        "food": 1,
+        "footbridge": 1,
+        "for": 8,
+        "four": 1,
+        "free": 1,
+        "friday": 1,
+        "from": 1,
+        "front": 1,
+        "fyr": 1,
+        "given": 1,
+        "guards": 1,
+        "halvorsen": 3,
+        "harbour": 2,
+        "harrow": 1,
+        "has": 2,
+        "height": 1,
+        "held": 1,
+        "history": 1,
+        "holds": 1,
+        "hour": 2,
+        "hours": 2,
+        "in": 12,
+        "ingrid": 1,
+        "inspection": 1,
+        "is": 11,
+        "islands": 1,
+        "it": 8,
+        "item": 1,
+        "its": 1,
+        "january": 1,
+        "jazz": 1,
+        "kite": 1,
+        "lamp": 1,
+        "lantern": 1,
+        "largest": 1,
+        "last": 2,
+        "leave": 2,
+        "library": 1,
+        "light": 1,
+        "lighthouse": 2,
+        "lindqvist": 1,
+        "line": 1,
+        "links": 1,
+        "lorries": 3,
+        "lottery": 1,
+        "main": 1,
+        "maintenance": 1,
+        "maritime": 1,
+        "market": 1,
+        "marsh": 1,
+        "may": 1,
+        "metres": 2,
+        "miles": 1,
+        "models": 1,
+        "mondays": 1,
+        "museum": 1,
+        "near": 1,
+        "new": 1,
+        "nine": 1,
+        "norra": 1,
+        "norrvik": 5,
+        "northern": 2,
+        "not": 1,
+        "notices": 1,
+        "november": 2,
+        "october": 1,
+        "of": 5,
+        "office": 1,
+        "old": 1,
+        "oldest": 1,
+        "on": 6,
+        "open": 3,
+        "opening": 2,
+        "opens": 3,
+        "other": 1,
+        "pay": 3,
+        "per": 1,
+        "percent": 1,
+        "place": 2,
+        "point": 1,
+        "port": 1,
+        "prizes": 1,
+        "programme": 1,
+        "publisher": 1,
+        "quay": 1,
+        "ran": 1,
+        "recycling": 1,
+        "relied": 1,
+        "repainting": 1,
+        "replaced": 1,
+        "report": 1,
+        "reprint": 1,
+        "retracted": 1,
+        "revised": 2,
+        "road": 2,
+        "runs": 1,
+        "saturdays": 1,
+        "schedule": 1,
+        "school": 1,
+        "ship": 1,
+        "should": 1,
+        "sits": 1,
+        "six": 1,
+        "skerry": 2,
+        "smallest": 1,
+        "spans": 1,
+        "spring": 2,
+        "stage": 1,
+        "stalls": 2,
+        "station": 1,
+        "steel": 1,
+        "steps": 1,
+        "still": 1,
+        "strait": 1,
+        "summer": 2,
+        "supersedes": 2,
+        "taken": 1,
+        "takes": 2,
+        "tall": 2,
+        "terminal": 2,
+        "that": 1,
+        "the": 23,
+        "this": 3,
+        "three": 1,
+        "timetable": 1,
+        "to": 3,
+        "toll": 3,
+        "tolls": 3,
+        "tower": 1,
+        "town": 2,
+        "traffic": 1,
+        "transport": 1,
+        "trips": 1,
+        "tunnel": 3,
+        "turnout": 1,
+        "two": 1,
+        "until": 2,
+        "use": 1,
+        "vehicles": 1,
+        "version": 2,
+        "visible": 1,
+        "visiting": 1,
+        "visitors": 1,
+        "walkers": 1,
+        "was": 10,
+        "weekdays": 1,
+        "westgate": 1,
+        "winter": 1,
+        "with": 1,
+        "workers": 1,
+        "works": 1,
+        "year": 1,
+        "years": 1
+      },
+      "n": 24
+    }
+  },
+  "inputs": {
+    "baseline_run": {
+      "cost": {},
+      "format": "isitright-research-run",
+      "question": "When was the Halvorsen Bridge completed?",
+      "report": {
+        "answer": "1962",
+        "claims": [
+          {
+            "citations": [
+              {
+                "doc_id": "bridge-halvorsen-history",
+                "quote": "The Halvorsen Bridge was completed in 1962."
+              }
+            ],
+            "text": "The answer is 1962."
+          }
+        ],
+        "flags": null
+      },
+      "seed": 2929721274,
+      "status": "COMPLETED",
+      "subject": {
+        "kind": "stand_in",
+        "name": "credulous",
+        "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+        "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+      },
+      "task_id": "halvorsen-completed",
+      "trace": [
+        {
+          "arguments": {
+            "k": 5,
+            "query": "When was the Halvorsen Bridge completed?"
+          },
+          "index": 0,
+          "is_error": false,
+          "name": "search",
+          "result": "{\"results\": [{\"id\": \"bridge-halvorsen-history\", \"snippet\": \"The Halvorsen Bridge was completed in 1962.\", \"title\": \"History of the Halvorsen Bridge\"}, {\"id\": \"bridge-halvorsen-maintenance\", \"snippet\": \"Inspection of the Halvorsen Bridge takes place every five years.\", \"title\": \"Maintenance schedule for the Halvorsen Bridge\"}, {\"id\": \"bridge-halvorsen-traffic\", \"snippet\": \"The Halvorsen Bridge carries 12,000 vehicles per day.\", \"title\": \"Halvorsen Bridge traffic report\"}, {\"id\": \"bridge-eastgate\", \"snippet\": \"The Eastgate Bridge was completed in 1975.\", \"title\": \"The Eastgate Bridge\"}, {\"id\": \"bridge-westgate\", \"snippet\": \"The Westgate Bridge was completed in 1981.\", \"title\": \"The Westgate Bridge\"}]}"
+        },
+        {
+          "arguments": {
+            "id": "bridge-halvorsen-history"
+          },
+          "index": 1,
+          "is_error": false,
+          "name": "open",
+          "result": "{\"date\": \"2019-03-04\", \"id\": \"bridge-halvorsen-history\", \"source\": \"Harbour Gazette\", \"text\": \"The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.\", \"title\": \"History of the Halvorsen Bridge\"}"
+        }
+      ],
+      "version": "0.8"
+    },
+    "fact": {
+      "answer_type": "number",
+      "doc_id": "bridge-halvorsen-history",
+      "quote": "The Halvorsen Bridge was completed in 1962.",
+      "value": "1962"
+    },
+    "stochastic": false,
+    "subject": {
+      "kind": "stand_in",
+      "name": "credulous",
+      "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+      "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+    },
+    "task": {
+      "answer_type": "number",
+      "cutoff": "2024-12-31",
+      "gold": "1962",
+      "gold_basis": "taken from the constructed corpus by its author; not checked against anything else",
+      "id": "halvorsen-completed",
+      "question": "When was the Halvorsen Bridge completed?",
+      "reader_pattern": "completed in (\\d{4})"
+    },
+    "world_run": {
+      "cost": {},
+      "format": "isitright-research-run",
+      "question": "When was the Halvorsen Bridge completed?",
+      "report": {
+        "answer": "1962",
+        "claims": [
+          {
+            "citations": [
+              {
+                "doc_id": "bridge-halvorsen-history",
+                "quote": "The Halvorsen Bridge was completed in 1962."
+              }
+            ],
+            "text": "The answer is 1962."
+          }
+        ],
+        "flags": null
+      },
+      "seed": 1395115724,
+      "status": "COMPLETED",
+      "subject": {
+        "kind": "stand_in",
+        "name": "credulous",
+        "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+        "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+      },
+      "task_id": "halvorsen-completed",
+      "trace": [
+        {
+          "arguments": {
+            "k": 5,
+            "query": "When was the Halvorsen Bridge completed?"
+          },
+          "index": 0,
+          "is_error": false,
+          "name": "search",
+          "result": "{\"results\": [{\"id\": \"bridge-halvorsen-history\", \"snippet\": \"The Halvorsen Bridge was completed in 1962.\", \"title\": \"History of the Halvorsen Bridge\"}, {\"id\": \"bridge-halvorsen-maintenance\", \"snippet\": \"Inspection of the Halvorsen Bridge takes place every five years.\", \"title\": \"Maintenance schedule for the Halvorsen Bridge\"}, {\"id\": \"bridge-halvorsen-traffic\", \"snippet\": \"The Halvorsen Bridge carries 12,000 vehicles per day.\", \"title\": \"Halvorsen Bridge traffic report\"}, {\"id\": \"bridge-eastgate\", \"snippet\": \"The Eastgate Bridge was completed in 1975.\", \"title\": \"The Eastgate Bridge\"}, {\"id\": \"bridge-westgate\", \"snippet\": \"The Westgate Bridge was completed in 1981.\", \"title\": \"The Westgate Bridge\"}]}"
+        },
+        {
+          "arguments": {
+            "id": "bridge-halvorsen-history"
+          },
+          "index": 1,
+          "is_error": false,
+          "name": "open",
+          "result": "{\"date\": \"2019-03-04\", \"id\": \"bridge-halvorsen-history\", \"source\": \"Harbour Gazette\", \"text\": \"Retracted: this item has been retracted by the publisher and should not be relied on. The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.\", \"title\": \"History of the Halvorsen Bridge\"}"
+        }
+      ],
+      "version": "0.8"
+    }
+  },
+  "pack": "research",
+  "version": "0.8",
+  "world": {
+    "path": [
+      {
+        "atoms": [
+          [
+            "documents",
+            "bridge-halvorsen-history"
+          ]
+        ],
+        "description": "retract bridge-halvorsen-history: mark it retracted and put a retraction notice first",
+        "edits": [
+          {
+            "collection": "documents",
+            "key": "bridge-halvorsen-history",
+            "op": "set",
+            "path": [
+              "retracted"
+            ],
+            "value": true
+          },
+          {
+            "collection": "documents",
+            "key": "bridge-halvorsen-history",
+            "op": "set",
+            "path": [
+              "text"
+            ],
+            "value": "Retracted: this item has been retracted by the publisher and should not be relied on. The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers."
+          },
+          {
+            "collection": "documents",
+            "key": "bridge-halvorsen-history",
+            "op": "set",
+            "path": [
+              "provenance"
+            ],
+            "value": {
+              "derived_from": "bridge-halvorsen-history",
+              "kind": "retract",
+              "replaced": "1962",
+              "span": "The Halvorsen Bridge was completed in 1962.",
+              "value": null
+            }
+          }
+        ],
+        "family": "retract",
+        "hints": [
+          "fact_span"
+        ],
+        "reachable": false,
+        "response": null,
+        "target": "state",
+        "touches": [
+          "documents.retracted",
+          "documents.text",
+          "documents.provenance"
+        ],
+        "trigger": null
+      }
+    ],
+    "response_edits": [],
+    "state": {
+      "collections": {
+        "documents": [
+          {
+            "authority": 2,
+            "date": "2019-03-04",
+            "id": "bridge-halvorsen-history",
+            "provenance": {
+              "derived_from": "bridge-halvorsen-history",
+              "kind": "retract",
+              "replaced": "1962",
+              "span": "The Halvorsen Bridge was completed in 1962.",
+              "value": null
+            },
+            "retracted": true,
+            "source": "Harbour Gazette",
+            "text": "Retracted: this item has been retracted by the publisher and should not be relied on. The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+            "title": "History of the Halvorsen Bridge"
+          },
+          {
+            "authority": 3,
+            "date": "2021-05-10",
+            "id": "bridge-halvorsen-traffic",
+            "source": "Norrvik Transport Office",
+            "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+            "title": "Halvorsen Bridge traffic report"
+          },
+          {
+            "authority": 3,
+            "date": "2020-09-01",
+            "id": "bridge-halvorsen-maintenance",
+            "source": "Norrvik Transport Office",
+            "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+            "title": "Maintenance schedule for the Halvorsen Bridge"
+          },
+          {
+            "authority": 2,
+            "date": "2018-06-12",
+            "id": "bridge-eastgate",
+            "source": "Harbour Gazette",
+            "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+            "title": "The Eastgate Bridge"
+          },
+          {
+            "authority": 2,
+            "date": "2018-07-02",
+            "id": "bridge-westgate",
+            "source": "Harbour Gazette",
+            "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+            "title": "The Westgate Bridge"
+          },
+          {
+            "authority": 2,
+            "date": "2017-04-21",
+            "id": "bridge-lindqvist",
+            "source": "Parks Department",
+            "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+            "title": "The Lindqvist Footbridge"
+          },
+          {
+            "authority": 2,
+            "date": "2017-05-30",
+            "id": "bridge-marsh",
+            "source": "Parks Department",
+            "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+            "title": "Marsh Road Bridge"
+          },
+          {
+            "authority": 1,
+            "date": "2016-08-15",
+            "id": "lighthouse-skerry",
+            "source": "Coastal Guide",
+            "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+            "title": "Skerry Lighthouse"
+          },
+          {
+            "authority": 1,
+            "date": "2016-09-01",
+            "id": "lighthouse-skerry-retracted",
+            "retracted": true,
+            "source": "Coastal Guide",
+            "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+            "title": "Skerry Lighthouse height"
+          },
+          {
+            "authority": 1,
+            "date": "2016-10-05",
+            "id": "lighthouse-norra",
+            "source": "Coastal Guide",
+            "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+            "title": "Norra Fyr"
+          },
+          {
+            "authority": 1,
+            "date": "2016-11-11",
+            "id": "lighthouse-harrow",
+            "source": "Coastal Guide",
+            "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+            "title": "Harrow Point Light"
+          },
+          {
+            "authority": 3,
+            "date": "2018-01-10",
+            "id": "tolls-norrvik-2018",
+            "source": "Norrvik Transport Office",
+            "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+            "title": "Norrvik tunnel tolls"
+          },
+          {
+            "authority": 3,
+            "date": "2022-01-10",
+            "id": "tolls-norrvik-2022",
+            "source": "Norrvik Transport Office",
+            "supersedes": "tolls-norrvik-2018",
+            "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+            "title": "Norrvik tunnel tolls (revised)"
+          },
+          {
+            "authority": 2,
+            "date": "2022-02-03",
+            "duplicate_of": "tolls-norrvik-2022",
+            "id": "tolls-norrvik-2022-reprint",
+            "source": "Harbour Gazette",
+            "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+            "title": "Norrvik tunnel tolls (reprint)"
+          },
+          {
+            "authority": 1,
+            "date": "2023-10-01",
+            "id": "festival-lantern",
+            "source": "Arts Office",
+            "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+            "title": "Lantern Festival programme"
+          },
+          {
+            "authority": 1,
+            "date": "2022-05-14",
+            "id": "festival-kite",
+            "source": "Arts Office",
+            "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+            "title": "Kite Day"
+          },
+          {
+            "authority": 1,
+            "date": "2021-07-23",
+            "id": "festival-jazz",
+            "source": "Arts Office",
+            "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+            "title": "Jazz on the Quay"
+          },
+          {
+            "authority": 1,
+            "date": "2019-06-01",
+            "id": "harbour-guide",
+            "source": "Coastal Guide",
+            "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+            "title": "Visiting the harbour"
+          },
+          {
+            "authority": 1,
+            "date": "2020-02-20",
+            "id": "museum-maritime",
+            "source": "Arts Office",
+            "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+            "title": "Maritime Museum"
+          },
+          {
+            "authority": 2,
+            "date": "2020-11-03",
+            "id": "school-election",
+            "source": "Town Hall",
+            "text": "The school board election was held in November. Turnout was 41 percent.",
+            "title": "School board election"
+          },
+          {
+            "authority": 2,
+            "date": "2021-01-15",
+            "id": "library-hours",
+            "source": "Town Hall",
+            "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+            "title": "Library opening hours"
+          },
+          {
+            "authority": 2,
+            "date": "2019-09-09",
+            "id": "market-fish",
+            "source": "Town Hall",
+            "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+            "title": "Fish market"
+          },
+          {
+            "authority": 3,
+            "date": "2022-04-01",
+            "id": "ferry-timetable",
+            "source": "Norrvik Transport Office",
+            "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+            "title": "Ferry timetable"
+          },
+          {
+            "authority": 2,
+            "date": "2024-11-02",
+            "id": "digest-2024",
+            "source": "Town Hall",
+            "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+            "title": "Town digest, November 2024"
+          }
+        ]
+      },
+      "keys": {
+        "documents": "id"
+      },
+      "params": {
+        "cutoff": "2024-12-31"
+      }
+    },
+    "timers": []
+  }
+}

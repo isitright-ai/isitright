@@ -1,6 +1,6 @@
 # Report schema
 
-One versioned JSON schema covers all packs: [`schemas/report-0.8.schema.json`](https://github.com/isitright-ai/isitright/blob/main/schemas/report-0.8.schema.json),
+One versioned JSON schema covers all packs: [`schemas/report-0.9.schema.json`](https://github.com/isitright-ai/isitright/blob/main/schemas/report-0.9.schema.json),
 exported from `isitright.core.evidence.AuditReport` by `tools/export_schemas.py`. Pack-specific
 detail lives under `extensions` and is not part of the common contract.
 
@@ -9,8 +9,13 @@ between pre-1.0 releases.
 
 ## Compatibility
 
-Schema `0.8` replaces `0.6` (0.7 added no field and kept 0.6). Reports written as `0.4`, `0.5` or `0.6` still load: `replay` and `export` read
-them, because every field added since is optional. Older schemas are removed. 0.6 added `findings[].mode`
+Schema `0.9` replaces `0.8`. Reports written as `0.4`, `0.5`, `0.6` or `0.8` still load: `replay` and
+`export` read them, because every field added since is optional. Older schemas are removed.
+0.9 adds four counts to `stability.sequential` (`world_runs`, `baseline_runs`, `excluded_errored`,
+`excluded_unjudged`, default 0, so older reports load) and the run loop's change of meaning for the
+test: every pair is a run of the world and a fresh baseline run (see
+[live agents](../concepts/live-agents.md#sequential-testing-per-world)). A 0.8 report keeps its old
+meaning: the research and data packs paired against baseline runs they had, or assumed. 0.6 added `findings[].mode`
 (`frozen_program` or `live_agent`) and `findings[].live` (see below). 0.8 adds the mode `frozen_trace`
 (a recorded research run replayed, its report not regenerated) and `schema_version` `"0.8"`; the research
 pack's other fields are under `extensions.research` (see below).
@@ -19,7 +24,7 @@ pack's other fields are under `extensions.research` (see below).
 
 | Field | Contents |
 |---|---|
-| `schema_version` | `"0.8"` (`"0.4"`, `"0.5"` or `"0.6"` when read from an older report) |
+| `schema_version` | `"0.9"` (`"0.4"`, `"0.5"`, `"0.6"` or `"0.8"` when read from an older report) |
 | `pack` | `sql`, `mcp`, `data` or `research` |
 | `kind` | `case` (one SQL pair), `suite`, or `scenario` (one agent scenario) |
 | `cases` | A list of `CaseReport` |
@@ -40,7 +45,7 @@ Each field answers one question and is never merged with another.
 | `execution_fidelity` | `found_on`: [`NATIVE_ISOLATED`](../concepts/validity-and-fidelity.md#execution-fidelity), `NATIVE_INLINE`, `EMULATED`, `SIMULATED`, `GENERATED`, `REPLAY_ONLY`. `verified_on`: `NATIVE_ISOLATED` once an emulated finding is re-executed on PostgreSQL. `engine`. `verification`: `VERIFIED`, `EMULATION_ARTIFACT` or `NOT_VERIFIED`, with a note |
 | `oracles` | `name`, `kind` (`REFERENCE_PROGRAM`, `INVARIANT`, `RELATIONAL`, `CONSTRUCTIVE`, `JUDGE`), `outcome` (`MET`, `NOT_MET`, `CANNOT_JUDGE`), `limits` |
 | `subject_kind` | `ARTIFACT`, `FROZEN_ARTIFACT`, `AGENT` |
-| `stability` | `k`; baseline and world `counts`; `rate_claim` (test, pair counts, p-value) only with adequate evidence; `sequential` (test, alpha, beta, boundaries, every look, decision) |
+| `stability` | `k`; baseline and world `counts`; `rate_claim` (test, pair counts, p-value) only with adequate evidence; `sequential` (test, alpha, beta, boundaries, every look, decision, and how the pairs were made: `world_runs`, `baseline_runs`, `excluded_errored`, `excluded_unjudged`) |
 | `attribution_status` | `UNDETERMINED` by default; reserved: `AGENT_DEFECT`, `REFERENCE_DEFECT`, `AMBIGUOUS_TASK`, `POLICY_AMBIGUOUS`, `TOOL_CONTRACT_AMBIGUOUS`, `SIMULATOR_DEFECT` |
 | `search` | Seed, attempts, valid candidates, executed, rejections by reason, families run and skipped, budget per [hint](../concepts/hints.md) group (`hinted`, `unhinted`), hints used, depth reached, budget, `screening`, `stopping`, `hint_use` |
 | `findings` | Per finding: world, validity, [oracle](../concepts/oracles-and-roles.md) results, stability, world diff, mutation path (family, target, description, hints, atoms), pack-specific `divergence`, fidelity, replay, minimization |

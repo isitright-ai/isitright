@@ -1,0 +1,2 @@
+# Calls to a subject's execute outside SubjectRunner that are allowed, one "path:line" per line.
+# This file is empty on purpose: see tests/test_single_run_loop.py.

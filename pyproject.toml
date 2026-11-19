@@ -106,7 +106,10 @@ exclude = [
 path = "src/isitright/__about__.py"
 
 [tool.pytest.ini_options]
-addopts = "--strict-config --strict-markers --cov=isitright --cov-report=term-missing"
+addopts = "--strict-config --strict-markers --cov=isitright --cov-report=term-missing -m 'not statistical'"
+markers = [
+  "statistical: full-size seeded runs of the sequential tests through each pack (slow); run with: pytest -m statistical",
+]
 testpaths = ["tests"]
 
 [tool.coverage.run]

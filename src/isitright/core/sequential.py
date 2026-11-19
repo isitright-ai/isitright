@@ -94,7 +94,25 @@ class SequentialRecord(BaseModel):
     log_likelihood_ratio: float
     p_value: float
     decision: Decision
+    world_runs: int = 0
+    """Runs of the world that were made for this comparison (a run left out of a pair included)."""
+    baseline_runs: int = 0
+    """Fresh baseline runs made for this comparison: one for each pair that was tried."""
+    excluded_errored: int = 0
+    """Runs, on either side, that ended in a subject error and so formed no pair."""
+    excluded_unjudged: int = 0
+    """Runs, on either side, that completed but could not be judged and so formed no pair."""
     note: str = ""
+
+
+@dataclass(frozen=True)
+class PairingInfo:
+    """How a test's pairs were made: counts kept next to the decision."""
+
+    world_runs: int
+    baseline_runs: int
+    excluded_errored: int
+    excluded_unjudged: int
 
 
 class PairedSprt:
@@ -111,8 +129,8 @@ class PairedSprt:
         self._for = math.log(self.config.effect / 0.5)
         self._against = math.log((1 - self.config.effect) / 0.5)
         self.decision = Decision.CONTINUE
-        self.baseline_runs: int | None = None
-        """Baseline runs that were made, set by the pack that pairs against them."""
+        self.pairing: PairingInfo | None = None
+        """Set by the run loop that made the pairs (`SubjectRunner.run_paired`)."""
 
     def add(self, baseline_bad: bool, world_bad: bool) -> Decision:
         """Add one pair; returns the decision after this look."""
@@ -144,6 +162,7 @@ class PairedSprt:
 
     def record(self) -> SequentialRecord:
         c = self.config
+        info = self.pairing
         notes = {
             Decision.RATE_INCREASE: "the upper boundary was crossed: a higher failure rate than "
             "the baseline",
@@ -171,16 +190,22 @@ class PairedSprt:
             log_likelihood_ratio=round(self.llr, 6),
             p_value=round(self.p_value, 6),
             decision=self.decision,
+            world_runs=info.world_runs if info else 0,
+            baseline_runs=info.baseline_runs if info else 0,
+            excluded_errored=info.excluded_errored if info else 0,
+            excluded_unjudged=info.excluded_unjudged if info else 0,
             note=notes[self.decision] + self._pairing_note(),
         )
 
     def _pairing_note(self) -> str:
-        if self.baseline_runs is None:
+        info = self.pairing
+        if info is None:
             return ""
         return (
-            f"; the comparison rests on {self.pairs} pair(s) built from {self.baseline_runs} "
-            "baseline run(s) that were made (a run that errored or could not be judged is left "
-            "out of its pair)"
+            f"; the comparison rests on {self.pairs} pair(s), each a run of the world and a fresh "
+            f"baseline run ({info.world_runs} world run(s) and {info.baseline_runs} baseline "
+            f"run(s) were made; {info.excluded_errored} errored and {info.excluded_unjudged} "
+            "unjudged run(s) formed no pair)"
         )
 
 

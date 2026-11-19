@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from isitright.core.stochastic import Stability
 
-SCHEMA_VERSION: Literal["0.8"] = "0.8"
+SCHEMA_VERSION: Literal["0.9"] = "0.9"
 _BANNED = re.compile(r"\b(pass|passed|fail|failed|failure|correct|incorrect|wrong)\b", re.I)
 
 
@@ -282,7 +282,7 @@ class Totals(Closed):
 class AuditReport(Closed):
     """The report of one audit: a single check, a suite, or an agent scenario."""
 
-    schema_version: Literal["0.4", "0.5", "0.6", "0.8"] = SCHEMA_VERSION
+    schema_version: Literal["0.4", "0.5", "0.6", "0.8", "0.9"] = SCHEMA_VERSION
     """0.4 and 0.5 reports stay readable: every field added since is optional."""
     pack: str
     kind: Literal["case", "suite", "scenario"]

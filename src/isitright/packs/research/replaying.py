@@ -13,7 +13,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from isitright.core.evidence import AuditReport, CaseReport, EvalCase, Totals, totals_of
+from isitright.core.evidence import (
+    SCHEMA_VERSION,
+    AuditReport,
+    CaseReport,
+    EvalCase,
+    Totals,
+    totals_of,
+)
 from isitright.core.mutations import World
 from isitright.core.paths import replay_placeholder
 from isitright.core.replay import (
@@ -140,7 +147,7 @@ def write_outputs(
         )
         written.extend([path, export_path])
     audit = AuditReport(
-        schema_version="0.8",
+        schema_version=SCHEMA_VERSION,
         pack="research",
         kind="case",
         cases=[report],

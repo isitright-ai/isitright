@@ -42,15 +42,15 @@ from isitright.core.mutations import World
 from isitright.core.oracles import Outcome, Role, controls_status
 from isitright.core.paths import contained_path, replay_placeholder
 from isitright.core.search import Progress
-from isitright.core.sequential import Decision, PairedSprt, RateSprtConfig, SprtConfig
+from isitright.core.sequential import PairedSprt, RateSprtConfig, SprtConfig
 from isitright.core.stochastic import (
     DEFAULT_K,
     Budget,
     RunOutcome,
     Stability,
+    SubjectRunner,
     count,
     is_bad,
-    run_repeated,
     stability,
     stability_sequential,
 )
@@ -215,6 +215,8 @@ class WorldResult:
     violations: list[tuple[str, str]] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
     sequential: PairedSprt | None = None
+    paired_baseline: list[RunOutcome] = field(default_factory=list)
+    """The fresh baseline runs this world's pairs were made with (empty when not paired)."""
     minimization: NoisyMinimization | None = None
 
 
@@ -228,90 +230,143 @@ class NotRun:
     rank: int | None = None
 
 
-def _record_run(
+@dataclass
+class RunTarget:
+    """What an agent run is made on: a world, and the result that collects the runs made on it."""
+
+    rw: RunWorld
+    result: WorldResult
+
+
+@dataclass
+class _Launched:
+    """One agent run before it is judged: where it ran and what it left behind."""
+
+    run: AgentRun
+    status: str
+    exit_code: int | None
+    duration: float
+    relative: str
+    seed: int
+
+
+class _AgentCommand:
+    """The agent command as `SubjectRunner` runs it: one process per run, in its own directory."""
+
+    def __init__(
+        self,
+        scenario: McpScenario,
+        argv: list[str],
+        scenario_ref: str,
+        recorded_ref: str,
+        output_dir: Path,
+        timeout: float,
+        harness: tuple[str | None, str | None],
+    ) -> None:
+        self.scenario = scenario
+        self.argv = argv
+        self.scenario_ref = scenario_ref
+        self.recorded_ref = recorded_ref
+        self.output_dir = output_dir
+        self.timeout = timeout
+        self.harness = harness
+
+    def execute(self, target: RunTarget, seed: int, /) -> _Launched:
+        rw = target.rw
+        trial = len(target.result.runs) + 1
+        relative = f"runs/{rw.id}/{trial}"
+        run_dir = self.output_dir / relative
+        run_dir.mkdir(parents=True)
+        (run_dir / "task.txt").write_text(self.scenario.task, encoding="utf-8")
+        world_file = run_dir / "world.json"
+        world_file.write_text(json.dumps(rw.world.to_json(), sort_keys=True), encoding="utf-8")
+        mcp_config = write_mcp_config(
+            run_dir,
+            self.scenario_ref,
+            world_file=None if rw.fixed is not None else world_file,
+            fixed_id=rw.fixed.id if rw.fixed is not None else None,
+        )
+        started = time.monotonic()
+        status, exit_code = run_agent(
+            self.argv, run_dir, mcp_config, run_dir / "task.txt", rw.id, self.timeout
+        )
+        duration = time.monotonic() - started
+        record_mcp_config(mcp_config, self.output_dir, scenario_ref=self.recorded_ref)
+        fallback = self.scenario.layout.to_service(rw.world.state)
+        run = collect(run_dir, status, round(duration, 3), self.harness, fallback)
+        return _Launched(run, status, exit_code, duration, relative, seed)
+
+
+def _judge_launched(
     scenario: McpScenario,
-    rw: RunWorld,
-    trial: int,
-    argv: list[str],
-    scenario_ref: str,
-    output_dir: Path,
-    timeout: float,
-    harness: tuple[str | None, str | None],
-    result: WorldResult,
-    require_cost: bool = False,
-    recorded_ref: str | None = None,
-) -> RunOutcome:
-    relative = f"runs/{rw.id}/{trial}"
-    run_dir = output_dir / relative
-    run_dir.mkdir(parents=True)
-    (run_dir / "task.txt").write_text(scenario.task, encoding="utf-8")
-    world_file = run_dir / "world.json"
-    world_file.write_text(json.dumps(rw.world.to_json(), sort_keys=True), encoding="utf-8")
-    mcp_config = write_mcp_config(
-        run_dir,
-        scenario_ref,
-        world_file=None if rw.fixed is not None else world_file,
-        fixed_id=rw.fixed.id if rw.fixed is not None else None,
-    )
-    started = time.monotonic()
-    status, exit_code = run_agent(argv, run_dir, mcp_config, run_dir / "task.txt", rw.id, timeout)
-    duration = time.monotonic() - started
-    record_mcp_config(mcp_config, output_dir, scenario_ref=recorded_ref or scenario_ref)
-    fallback = scenario.layout.to_service(rw.world.state)
-    run = collect(run_dir, status, round(duration, 3), harness, fallback)
-    if require_cost and status == "COMPLETED" and "money" not in run.extra:
-        raise AgentsInputError(
-            "a money budget needs the agent to report what each run cost, and this agent did not: "
-            "write a transcript.json whose usage entries each have a 'cost' (see "
-            "https://docs.isitright.ai/agents/run-your-agent/), "
-            "or bound the run with --max-runs or --max-seconds instead"
-        )
-    try:
-        judgement = judge_run(scenario, rw.reference, run.before, run.after, run.trace)
-    except EvaluationError as error:
-        raise AgentsInputError(str(error)) from error
-    calls = [e for e in run.trace if e["name"] != WORLD_CHANGE]
-    writes = sum(1 for e in calls if (tool := scenario.tool(e["name"])) is not None and tool.writes)
-    completed = status == "COMPLETED"
-    expectation_met: bool | None = None
-    if completed and rw.fixed is not None and rw.fixed.expectation is not None:
-        expectation_met = bool(
-            rw.fixed.expectation.met(
-                copy.deepcopy(run.before), copy.deepcopy(run.after), copy.deepcopy(run.trace)
+    require_cost: bool,
+    progress: Callable[[str, str], None] | None,
+) -> Callable[[RunTarget, _Launched, str], RunOutcome]:
+    """The judging half of a run: oracle verdict, the run's record in its world's result."""
+
+    def judge(target: RunTarget, launched: _Launched, tag: str) -> RunOutcome:
+        rw, result, run, status = target.rw, target.result, launched.run, launched.status
+        if require_cost and status == "COMPLETED" and "money" not in run.extra:
+            raise AgentsInputError(
+                "a money budget needs the agent to report what each run cost, and this agent did "
+                "not: write a transcript.json whose usage entries each have a 'cost' (see "
+                "https://docs.isitright.ai/agents/run-your-agent/), "
+                "or bound the run with --max-runs or --max-seconds instead"
             )
+        try:
+            judgement = judge_run(scenario, rw.reference, run.before, run.after, run.trace)
+        except EvaluationError as error:
+            raise AgentsInputError(str(error)) from error
+        calls = [e for e in run.trace if e["name"] != WORLD_CHANGE]
+        writes = sum(
+            1 for e in calls if (tool := scenario.tool(e["name"])) is not None and tool.writes
         )
-    outcome = RunOutcome(
-        judgement.outcome if completed else None,
-        violated=bool(judgement.violations),
-        error=not completed,
-        cost=run.record.cost,
-    )
-    result.runs.append(
-        {
-            "world_id": rw.id,
-            "trial": trial,
-            "run_status": status,
-            "exit_code": exit_code,
-            "duration_seconds": round(duration, 3),
-            "tool_calls": len(calls),
-            "write_calls": writes,
-            "violations": [{"invariant": n, "message": m} for n, m in judgement.violations],
-            "outcome": judgement.outcome.value if completed else None,
-            "run_dir": relative,
-            "fixed_id": rw.fixed.id if rw.fixed is not None else None,
-            "expectation_met": expectation_met,
-            "cost": run.record.cost.money,
-            **{k: v for k, v in run.extra.items() if k != "money"},
-        }
-    )
-    if completed:
-        result.violations.extend(judgement.violations)
-        if (
-            judgement.violations or judgement.outcome is Outcome.NOT_MET
-        ) and result.example is None:
-            result.example = run
-            result.messages = judgement.messages
-    return outcome
+        completed = status == "COMPLETED"
+        expectation_met: bool | None = None
+        if completed and rw.fixed is not None and rw.fixed.expectation is not None:
+            expectation_met = bool(
+                rw.fixed.expectation.met(
+                    copy.deepcopy(run.before), copy.deepcopy(run.after), copy.deepcopy(run.trace)
+                )
+            )
+        outcome = RunOutcome(
+            judgement.outcome if completed else None,
+            violated=bool(judgement.violations),
+            error=not completed,
+            cost=run.record.cost,
+        )
+        result.runs.append(
+            {
+                "world_id": rw.id,
+                "trial": len(result.runs) + 1,
+                "seed": launched.seed,
+                "run_status": status,
+                "exit_code": launched.exit_code,
+                "duration_seconds": round(launched.duration, 3),
+                "tool_calls": len(calls),
+                "write_calls": writes,
+                "violations": [{"invariant": n, "message": m} for n, m in judgement.violations],
+                "outcome": judgement.outcome.value if completed else None,
+                "run_dir": launched.relative,
+                "fixed_id": rw.fixed.id if rw.fixed is not None else None,
+                "expectation_met": expectation_met,
+                "cost": run.record.cost.money,
+                **{k: v for k, v in run.extra.items() if k != "money"},
+            }
+        )
+        result.outcomes.append(outcome)
+        if completed:
+            result.violations.extend(judgement.violations)
+            if (
+                judgement.violations or judgement.outcome is Outcome.NOT_MET
+            ) and result.example is None:
+                result.example = run
+                result.messages = judgement.messages
+        if progress is not None:
+            progress(rw.id, _marker(outcome))
+        return outcome
+
+    return judge
 
 
 def run_scenario(
@@ -408,26 +463,23 @@ def run_scenario(
     results.append(base)
     anything_to_audit = any(rw.runnable and not rw.baseline for rw in prepared)
 
-    def run_trial(rw: RunWorld, result: WorldResult, trial: int) -> RunOutcome:
-        outcome = _record_run(
+    runner: SubjectRunner[RunTarget, _Launched] = SubjectRunner(
+        _AgentCommand(
             scenario,
-            rw,
-            trial + 1,
             argv,
             reference_text,
+            scenario_ref,  # recorded as typed; the absolute form above launched the servers
             output_dir,
             timeout_seconds,
             harness,
-            result,
-            budget.money is not None,
-            scenario_ref,  # recorded as typed; the absolute form above launched the servers
-        )
-        if progress is not None:
-            progress(rw.id, _marker(outcome))
-        return outcome
-
+        ),
+        _judge_launched(scenario, budget.money is not None, progress),
+        budget,
+        seed=seed,
+    )
+    base_target = RunTarget(baseline_rw, base)
     if anything_to_audit:
-        base.outcomes = run_repeated(lambda t: run_trial(baseline_rw, base, t), baseline_k, budget)
+        runner.run_repeated(base_target, baseline_k, "baseline")
     generated = [rw for rw in prepared if rw.generated is not None]
     fixed = [rw for rw in prepared if rw.fixed is not None]
     trace_dir, trace = _baseline_trace(base, output_dir)
@@ -466,7 +518,7 @@ def run_scenario(
             skip(rw, reason)
             continue
         results.append(result)
-        _run_world(rw, result, base, run_trial, budget, config, k, sequential)
+        _run_world(runner, RunTarget(rw, result), base_target, config, k, sequential)
         found = any(is_bad(o) for o in result.outcomes)
         if rw.generated is not None:
             stop.record(rw.generated, found)
@@ -475,8 +527,7 @@ def run_scenario(
                 scenario,
                 rw,
                 base,
-                run_trial,
-                budget,
+                runner,
                 extra,
                 min(minimize_max_runs, _runs_left(budget)),
             )
@@ -529,8 +580,7 @@ def _minimize_world(
     scenario: McpScenario,
     rw: RunWorld,
     base: WorldResult,
-    run_trial: Callable[[RunWorld, WorldResult, int], RunOutcome],
-    budget: Budget,
+    runner: SubjectRunner[RunTarget, _Launched],
     extra: list[WorldResult],
     max_runs: int,
 ) -> NoisyMinimization:
@@ -539,15 +589,14 @@ def _minimize_world(
     n = max(len(base.outcomes), 1)
     reference = min(0.5, max(0.05, baseline_bad / n))
     config = RateSprtConfig(reference=reference, effect=min(0.95, reference + 0.45))
-    results: dict[str, tuple[RunWorld, WorldResult]] = {}
+    results: dict[str, RunTarget] = {}
 
     def run(world: World) -> bool:
-        if not budget.can_run_after_search():
-            return False  # the budget is spent: not shown to reproduce, so the step is kept
         label = "+".join(str(i) for i, m in enumerate(rw.world.path) if m in world.path)
         sub_id = f"{rw.id}.min_{label or 'none'}"
         if sub_id not in results:
-            results[sub_id] = (
+            step_result = WorldResult(rw)
+            results[sub_id] = RunTarget(
                 RunWorld(
                     sub_id,
                     world,
@@ -556,14 +605,13 @@ def _minimize_world(
                     reference_outcome(scenario, world),
                     ValidityRecord(status="NOT_ASSESSED"),
                 ),
-                WorldResult(rw),
+                step_result,
             )
-            extra.append(results[sub_id][1])
-        step, step_result = results[sub_id]
-        outcome = run_trial(step, step_result, len(step_result.outcomes))
-        budget.record_run(outcome.cost)
-        step_result.outcomes.append(outcome)
-        return is_bad(outcome)
+            extra.append(step_result)
+        executed = runner.run(results[sub_id], "minimize", after_search=True)
+        if executed is None:
+            return False  # the budget is spent: not shown to reproduce, so the step is kept
+        return is_bad(executed.outcome)
 
     result = minimize_path_noisy(
         World(scenario.base), list(rw.world.path), run, config=config, max_runs=max_runs
@@ -596,52 +644,20 @@ def _baseline_trace(
 
 
 def _run_world(
-    rw: RunWorld,
-    result: WorldResult,
-    base: WorldResult,
-    run_trial: Callable[[RunWorld, WorldResult, int], RunOutcome],
-    budget: Budget,
+    runner: SubjectRunner[RunTarget, _Launched],
+    target: RunTarget,
+    base: RunTarget,
     config: SprtConfig,
     k: int,
     sequential: bool,
 ) -> None:
-    """Run one world: k runs, or paired runs with the baseline until the test decides."""
-    if not sequential or all(o.error for o in base.outcomes):  # no baseline run to pair with
-        result.outcomes = run_repeated(lambda t: run_trial(rw, result, t), k, budget)
+    """Run one world: k runs, or pairs with fresh baseline runs until the test decides."""
+    if not sequential or all(o.error for o in base.result.outcomes):  # no baseline run to pair with
+        runner.run_repeated(target, k, "search")
         return
-    test = PairedSprt(config)
-    result.sequential = test
-    errors = 0
-    base_errors = 0
-    cursor = (
-        0  # the next baseline run to pair with; baseline runs that did not complete are skipped
-    )
-    for _ in range(config.max_pairs + 1):  # one spare run for a run that did not complete
-        if not budget.can_run():
-            break
-        outcome = run_trial(rw, result, len(result.outcomes))
-        budget.record_run(outcome.cost)
-        result.outcomes.append(outcome)
-        if outcome.error:
-            errors += 1  # a run that did not complete is not a pair: skip it, stop after two
-            if errors >= 2:
-                break
-            continue
-        while True:
-            while cursor < len(base.outcomes) and base.outcomes[cursor].error:
-                cursor += 1
-            if cursor < len(base.outcomes) or base_errors >= 2 or not budget.can_run():
-                break
-            extra = run_trial(base.world, base, len(base.outcomes))
-            budget.record_run(extra.cost)
-            base.outcomes.append(extra)
-            base_errors += extra.error
-        if cursor >= len(base.outcomes):
-            break  # no completed baseline run to pair with: counts only
-        test.add(is_bad(base.outcomes[cursor]), is_bad(outcome))
-        cursor += 1
-        if test.decision is not Decision.CONTINUE:
-            break
+    paired = runner.run_paired(target, base, config)
+    target.result.sequential = paired.test
+    target.result.paired_baseline = paired.baseline_outcomes
 
 
 def _oracle_records(scenario: McpScenario, example: WorldResult | None) -> list[OracleRecord]:
@@ -759,7 +775,7 @@ def build_report(
                 validity=rw.validity,
                 oracles=oracles,
                 stability=(
-                    stability_sequential(baseline_outcomes, outcomes, k, r.sequential)
+                    stability_sequential(r.paired_baseline, outcomes, k, r.sequential)
                     if r.sequential is not None and baseline_outcomes
                     else stability(baseline_outcomes, outcomes, k)
                 ),

@@ -44,7 +44,7 @@ def test_check_writes_report_artifacts_cases_and_exports(tmp_path: Path) -> None
     assert result.exit_code == 0, result.output
     assert "Counterexample found" in result.output
     report = AuditReport.model_validate_json((out / "report.json").read_text(encoding="utf-8"))
-    assert report.schema_version == "0.8" and report.pack == "research"
+    assert report.schema_version == "0.9" and report.pack == "research"
     case = report.cases[0]
     assert case.findings[0].replay.artifact == "1.replay.json"
     assert case.findings[0].replay.artifact_sha256

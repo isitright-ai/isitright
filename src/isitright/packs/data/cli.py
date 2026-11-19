@@ -315,7 +315,7 @@ def audit_command(
         str, typer.Option(help="JSON keyword arguments for the factory.")
     ] = "{}",
     baseline_runs: Annotated[int, typer.Option(min=1)] = 3,
-    max_trials: Annotated[int, typer.Option(min=1)] = 10,
+    max_trials: Annotated[int, typer.Option(min=1)] = 16,
     max_worlds: Annotated[int, typer.Option(min=1, help="Safety rail on worlds run live.")] = 40,
     attempts: Annotated[int, typer.Option(min=1)] = 300,
     ranking: Annotated[

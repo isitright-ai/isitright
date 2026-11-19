@@ -100,7 +100,7 @@ Run an agent on the [baseline](../concepts/live-agents.md#baseline-first) and on
 | `--ranking diverse\|screening\|coverage\|random` | `diverse` | |
 | `--stratum-patience N` | `10` | `0` = never |
 | `--run-patience N` | `30` | `0` = never |
-| `--max-trials N` | `16` | Most paired runs per world for the [sequential test](../concepts/live-agents.md#sequential-testing-per-world) |
+| `--max-trials N` | `16` | Most pairs per world for the [sequential test](../concepts/live-agents.md#sequential-testing-per-world); each pair is two runs (the world and a fresh baseline run) |
 | `--sequential` / `--no-sequential` | on | |
 | `--minimize` / `--no-minimize` | off | Costs runs |
 | `--hints FILE` | | A [hints](../concepts/hints.md) file; confirmed hints count as declared, others as proposed |
@@ -151,8 +151,9 @@ result. See [Data analysis agents](../data.md#long-audits-resume-and-the-run-cac
 `--agent module:callable --output DIR --trust-code [--programs FILE] [--pass-env NAME ...]
 [--baseline-runs N] [--max-trials N] [--max-worlds N] [--ranking diverse|screening|coverage|random]
 [--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]`. Live
-audit: the agent is run on ranked worlds, paired with its own baseline runs, in a separate process
-that sees only the variables named by `--pass-env`.
+audit: the agent is run on ranked worlds, each run paired with a fresh baseline run (`--max-trials`
+pairs per world, default 16), in a separate process that sees only the variables named by
+`--pass-env`.
 
 ## `isitright data replay REPORT`
 

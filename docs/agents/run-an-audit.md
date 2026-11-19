@@ -67,7 +67,10 @@ directory with the full trace. See [Evidence](../concepts/evidence.md) and the
 ## Costs, in practice
 
 - Screening costs nothing: it replays the baseline trace on each candidate world without the agent.
-- Extra baseline runs are made, and billed, when a world needs more pairs than the baseline has.
+- Every pair of the sequential test is a run of the world and a fresh baseline run, so a world that
+  goes the full `--max-trials` pairs costs twice that many runs (32 at the default 16), and a world
+  with no failure costs `2 x --trials` runs. The baseline runs made before the search (`--trials`)
+  are not reused as pairs.
 - `isitright agents order --report report.json --trust-code` re-ranks a finished run's executed
   worlds under each ordering and prints how many worlds each needs before the first finding. It runs
   nothing and costs nothing. Only executed worlds are placed, so a run stopped early is biased toward
