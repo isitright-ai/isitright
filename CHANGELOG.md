@@ -5,8 +5,8 @@ Versions before 1.0 may break the API, the CLI and the report schema.
 
 ## 0.8.1 - Hotfix
 
-A hotfix from an independent review of 0.8.0 (three reviews, each finding checked against the
-code). It changes no report schema (still 0.8). The release was built and tested offline.
+A hotfix for 0.8.0. It changes no report schema (still 0.8). The release was built and tested
+offline.
 
 ### Security
 
