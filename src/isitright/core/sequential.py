@@ -111,6 +111,8 @@ class PairedSprt:
         self._for = math.log(self.config.effect / 0.5)
         self._against = math.log((1 - self.config.effect) / 0.5)
         self.decision = Decision.CONTINUE
+        self.baseline_runs: int | None = None
+        """Baseline runs that were made, set by the pack that pairs against them."""
 
     def add(self, baseline_bad: bool, world_bad: bool) -> Decision:
         """Add one pair; returns the decision after this look."""
@@ -169,7 +171,16 @@ class PairedSprt:
             log_likelihood_ratio=round(self.llr, 6),
             p_value=round(self.p_value, 6),
             decision=self.decision,
-            note=notes[self.decision],
+            note=notes[self.decision] + self._pairing_note(),
+        )
+
+    def _pairing_note(self) -> str:
+        if self.baseline_runs is None:
+            return ""
+        return (
+            f"; the comparison rests on {self.pairs} pair(s) built from {self.baseline_runs} "
+            "baseline run(s) that were made (a run that errored or could not be judged is left "
+            "out of its pair)"
         )
 
 

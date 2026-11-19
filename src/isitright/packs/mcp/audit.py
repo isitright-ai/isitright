@@ -34,11 +34,13 @@ from isitright.core.evidence import (
     ValidityRecord,
     WorldRecord,
     safe_detail,
+    safe_name,
     totals_of,
 )
 from isitright.core.minimize import NoisyMinimization, minimize_path_noisy
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome, Role, controls_status
+from isitright.core.paths import contained_path, replay_placeholder
 from isitright.core.search import Progress
 from isitright.core.sequential import Decision, PairedSprt, RateSprtConfig, SprtConfig
 from isitright.core.stochastic import (
@@ -71,6 +73,7 @@ from isitright.packs.mcp.runner import (
     collect,
     harness_identity,
     read_trace,
+    record_mcp_config,
     run_agent,
     split_command,
     write_mcp_config,
@@ -236,6 +239,7 @@ def _record_run(
     harness: tuple[str | None, str | None],
     result: WorldResult,
     require_cost: bool = False,
+    recorded_ref: str | None = None,
 ) -> RunOutcome:
     relative = f"runs/{rw.id}/{trial}"
     run_dir = output_dir / relative
@@ -252,6 +256,7 @@ def _record_run(
     started = time.monotonic()
     status, exit_code = run_agent(argv, run_dir, mcp_config, run_dir / "task.txt", rw.id, timeout)
     duration = time.monotonic() - started
+    record_mcp_config(mcp_config, output_dir, scenario_ref=recorded_ref or scenario_ref)
     fallback = scenario.layout.to_service(rw.world.state)
     run = collect(run_dir, status, round(duration, 3), harness, fallback)
     if require_cost and status == "COMPLETED" and "money" not in run.extra:
@@ -415,6 +420,7 @@ def run_scenario(
             harness,
             result,
             budget.money is not None,
+            scenario_ref,  # recorded as typed; the absolute form above launched the servers
         )
         if progress is not None:
             progress(rw.id, _marker(outcome))
@@ -479,7 +485,7 @@ def run_scenario(
             skip(rw, f"safety rail: --max-worlds {rail} reached")
     report = build_report(
         scenario,
-        reference_text,
+        scenario_ref,  # as the user typed it; the absolute form above only launches the servers
         agent_command,
         k,
         results,
@@ -536,6 +542,8 @@ def _minimize_world(
     results: dict[str, tuple[RunWorld, WorldResult]] = {}
 
     def run(world: World) -> bool:
+        if not budget.can_run_after_search():
+            return False  # the budget is spent: not shown to reproduce, so the step is kept
         label = "+".join(str(i) for i, m in enumerate(rw.world.path) if m in world.path)
         sub_id = f"{rw.id}.min_{label or 'none'}"
         if sub_id not in results:
@@ -581,7 +589,7 @@ def _baseline_trace(
     for run in base.runs:
         if run["run_status"] != "COMPLETED":
             continue
-        directory = output_dir / run["run_dir"]
+        directory = contained_path(output_dir, str(run["run_dir"]), what="run directory")
         if (directory / "state_before.json").is_file():
             return run["run_dir"], [dict(e) for e in read_trace(directory / "trace.jsonl")]
     return None, None
@@ -1105,8 +1113,15 @@ def _search_record(
 def _finding_headline(
     violated: list[str], reached_unmet: bool, affected: int, evaluated: int, world: str
 ) -> str:
-    what = f"Invariant '{violated[0]}' violated" if violated else "Expected behavior not reached"
-    return f"{what} in {affected} of {evaluated} runs on world {world} (attribution not assessed)"
+    what = (
+        f"Invariant '{safe_name(violated[0], 'invariant name')}' violated"
+        if violated
+        else "Expected behavior not reached"
+    )
+    return (
+        f"{what} in {affected} of {evaluated} runs on world {safe_name(world, 'world id')} "
+        "(attribution not assessed)"
+    )
 
 
 def _headline(
@@ -1147,6 +1162,12 @@ def _headline(
 
 def write_report(report: AuditReport, output_dir: Path) -> None:
     """Write ``report.json`` (schema 0.5) and ``report.md`` (a human summary)."""
+    for case in report.cases:
+        for finding in case.findings:
+            finding.replay.command = (
+                f"isitright agents replay --report {replay_placeholder(output_dir, 'report.json')} "
+                "--findings-only --trust-code"
+            )
     (output_dir / "report.json").write_text(
         json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1235,7 +1256,9 @@ def export_eval_cases(scenario_ref: str, report: AuditReport, output_dir: Path) 
     case = report.cases[0]
     cases: list[EvalCase] = []
     for finding in case.findings:
-        run_dir = output_dir / finding.divergence["example_run_dir"]
+        run_dir = contained_path(
+            output_dir, str(finding.divergence["example_run_dir"]), what="run directory"
+        )
         world = json.loads((run_dir / "world.json").read_text(encoding="utf-8"))
         run = next(
             r

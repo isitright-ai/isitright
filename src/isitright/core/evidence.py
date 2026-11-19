@@ -301,6 +301,17 @@ def safe_detail(text: object) -> str:
     return "see the errors list" if _BANNED.search(value) else value
 
 
+def safe_name(name: object, what: str) -> str:
+    """A name the user chose (a world id, an invariant name) for a headline.
+
+    A name that uses a verdict word would make the report model refuse the headline. It is replaced
+    by a pointer, and the report keeps the name in full where it is data (``world_id``, the
+    violations list).
+    """
+    value = " ".join(str(name).split())
+    return f"({what} in the report)" if _BANNED.search(value) else value
+
+
 def _check_headline(value: str) -> str:
     if _BANNED.search(value):
         raise ValueError("a headline never says pass, fail, correct or wrong")

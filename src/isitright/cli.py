@@ -18,6 +18,7 @@ from isitright.core.evidence import (
     FailOn,
     policy_triggered,
 )
+from isitright.core.paths import UnsafePathError
 from isitright.packs.data.cli import data_app
 from isitright.packs.research.cli import research_app
 from isitright.packs.sql import (
@@ -1145,8 +1146,18 @@ def agents_replay_command(
         bool, typer.Option("--trust-code", help="Required: confirm the scenario is trusted code.")
     ] = False,
     findings_only: Annotated[bool, typer.Option(help="Replay only runs behind a finding.")] = False,
+    scenario: Annotated[
+        str | None,
+        typer.Option(
+            "--scenario",
+            help="Where the scenario is now (file.py:SCENARIO), replacing the one the report "
+            "recorded. Needed when the scenario file has moved.",
+        ),
+    ] = None,
 ) -> None:
     """Replay recorded runs offline and check they reproduce."""
+    from isitright.packs.mcp.model import ScenarioError, load_scenario
+    from isitright.packs.mcp.replay import recorded_scenario_message
     from isitright.packs.mcp.replay import replay_report as replay_runs
 
     if not trust_code:
@@ -1154,7 +1165,25 @@ def agents_replay_command(
         raise typer.Exit(EXIT_INVALID_INPUT)
     try:
         data = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
-        outcomes = replay_runs(data, None, report.parent, findings_only=findings_only)
+    except Exception as error:
+        typer.echo(f"Replay error: {error}", err=True)
+        raise typer.Exit(EXIT_INTERNAL_ERROR) from error
+    recorded = str(data.cases[0].extensions["mcp"]["scenario_ref"])
+    try:
+        loaded = load_scenario(scenario or recorded)
+    except ScenarioError as error:
+        typer.echo(
+            f"Input error: cannot load the scenario given with --scenario: {error}"
+            if scenario
+            else f"Input error: {recorded_scenario_message(recorded, error)}",
+            err=True,
+        )
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
+    try:
+        outcomes = replay_runs(data, loaded, report.parent, findings_only=findings_only)
+    except UnsafePathError as error:
+        typer.echo(f"Input error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
     except Exception as error:
         typer.echo(f"Replay error: {error}", err=True)
         raise typer.Exit(EXIT_INTERNAL_ERROR) from error

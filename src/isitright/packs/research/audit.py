@@ -46,7 +46,9 @@ from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import (
     Budget,
     RunOutcome,
+    count,
     is_bad,
+    run_paired_with_baseline,
     run_repeated,
     stability,
     stability_sequential,
@@ -287,6 +289,8 @@ class ResearchAudit:
         baseline_outcomes: list[RunOutcome] = []
         baseline_k = k if subject.stochastic else 1
         for trial in range(baseline_k):
+            if trial > 0 and not budget.can_run_after_search():
+                break  # the first baseline run is always made; the rest are under the budget
             seed = _derived_seed(config.seed, "baseline", trial)
             run = subject.execute(self.base, seed)
             run.seed = seed
@@ -345,7 +349,7 @@ class ResearchAudit:
         if note:
             result.notes.append(note)
         findings = self._findings(
-            result, results, subject, baseline, baseline_outcomes, fact, k, hints
+            result, results, subject, baseline, baseline_outcomes, fact, k, hints, budget
         )
         return self._report(
             subject,
@@ -405,7 +409,7 @@ class ResearchAudit:
             run.seed = seed
             result.runs.append(run)
             if run.status != "COMPLETED":
-                return RunOutcome(None, error=True)
+                return RunOutcome(None, error=True, cost=_cost_of(run))
             verdict = judge(world, run, baseline, fact, self.task.answer_type)
             result.judged.append(verdict)
             if label not in ("min", "confirm"):
@@ -494,20 +498,18 @@ class ResearchAudit:
         wr: WorldResult,
         budget: Budget,
     ) -> None:
-        test = PairedSprt(SprtConfig(max_pairs=self.config.max_pairs))
+        usable = min(self.config.max_pairs, len(baseline_outcomes))
+        test = PairedSprt(SprtConfig(min_pairs=min(4, usable), max_pairs=usable))
         wr.sequential = test
         run_trial = self._trial(subject, world, baseline, fact, wr, world.fingerprint())
-        for pair in range(self.config.max_pairs):
-            if not budget.can_run():
-                break
+
+        def run_once(pair: int) -> RunOutcome:
             outcome = run_trial(pair)
             budget.record_run(outcome.cost)
             wr.outcomes.append(outcome)
-            if outcome.error:
-                continue
-            base_bad = is_bad(baseline_outcomes[pair]) if pair < len(baseline_outcomes) else False
-            if test.add(base_bad, is_bad(outcome)) is not Decision.CONTINUE:
-                break
+            return outcome
+
+        run_paired_with_baseline(run_once, baseline_outcomes, test, budget, usable)
 
     def _observability(self, wr: WorldResult, baseline: RecordedRun) -> None:
         """A planted or changed document no query can retrieve is unobservable: a corpus or
@@ -590,6 +592,7 @@ class ResearchAudit:
         fact: dict[str, Any] | None,
         k: int,
         hints: Hints,
+        budget: Budget,
     ) -> list[Finding]:
         ordered = sorted(
             result.findings,
@@ -609,6 +612,7 @@ class ResearchAudit:
                     baseline_outcomes,
                     fact,
                     minimize,
+                    budget,
                 )
             )
         return out
@@ -624,20 +628,36 @@ class ResearchAudit:
         baseline_outcomes: list[RunOutcome],
         fact: dict[str, Any] | None,
         minimize: bool,
+        budget: Budget,
     ) -> Finding:
         case_id = f"{self.task.id}:{subject.label.name}"
         original = results[world.fingerprint()]
         kind = original.judged[0].expectation.kind if original.judged else None
-        final, minimization = world, {"minimized": False}
-        if minimize:
-            final, minimization = self._minimize(world, subject, baseline, fact, kind)
+        final = world
+        minimization: dict[str, Any] = {"minimized": False}
+        if minimize and budget.can_run_after_search():
+            final, minimization = self._minimize(world, subject, baseline, fact, kind, budget)
         # Confirmation and the verdict shown are on the world that is shown.
         shown = WorldResult(final, self.spec.validate_world(final.state, world.path))
         trial = self._trial(subject, final, baseline, fact, shown, "confirm")
         k = max(1, len(original.runs))
         bad_runs = 0
         for t in range(k):
-            bad_runs += is_bad(trial(t))
+            if not budget.can_run_after_search():
+                break
+            outcome = trial(t)
+            budget.record_run(outcome.cost)
+            bad_runs += is_bad(outcome)
+        if not shown.runs:
+            # The run budget was spent before one confirmation run: report the world the search
+            # ran, with the search's own runs, rather than a world no run has been made on.
+            final = world
+            minimization = {
+                "minimized": False,
+                "reason": "the run budget was spent before the minimized world was confirmed",
+            }
+            shown = original
+            bad_runs = sum(is_bad(o) for o in original.outcomes)
         verdict = shown.judged[0] if shown.judged else None
         worst = next((j for j in shown.judged if j.outcome is Outcome.NOT_MET), verdict)
         run = shown.runs[shown.judged.index(worst)] if worst in shown.judged else shown.runs[0]
@@ -721,14 +741,18 @@ class ResearchAudit:
         baseline: RecordedRun,
         fact: dict[str, Any] | None,
         kind: Expect | None,
+        budget: Budget,
     ) -> tuple[World, dict[str, Any]]:
         def reproduces(candidate: World) -> bool:
+            if not budget.can_run_after_search():
+                return False  # not shown to reproduce: the minimizer keeps what it has
             wr = WorldResult(candidate, self.base_validity)
             run_trial = self._trial(subject, candidate, baseline, fact, wr, "min")
             try:
                 outcome = run_trial(0)
             except Exception:
                 return False
+            budget.record_run(outcome.cost)
             if not is_bad(outcome) or not wr.judged:
                 return False
             return kind is None or wr.judged[0].expectation.kind is kind
@@ -1164,13 +1188,7 @@ class ResearchAudit:
                     limits=["L2 (support of the claim) is not judged"],
                 ),
             ],
-            stability=stability(
-                baseline_outcomes,
-                [o for wr in results.values() for o in wr.outcomes][: len(baseline_outcomes) or 1],
-                len(baseline_outcomes) or 1,
-            )
-            if subject.stochastic and baseline_outcomes
-            else None,
+            stability=None,
             search=record,
             findings=findings,
             worlds=worlds,
@@ -1214,6 +1232,7 @@ class ResearchAudit:
                     "gold": {"answer": task.gold, "trust": task.gold_basis},
                     "baseline": {
                         "runs": len(baseline_runs),
+                        "counts": count(baseline_outcomes).model_dump(mode="json"),
                         "reports": [r.report.model_dump(mode="json") for r in baseline_runs],
                         "gate": gate,
                         "citations": base_citations,

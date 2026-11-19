@@ -11,7 +11,8 @@ isitright agents run --trust-code --scenario my_scenario.py:SCENARIO \
 ## The contract
 
 For every run, isitright creates a run directory (`runs/<world>/<trial>/`) and starts the command in
-it. Your command must:
+the directory isitright was launched from, with your environment variables. The run directory is
+named by `ISITRIGHT_RUN_DIR` and `{run_dir}`. Your command must:
 
 1. **Read the task** from the file named by `ISITRIGHT_TASK_FILE` (or `{task_file}`).
 2. **Connect to the world's MCP server** using the config named by `ISITRIGHT_MCP_CONFIG` (or
