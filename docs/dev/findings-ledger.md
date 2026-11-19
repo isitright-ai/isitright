@@ -74,13 +74,13 @@ review 1, finding C1).
 
 ## Fixed by N1
 
-Branch `feature/0.9.0-n1-run-loop`. The commit column is filled in when the branch is merged.
+Branch `feature/0.9.0-n1-run-loop`; the commits are those on the branch before it is squashed or merged.
 
 | ID | What N1 did | Test that failed before | Commit |
 | --- | --- | --- | --- |
-| T1 | Research pairs each world run with a fresh baseline run | `tests/test_run_loop_packs.py::test_research_equal_failure_rates_rarely_give_a_rate_increase` (on `d1d2abe`: 9% false claims at 30%, 39% at 50%); `::test_research_ten_against_seventy_percent_is_found` (on 0.8.1: 0 of 560 worlds, because the stopgap capped the pairs at the baseline runs) | see PR |
-| T2 | Data pairs each world run with a fresh baseline run | `::test_data_with_a_long_pair_limit_still_holds_the_error_rate` (on `d1d2abe`: 16% at a 20% failure rate and `--max-trials 30`); `::test_data_ten_against_seventy_percent_is_found` (on 0.8.1: 0 of 72) | see PR |
-| T3 | A run that errored or could not be judged forms no pair and is counted | `tests/test_run_loop.py::test_errored_and_unjudged_runs_form_no_pair_and_are_counted` (new API; the 0.8.0 data loop counted errors as passes, the 0.8.1 stopgap left them out) | see PR |
-| T4 | Holds from 0.8.1; a test now checks that no case-level stability exists | `tests/test_run_loop_packs.py::test_research_sequential_records_say_how_the_pairs_were_made` | see PR |
-| E4 (seed) | One call counter derives a distinct seed for every call, minimization included | `tests/test_run_loop_packs.py::test_research_never_reuses_a_seed_across_search_minimization_and_confirmation` (on 0.8.1: 40 distinct seeds in 93 calls) | see PR |
-| A1 (run loop) | `SubjectRunner` is the only code that executes a subject | `tests/test_single_run_loop.py::test_no_code_outside_the_runner_executes_a_subject` (on 0.8.1: two direct calls in `packs/research/audit.py`) | see PR |
+| T1 | Research pairs each world run with a fresh baseline run | `tests/test_run_loop_packs.py::test_research_equal_failure_rates_rarely_give_a_rate_increase` (on `d1d2abe`: 9% false claims at 30%, 39% at 50%); `::test_research_ten_against_seventy_percent_is_found` (on 0.8.1: 0 of 560 worlds, because the stopgap capped the pairs at the baseline runs) | `1ace90c`, `6516d98` |
+| T2 | Data pairs each world run with a fresh baseline run | `::test_data_with_a_long_pair_limit_still_holds_the_error_rate` (on `d1d2abe`: 16% at a 20% failure rate and `--max-trials 30`); `::test_data_ten_against_seventy_percent_is_found` (on 0.8.1: 0 of 72) | `1ace90c`, `6516d98` |
+| T3 | A run that errored or could not be judged forms no pair and is counted | `tests/test_run_loop.py::test_errored_and_unjudged_runs_form_no_pair_and_are_counted` (new API; the 0.8.0 data loop counted errors as passes, the 0.8.1 stopgap left them out) | `1ace90c`, `6516d98` |
+| T4 | Holds from 0.8.1; a test now checks that no case-level stability exists | `tests/test_run_loop_packs.py::test_research_sequential_records_say_how_the_pairs_were_made` | `1ace90c`, `6516d98` |
+| E4 (seed) | One call counter derives a distinct seed for every call, minimization included | `tests/test_run_loop_packs.py::test_research_never_reuses_a_seed_across_search_minimization_and_confirmation` (on 0.8.1: 40 distinct seeds in 93 calls) | `1ace90c`, `6516d98` |
+| A1 (run loop) | `SubjectRunner` is the only code that executes a subject | `tests/test_single_run_loop.py::test_no_code_outside_the_runner_executes_a_subject` (on 0.8.1: two direct calls in `packs/research/audit.py`) | `1ace90c`, `6516d98` |
