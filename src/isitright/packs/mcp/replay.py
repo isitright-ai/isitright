@@ -16,6 +16,7 @@ from typing import Any
 from isitright.core.evidence import AuditReport, EvalCase
 from isitright.core.mutations import World
 from isitright.core.oracles import Outcome
+from isitright.core.paths import contained_path
 from isitright.packs.mcp.model import (
     WORLD_CHANGE,
     McpScenario,
@@ -82,7 +83,7 @@ def replay_events(
 
 
 def replay_run(scenario: McpScenario, run: dict[str, Any], output_dir: Path) -> ReplayOutcome:
-    run_dir = output_dir / run["run_dir"]
+    run_dir = contained_path(output_dir, str(run["run_dir"]), what="run directory")
 
     def outcome(ok: bool, detail: str) -> ReplayOutcome:
         return ReplayOutcome(run["world_id"], run["trial"], ok, detail)
@@ -163,13 +164,33 @@ def replay_report(
     return [replay_run(scenario, run, output_dir) for run in runs]
 
 
-def rerun_eval_case(case: EvalCase, scenario: McpScenario | None = None) -> dict[str, Any]:
-    """Replay an exported case offline and re-judge it; `reproduced` means the same disagreement."""
+def recorded_scenario_message(recorded: str, error: object) -> str:
+    """Why the scenario a report or case recorded cannot be loaded, and what to pass instead."""
+    return (
+        f"the scenario recorded as {recorded!r} cannot be loaded ({error}); "
+        "say where it is now with --scenario REF (an exported case: pass scenario=REF)"
+    )
+
+
+def rerun_eval_case(case: EvalCase, scenario: McpScenario | str | None = None) -> dict[str, Any]:
+    """Replay an exported case offline and re-judge it; `reproduced` means the same disagreement.
+
+    ``scenario`` is a loaded scenario or a reference (``file.py:SCENARIO``) that replaces the one
+    the case recorded, for a scenario that has moved."""
     payload = case.payload
     try:
-        scenario = scenario or load_scenario(payload["scenario_ref"])
-    except ScenarioError as error:  # pragma: no cover - a stale reference
-        return {"reproduced": False, "detail": str(error)}
+        if isinstance(scenario, str):
+            scenario = load_scenario(scenario)
+        elif scenario is None:
+            try:
+                scenario = load_scenario(payload["scenario_ref"])
+            except ScenarioError as error:
+                return {
+                    "reproduced": False,
+                    "detail": recorded_scenario_message(payload["scenario_ref"], error),
+                }
+    except ScenarioError as error:
+        return {"reproduced": False, "detail": f"cannot load the scenario given: {error}"}
     if scenario.external is not None:
         return {
             "reproduced": False,

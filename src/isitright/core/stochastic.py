@@ -86,6 +86,37 @@ def is_bad(outcome: RunOutcome) -> bool:
     return outcome.violated or outcome.outcome is Outcome.NOT_MET
 
 
+def is_judged(outcome: RunOutcome) -> bool:
+    """A run that can enter a pair: it ended without a subject error and was judged."""
+    return not outcome.error and (
+        outcome.violated or outcome.outcome in (Outcome.MET, Outcome.NOT_MET)
+    )
+
+
+def run_paired_with_baseline(
+    run_once: Callable[[int], RunOutcome],
+    baseline: list[RunOutcome],
+    test: PairedSprt,
+    budget: Budget,
+    max_runs: int,
+) -> None:
+    """Run a world once per real baseline run (up to ``max_runs``), pairing run i with baseline i.
+
+    ``run_once`` records its own outcome and cost. The test stops when the baseline runs that were
+    made are used up: a pair never contains a run that did not happen. A pair in which either run
+    errored or could not be judged is left out of the test (the runs stay in the counts).
+    """
+    test.baseline_runs = len(baseline)
+    for index in range(min(max_runs, len(baseline))):
+        if not budget.can_run():
+            break
+        outcome = run_once(index)
+        if not (is_judged(baseline[index]) and is_judged(outcome)):
+            continue
+        if test.add(is_bad(baseline[index]), is_bad(outcome)) is not Decision.CONTINUE:
+            break
+
+
 def mcnemar_exact(only_baseline: int, only_world: int) -> float:
     """Two-sided exact McNemar p-value on discordant pairs (a binomial test at p = 1/2)."""
     n = only_baseline + only_world
@@ -212,6 +243,22 @@ class Budget:
 
     def can_attempt(self) -> bool:
         return self._check() is None
+
+    def can_run_after_search(self) -> bool:
+        """Whether one more run fits the money, time and run limits.
+
+        The attempts limit bounds the search for worlds. It does not stop the runs that follow the
+        search (minimization and confirmation), so it is not part of this check.
+        """
+        if self.money is not None and self.spent_money >= self.money:
+            self.exhausted = self.exhausted or "money"
+        elif self.seconds is not None and self.elapsed() >= self.seconds:
+            self.exhausted = self.exhausted or "seconds"
+        elif self.runs is not None and self.spent_runs >= self.runs:
+            self.exhausted = self.exhausted or "runs"
+        else:
+            return True
+        return False
 
     def can_run(self) -> bool:
         return self._check() is None

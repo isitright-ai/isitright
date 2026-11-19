@@ -58,7 +58,23 @@ with the reason. That is not evidence of correctness.
 ## Sequential testing per world
 
 Each world runs in pairs with the baseline (its run *i* against baseline run *i*) until a sequential
-probability ratio test on discordant pairs decides, up to `--max-trials` pairs (default 16).
+probability ratio test on discordant pairs decides. How many pairs a world can have depends on the
+pack:
+
+- **Agents (`isitright agents run`):** up to `--max-trials` pairs (default 16). When a world needs more
+  pairs than the baseline has, extra baseline runs are made, and billed.
+- **Research and data:** a world is paired only with baseline runs that were made, so it has at most
+  as many pairs as the baseline has runs (4 by default in research, 3 in data), and no extra baseline
+  runs are made. At the default alpha and alternative a rate claim needs 7 discordant pairs, so a
+  rate claim is not reachable at the defaults in these two packs: the report gives counts and says
+  how many pairs the comparison rests on. To allow a claim, use 16 baseline runs (research:
+  `--runs 16`; data: `--baseline-runs 16 --max-trials 16`, because a data world also runs at most
+  `--max-trials` times). In a simulation of this test, a rise in failures from 10% to 70% was
+  detected 86% of the time with 16 baseline runs and 3.7% of the time with 7: seven pairs reach
+  the boundary only if nearly all of them are discordant. A run that errored or could not be judged
+  is left out of its pair. (Before 0.8.1 these packs paired
+  later runs against an assumed pass or reused baseline outcomes, which made false rate claims
+  likely; treat rate claims from 0.8.0 reports of these packs as unsupported.)
 
 - Alpha 0.05 and beta 0.2, against an alternative where 80 percent of discordant pairs go against the
   world. The false-claim rate is at most 0.05 at *any* look, so stopping early is safe.
@@ -67,7 +83,6 @@ probability ratio test on discordant pairs decides, up to `--max-trials` pairs (
   world: counts only, no claim).
 - There is no correction across worlds. A rate claim is per world, and the case-level `stability`
   is counts only.
-- When a world needs more pairs than the baseline has, extra baseline runs are made, and billed.
 
 `--no-sequential` runs `--trials` per world with counts only, and a rate claim then needs an exact
 McNemar test on at least 8 paired runs.

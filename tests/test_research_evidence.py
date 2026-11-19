@@ -124,8 +124,12 @@ def test_baseline_flakiness_is_counted_for_a_stochastic_agent() -> None:
 
     report = a.check(Subject(Mixed(0.5).label, True, flaky))
     assert report.extensions["research"]["baseline"]["runs"] == 4
-    assert report.stability is not None and report.stability.baseline.n == 4
-    assert report.stability.baseline.not_met == 1  # the run that answered 1999
+    # 0.8.1: no case-level stability (it pooled worlds); the baseline counts are kept beside the
+    # baseline reports
+    assert report.stability is None
+    counts = report.extensions["research"]["baseline"]["counts"]
+    assert counts["n"] == 4
+    assert counts["not_met"] == 1  # the run that answered 1999
 
 
 def test_run_and_money_budgets_stop_the_search_and_are_accounted() -> None:
