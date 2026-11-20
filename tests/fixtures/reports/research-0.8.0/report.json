@@ -361,9 +361,9 @@
             "kind": "stand_in",
             "name": "credulous",
             "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-            "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+            "written_by": "an AI assistant, as a stand-in; not a real research agent"
           },
-          "subject_statement": "stand-in agent written by Claude, not a real research agent",
+          "subject_statement": "stand-in agent written by an AI assistant, not a real research agent",
           "unobservable_changes": []
         }
       },
@@ -468,7 +468,7 @@
               "kind": "stand_in",
               "name": "credulous",
               "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-              "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
             },
             "tie_break_decided_rank": false,
             "world_report": {
@@ -547,7 +547,7 @@
           ],
           "replay": {
             "artifact": "1.replay.json",
-            "artifact_sha256": "c0f47386d42fc67b946c782ec7c0318ff5093dbf2213cc16a955025d950b59fd",
+            "artifact_sha256": "2a23da9856dbf1b6128e96c76e8009039ec255f98ef60a4357a0466f9382d4bc",
             "command": "isitright research replay 1.replay.json"
           },
           "stability": null,
@@ -1018,7 +1018,7 @@
               "kind": "stand_in",
               "name": "credulous",
               "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-              "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
             },
             "tie_break_decided_rank": false,
             "world_report": {
@@ -1097,7 +1097,7 @@
           ],
           "replay": {
             "artifact": "2.replay.json",
-            "artifact_sha256": "a60607083f6af1765c83a1833a9a5fc852b5c3c69b68e78b7aa6d61cb0b1c143",
+            "artifact_sha256": "91560c1cc3cd854a7380e135755abfea5263590894c11d52c27f9024b99d8be1",
             "command": "isitright research replay 2.replay.json"
           },
           "stability": null,
@@ -1570,7 +1570,7 @@
               "kind": "stand_in",
               "name": "credulous",
               "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-              "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
             },
             "tie_break_decided_rank": false,
             "world_report": {
@@ -1649,7 +1649,7 @@
           ],
           "replay": {
             "artifact": "3.replay.json",
-            "artifact_sha256": "e8e072b29454abb05784be96dd38e53542efbf4ac72161deb19b1d1bf3082345",
+            "artifact_sha256": "12a890a6c79a49ab388805add3a2cfae861ef1a58d1657bf30028638b783e5cf",
             "command": "isitright research replay 3.replay.json"
           },
           "stability": null,
@@ -2419,7 +2419,7 @@
               "kind": "stand_in",
               "name": "credulous",
               "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-              "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
             },
             "tie_break_decided_rank": false,
             "world_report": {
@@ -2475,7 +2475,7 @@
           ],
           "replay": {
             "artifact": "4.replay.json",
-            "artifact_sha256": "30900dd69f79774045094553d68719ccc044b7583fc3fe8d7f03afca050fa98b",
+            "artifact_sha256": "24b9c26be0f12a7e87f2f8dc5ea56afe4fc49ad895a55ee86655dc1c73e947fb",
             "command": "isitright research replay 4.replay.json"
           },
           "stability": null,
@@ -2906,7 +2906,7 @@
               "kind": "stand_in",
               "name": "credulous",
               "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-              "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
             },
             "tie_break_decided_rank": false,
             "world_report": {
@@ -2979,7 +2979,7 @@
           ],
           "replay": {
             "artifact": "5.replay.json",
-            "artifact_sha256": "32938c6de22ae6497e9dbfc2033fd6e2d74e7253b2c2d5df69bfd33c5a4ef811",
+            "artifact_sha256": "a852192e88b89c48d9fa08dbaa760b4b595091967a59e1778130e1e0974fef81",
             "command": "isitright research replay 5.replay.json"
           },
           "stability": null,

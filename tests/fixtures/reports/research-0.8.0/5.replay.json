@@ -283,7 +283,7 @@
         "kind": "stand_in",
         "name": "credulous",
         "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-        "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+        "written_by": "an AI assistant, as a stand-in; not a real research agent"
       },
       "task_id": "halvorsen-completed",
       "trace": [
@@ -320,7 +320,7 @@
       "kind": "stand_in",
       "name": "credulous",
       "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-      "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+      "written_by": "an AI assistant, as a stand-in; not a real research agent"
     },
     "task": {
       "answer_type": "number",
@@ -356,7 +356,7 @@
         "kind": "stand_in",
         "name": "credulous",
         "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
-        "written_by": "Claude (an AI assistant), as a stand-in; not a real research agent"
+        "written_by": "an AI assistant, as a stand-in; not a real research agent"
       },
       "task_id": "halvorsen-completed",
       "trace": [
