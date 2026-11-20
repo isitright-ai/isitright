@@ -8,7 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from isitright.core.entities import EntitySchema
-from isitright.core.evidence import AuditReport, CaseReport, EvalCase, Finding, totals_of
+from isitright.core.evidence import (
+    AuditReport,
+    CaseReport,
+    EvalCase,
+    EvidenceGrade,
+    Finding,
+    describe_graded_findings,
+    totals_of,
+)
 from isitright.core.mutations import World
 from isitright.core.paths import contained_path, replay_placeholder
 from isitright.core.replay import (
@@ -101,6 +109,7 @@ def markdown(report: AuditReport) -> str:
                 f"  Replay: `{finding.replay.command}` (replace the part in angle brackets with "
                 "the location of the report file).",
             ]
+        lines += describe_graded_findings(case)
         for error in case.errors:
             lines.append(f"- {error['code']}: {error['message']}")
     return "\n".join(lines) + "\n"
@@ -151,12 +160,16 @@ def load_and_replay(path: Path, *, trust_code: bool) -> ReplayResult:
     return replay_artifact(load_artifact(path), trust_code=trust_code)
 
 
-def export_eval_cases(report: AuditReport, output_dir: Path) -> list[EvalCase]:
+def export_eval_cases(
+    report: AuditReport, output_dir: Path, *, include_observed: bool = False
+) -> list[EvalCase]:
     """Each finding as an eval case: the dataset, the question, the gold program, the expected
     answer. Files are written under ``<output_dir>/<case>/``; the returned records index them."""
     cases = []
     for case in report.cases:
         for finding in case.findings:
+            if finding.evidence_grade is EvidenceGrade.OBSERVED_FAILURE and not include_observed:
+                continue
             name = safe_id(finding.finding_id)
             target = contained_path(output_dir, name, what="finding id")
             files = finding.divergence.get("data_files") or {}

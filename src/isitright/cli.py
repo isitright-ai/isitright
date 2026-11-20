@@ -15,7 +15,9 @@ from isitright.core.evidence import (
     AuditReport,
     CaseReport,
     DivergenceStatus,
+    EvidenceGrade,
     FailOn,
+    describe_graded_findings,
     policy_triggered,
 )
 from isitright.core.paths import UnsafePathError
@@ -109,6 +111,10 @@ class AgentsFailOn(StrEnum):
     NONE = "none"
     INVARIANT = "invariant-violation"
     ANY_FINDING = "any-finding"
+    """A finding whose paired test decided a higher failure rate. The same as ``rate-increase``."""
+    RATE_INCREASE = "rate-increase"
+    OBSERVED_FAILURE = "observed-failure"
+    """Also a failure observed on a valid world with no rate decision."""
 
 
 def version_callback(value: bool) -> None:
@@ -1008,6 +1014,9 @@ def agents_run_command(
     typer.echo(case.headline)
     controls = case.controls.status if case.controls else "NOT_APPLICABLE"
     typer.echo(f"Status: {case.divergence_status.value}. Controls: {controls}.")
+    for line in describe_graded_findings(case):
+        if line and not line.startswith("#"):
+            typer.echo(line)
     for note in case.search.notes:
         if "ranked by" in note:
             typer.echo(f"Worlds: {note}.")
@@ -1020,12 +1029,20 @@ def agents_run_command(
         raise typer.Exit(EXIT_INVALID_INPUT)
     if case.divergence_status is DivergenceStatus.INCONCLUSIVE:
         raise typer.Exit(EXIT_INTERNAL_ERROR)
-    if fail_on is AgentsFailOn.ANY_FINDING and case.findings:
+    if agents_policy_triggered(case, fail_on):
         raise typer.Exit(EXIT_POLICY_TRIGGERED)
-    if fail_on is AgentsFailOn.INVARIANT and any(
-        o.kind == "INVARIANT" for f in case.findings for o in f.oracles
-    ):
-        raise typer.Exit(EXIT_POLICY_TRIGGERED)
+
+
+def agents_policy_triggered(case: CaseReport, fail_on: AgentsFailOn) -> bool:
+    """The CI gate of ``agents run``. An observed failure trips only ``observed-failure``."""
+    if fail_on is AgentsFailOn.NONE:
+        return False
+    strong = [f for f in case.findings if f.evidence_grade is not EvidenceGrade.OBSERVED_FAILURE]
+    if fail_on is AgentsFailOn.OBSERVED_FAILURE:
+        return bool(case.findings)
+    if fail_on is AgentsFailOn.INVARIANT:
+        return any(o.kind == "INVARIANT" for f in strong for o in f.oracles)
+    return bool(strong)  # any-finding and rate-increase
 
 
 @hints_app.command("propose")
@@ -1198,14 +1215,28 @@ def agents_replay_command(
 def agents_export_command(
     report: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
     output: Annotated[Path, typer.Option(help="JSONL file to append eval cases to.")],
+    include_observed: Annotated[
+        bool,
+        typer.Option(
+            "--include-observed",
+            help="Also export findings graded OBSERVED_FAILURE (a failure seen on a valid world, "
+            "no higher failure rate decided). By default only RATE_INCREASE findings are exported.",
+        ),
+    ] = False,
 ) -> None:
     """Export a report's findings as new eval cases (world, task, recorded trace, verdict)."""
     from isitright.packs.mcp.audit import export_eval_cases
 
     try:
         data = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
+        held_back = sum(
+            f.evidence_grade is EvidenceGrade.OBSERVED_FAILURE for f in data.cases[0].findings
+        )
         cases = export_eval_cases(
-            data.cases[0].extensions["mcp"]["scenario_ref"], data, report.parent
+            data.cases[0].extensions["mcp"]["scenario_ref"],
+            data,
+            report.parent,
+            include_observed=include_observed,
         )
         output.parent.mkdir(parents=True, exist_ok=True)
         with output.open("a", encoding="utf-8") as handle:
@@ -1215,6 +1246,11 @@ def agents_export_command(
         typer.echo(f"Export error: {error}", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
     typer.echo(f"Exported {len(cases)} eval case(s) to {output}")
+    if held_back and not include_observed:
+        typer.echo(
+            f"{held_back} finding(s) graded OBSERVED_FAILURE were not exported; "
+            "pass --include-observed to export them."
+        )
 
 
 if __name__ == "__main__":

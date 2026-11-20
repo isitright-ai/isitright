@@ -53,9 +53,14 @@ from isitright.core.selection import (
 from isitright.core.sequential import PairedSprt, SprtConfig
 from isitright.core.stochastic import (
     Budget,
+    EvidenceGrade,
     RunOutcome,
     SubjectRunner,
+    grade_of,
     is_bad,
+    is_judged,
+    multiplicity_of,
+    observation_of,
     stability_sequential,
 )
 from isitright.core.subjects import Cost, SubjectKind
@@ -80,6 +85,8 @@ class LiveConfig:
     max_worlds: int | None = 40
     verify_minimized_runs: int = 3
     sprt: SprtConfig | None = None
+    allow_failing_baseline: bool = False
+    """Audit although a baseline run did not meet the expectation (it is reported either way)."""
 
 
 @dataclass
@@ -260,6 +267,7 @@ def run_live(
     comparison = WorldRuns(base.world)
     """Fresh baseline runs made for the pairs; `base` keeps the runs made before the search."""
     runner.run_repeated(base, config.baseline_runs, "baseline")
+    _check_baseline(base, config)
 
     ranked = rank_worlds(
         [w for w in worlds if w.role is not Role.UNJUDGEABLE],
@@ -295,9 +303,9 @@ def run_live(
             continue
         target = WorldRuns(w)
         results.append(target)
-        paired = runner.run_paired(target, comparison, sprt_config)
-        target.sprt = paired.test
-        target.baselines = paired.baseline_outcomes
+        staged = runner.run_staged(target, comparison, sprt_config, sprt_config.min_pairs)
+        target.sprt = staged.test
+        target.baselines = staged.baseline_outcomes
         stop.record(w, any(is_bad(o) for o in target.outcomes))
     verification = _verify_minimized(audit, runner, base, frozen_world, config)
     return _report(
@@ -319,6 +327,26 @@ def run_live(
         frozen_finding,
         verification,
         len(worlds),
+    )
+
+
+def _check_baseline(base: WorldRuns, config: LiveConfig) -> None:
+    """Stop unless every baseline run met the expectation: a world is only a world of interest
+    against a baseline that gets the task right."""
+    if config.allow_failing_baseline:
+        return
+    met = sum(o.outcome is Outcome.MET and not o.error for o in base.outcomes)
+    if base.outcomes and met == len(base.outcomes):
+        return
+    detail = (
+        f"{met} of {len(base.outcomes)} baseline runs met the expectation"
+        if base.outcomes
+        else "no baseline run was made (the budget allowed none)"
+    )
+    raise LiveInputError(
+        f"the baseline does not meet the expectation in every run: {detail}. A finding on a "
+        "mutated world means little when the original world is already wrong. Fix the agent or "
+        "the task, or pass --allow-failing-baseline to audit anyway."
     )
 
 
@@ -467,6 +495,8 @@ def _report(
                 validity=validity_record(target.world.validity),
                 oracles=[_oracle(NOT_MET)],
                 stability=stability,
+                evidence_grade=grade_of(target.sprt),
+                observation=observation_of(target.outcomes, target.baselines),
                 world_diff=diff_states(p.base, target.world.world.state),
                 mutation_path=_path(target.world.world),
                 divergence={
@@ -494,6 +524,8 @@ def _report(
                     world_id="minimized",
                     validity=validity_record(verification.world.validity),
                     oracles=[_oracle(NOT_MET)],
+                    evidence_grade=EvidenceGrade.OBSERVED_FAILURE,
+                    observation=observation_of(verification.outcomes),
                     world_diff=diff_states(p.base, verification.world.world.state),
                     mutation_path=_path(verification.world.world),
                     divergence={
@@ -528,21 +560,45 @@ def _report(
                 else None,
             )
         )
+    judged = sum(
+        is_judged(o)
+        for t in [*results, *([verification] if verification else [])]
+        for o in t.outcomes
+    )
     status = (
         DivergenceStatus.COUNTEREXAMPLE_FOUND
+        if any(f.evidence_grade is EvidenceGrade.RATE_INCREASE for f in findings)
+        else DivergenceStatus.OBSERVED_FAILURE
         if findings
+        else DivergenceStatus.INCONCLUSIVE
+        if judged == 0
         else DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    )
+    grades = {f.world_id: f.evidence_grade for f in findings}
+    multiplicity = multiplicity_of(
+        [(t.outcomes, grades.get(t.world.id)) for t in results],
+        [*base.outcomes, *comparison.outcomes],
     )
     counts = {c.value: 0 for c in ScreeningClass}
     for s in screens.values():
         counts[s.cls.value] += 1
     ran = len(results)
-    summary = (
-        f"the agent's answer differed from the reference in {len(findings)} of {ran} worlds run "
-        f"({len(not_run)} not run)"
-        if findings
-        else f"no disagreement in the {ran} worlds the agent was run on ({len(not_run)} not run)"
-    )
+    rate_worlds = sum(f.evidence_grade is EvidenceGrade.RATE_INCREASE for f in findings)
+    if findings:
+        summary = (
+            f"the agent's answer differed from the reference in {len(findings)} of {ran} worlds "
+            f"run ({rate_worlds} with a rate increase decided by the paired test, "
+            f"{len(findings) - rate_worlds} observed only; {len(not_run)} not run)"
+        )
+    elif judged == 0:
+        summary = (
+            f"no mutated world produced a judged run ({ran} worlds run; the baseline runs do "
+            f"not count; {len(not_run)} not run)"
+        )
+    else:
+        summary = (
+            f"no disagreement in the {ran} worlds the agent was run on ({len(not_run)} not run)"
+        )
     account = generation.accounting()
     search_record = SearchRecord(
         **{**account, "budget": budget.to_json()},
@@ -569,6 +625,7 @@ def _report(
         oracles=[_oracle("NOT_MET" if findings else "MET")],
         search=search_record,
         findings=findings,
+        multiplicity=multiplicity,
         worlds=world_records,
         comparison_policy=audit.comparator.describe(),
         inputs={

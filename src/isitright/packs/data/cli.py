@@ -13,7 +13,12 @@ from typing import Annotated, Any
 
 import typer
 
-from isitright.core.evidence import AuditReport, DivergenceStatus
+from isitright.core.evidence import (
+    AuditReport,
+    DivergenceStatus,
+    EvidenceGrade,
+    describe_graded_findings,
+)
 from isitright.core.paths import UnsafePathError, contained_path
 
 data_app = typer.Typer(
@@ -329,6 +334,13 @@ def audit_command(
     ] = None,
     max_seconds: Annotated[float | None, typer.Option(min=1.0)] = None,
     seed: Annotated[int, typer.Option()] = 0,
+    allow_failing_baseline: Annotated[
+        bool,
+        typer.Option(
+            help="Audit although a baseline run does not meet the expectation. By default the "
+            "audit stops: a finding on a mutated world means little when the baseline is wrong."
+        ),
+    ] = False,
     agent_timeout: Annotated[float, typer.Option(min=1.0)] = 600.0,
     env_file: Annotated[
         Path | None,
@@ -345,7 +357,7 @@ def audit_command(
     from isitright.core.stochastic import Budget
     from isitright.packs.data.adapters import SubprocessAgent, load_env_file, unset_names
     from isitright.packs.data.audit import AuditConfig, DataAudit
-    from isitright.packs.data.live import LiveConfig, run_live
+    from isitright.packs.data.live import LiveConfig, LiveInputError, run_live
     from isitright.packs.data.programs import load_programs
     from isitright.packs.data.reports import build_report, write_report
     from isitright.packs.data.task import load_task
@@ -390,6 +402,7 @@ def audit_command(
         stratum_patience=stratum_patience or None,
         run_patience=run_patience or None,
         max_worlds=max_worlds,
+        allow_failing_baseline=allow_failing_baseline,
     )
     # The frozen step that finds the minimized world gets the same --attempts as the live search:
     # with the default of 300 it can miss a world that 500 attempts find.
@@ -402,19 +415,27 @@ def audit_command(
                 from isitright.core.mutations import World
 
                 frozen_world = World.from_json(audit.artifacts[frozen_finding.finding_id].world)
-        case = run_live(
-            audit,
-            runner,
-            program=program,
-            config=config,
-            frozen_finding=frozen_finding,
-            frozen_world=frozen_world,
-            budget=Budget(runs=max_runs, money=max_money, seconds=max_seconds),
-            progress=lambda _world, marker: typer.echo(marker, nl=False),
-        )
+        try:
+            case = run_live(
+                audit,
+                runner,
+                program=program,
+                config=config,
+                frozen_finding=frozen_finding,
+                frozen_world=frozen_world,
+                budget=Budget(runs=max_runs, money=max_money, seconds=max_seconds),
+                progress=lambda _world, marker: typer.echo(marker, nl=False),
+            )
+        except LiveInputError as error:
+            typer.echo("")
+            typer.echo(str(error), err=True)
+            raise typer.Exit(EXIT_INVALID_INPUT) from error
     typer.echo("")
     write_report(build_report([case], time.monotonic() - started, kind="case"), output, {})
     typer.echo(case.headline)
+    for line in describe_graded_findings(case):
+        if line and not line.startswith("#"):
+            typer.echo(line)
 
 
 @data_app.command("replay")
@@ -458,13 +479,25 @@ def replay_command(
 def export_command(
     report: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     output: Annotated[Path, typer.Option(help="Directory for the eval cases.")],
+    include_observed: Annotated[
+        bool,
+        typer.Option(
+            "--include-observed",
+            help="Also export live findings graded OBSERVED_FAILURE (a failure seen on a valid "
+            "world, no higher failure rate decided). By default only RATE_INCREASE findings of "
+            "live runs are exported.",
+        ),
+    ] = False,
 ) -> None:
     """Export findings as eval cases: dataset (CSV), question, gold program, expected answer."""
     from isitright.packs.data.reports import export_eval_cases
 
     audit = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
+    held_back = sum(
+        f.evidence_grade is EvidenceGrade.OBSERVED_FAILURE for c in audit.cases for f in c.findings
+    )
     try:
-        cases = export_eval_cases(audit, output)
+        cases = export_eval_cases(audit, output, include_observed=include_observed)
     except UnsafePathError as error:
         typer.echo(f"Input error: {error}", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
@@ -476,3 +509,8 @@ def export_command(
         encoding="utf-8",
     )
     typer.echo(f"Exported {len(cases)} eval case(s) to {output}")
+    if held_back and not include_observed:
+        typer.echo(
+            f"{held_back} finding(s) graded OBSERVED_FAILURE were not exported; "
+            "pass --include-observed to export them."
+        )

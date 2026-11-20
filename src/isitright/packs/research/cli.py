@@ -15,7 +15,12 @@ from typing import Annotated, Any
 
 import typer
 
-from isitright.core.evidence import FailOn, policy_triggered
+from isitright.core.evidence import (
+    EvidenceGrade,
+    FailOn,
+    describe_graded_findings,
+    policy_triggered,
+)
 from isitright.core.paths import UnsafePathError, contained_path
 
 research_app = typer.Typer(
@@ -107,6 +112,15 @@ def check_command(
     record_runs: Annotated[
         Path | None, typer.Option(help="Write each baseline run here as a recorded run.")
     ] = None,
+    export_observed: Annotated[
+        bool,
+        typer.Option(
+            "--export-observed",
+            help="Also write an eval case for a finding graded OBSERVED_FAILURE (a failure seen "
+            "on a valid world, no higher failure rate decided). By default only RATE_INCREASE "
+            "findings and those of deterministic subjects get one.",
+        ),
+    ] = False,
     fail_on: Annotated[FailOn, typer.Option()] = FailOn.NONE,
 ) -> None:
     """Audit a research agent on mutated corpora."""
@@ -160,12 +174,22 @@ def check_command(
             case = audit.check(subject)
     except (ExternalError, CorpusError, ResearchInputError, ValueError, OSError) as error:
         raise _fail(f"Input error: {error}") from error
-    written = write_outputs(output, case, audit.artifacts, audit.exports, audit.cannot_judge_rows)
+    written = write_outputs(
+        output,
+        case,
+        audit.artifacts,
+        audit.exports,
+        audit.cannot_judge_rows,
+        include_observed=export_observed,
+    )
     if record_runs is not None:
         record_runs.mkdir(parents=True, exist_ok=True)
         for i, run in enumerate(audit.baseline_runs, start=1):
             write_run(record_runs / f"baseline-{i}.json", run)
     typer.echo(case.headline)
+    for line in describe_graded_findings(case):
+        if line and not line.startswith("#"):
+            typer.echo(line)
     for path in written:
         typer.echo(f"Wrote {path}")
     if policy_triggered(case, fail_on):
@@ -202,6 +226,13 @@ def export_command(
         Path, typer.Argument(exists=True, help="A report.json written by `research check`.")
     ],
     output: Annotated[Path, typer.Option(help="Directory for the eval cases.")],
+    include_observed: Annotated[
+        bool,
+        typer.Option(
+            "--include-observed",
+            help="Also export findings graded OBSERVED_FAILURE (no higher failure rate decided).",
+        ),
+    ] = False,
 ) -> None:
     """Write each finding of a report as a new eval case (corpus, question, expectation)."""
     from isitright.core.replay import load_artifact
@@ -212,10 +243,13 @@ def export_command(
     except (ValueError, OSError) as error:
         raise _fail(f"Input error: {error}") from error
     output.mkdir(parents=True, exist_ok=True)
-    count = 0
+    count = held_back = 0
     for case in loaded.cases:
         for finding in case.findings:
             if not finding.replay.artifact:
+                continue
+            if finding.evidence_grade is EvidenceGrade.OBSERVED_FAILURE and not include_observed:
+                held_back += 1
                 continue
             try:
                 path = contained_path(
@@ -230,3 +264,8 @@ def export_command(
             typer.echo(f"Wrote {target}")
             count += 1
     typer.echo(f"{count} eval case(s) exported.")
+    if held_back:
+        typer.echo(
+            f"{held_back} finding(s) graded OBSERVED_FAILURE were not exported; "
+            "pass --include-observed to export them."
+        )
