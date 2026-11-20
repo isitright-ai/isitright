@@ -231,14 +231,15 @@ class Budget:
         """Whether one more run fits the money, time and run limits.
 
         The attempts limit bounds the search for worlds. It does not stop the runs that follow the
-        search (minimization and confirmation), so it is not part of this check.
+        search (minimization and confirmation), so it is not part of this check. A refusal records
+        the limit that refused it, not an earlier one (an attempts limit that ended the search).
         """
         if self.money is not None and self.spent_money >= self.money:
-            self.exhausted = self.exhausted or "money"
+            self.exhausted = "money"
         elif self.seconds is not None and self.elapsed() >= self.seconds:
-            self.exhausted = self.exhausted or "seconds"
+            self.exhausted = "seconds"
         elif self.runs is not None and self.spent_runs >= self.runs:
-            self.exhausted = self.exhausted or "runs"
+            self.exhausted = "runs"
         else:
             return True
         return False
@@ -314,9 +315,9 @@ class PairedRuns(Generic[R]):
     test: PairedSprt
     world: list[Executed[R]] = field(default_factory=list)
     baseline: list[Executed[R]] = field(default_factory=list)
-    stopped: Literal["decided", "max_pairs", "budget", "unusable"] = "max_pairs"
-    """Why the loop ended: the test decided, the pair limit was reached, the budget was spent,
-    or runs kept failing to form a pair."""
+    stopped: Literal["decided", "max_pairs", "budget", "unpairable"] = "max_pairs"
+    """Why the loop ended: the test decided, the pair limit was reached, the budget was spent, or
+    two attempts in a row to form a pair failed (``unpairable``)."""
 
     @property
     def world_outcomes(self) -> list[RunOutcome]:
@@ -327,7 +328,8 @@ class PairedRuns(Generic[R]):
         return [e.outcome for e in self.baseline]
 
 
-MAX_CONSECUTIVE_UNUSABLE = 2
+MAX_FAILED_PAIRINGS_IN_A_ROW = 2
+"""Consecutive failed attempts to form a pair after which `run_paired` gives a world up."""
 
 
 class SubjectRunner(Generic[T, R]):
@@ -406,7 +408,7 @@ class SubjectRunner(Generic[T, R]):
         """
         test = PairedSprt(config)
         paired: PairedRuns[R] = PairedRuns(test)
-        errored = unjudged = unusable_in_a_row = 0
+        errored = unjudged = failed_in_a_row = 0
 
         def usable(executed: Executed[R]) -> bool:
             nonlocal errored, unjudged
@@ -435,12 +437,12 @@ class SubjectRunner(Generic[T, R]):
                 paired.baseline.append(fresh)
                 ok = usable(fresh)
             if not ok:
-                unusable_in_a_row += 1
-                if unusable_in_a_row >= MAX_CONSECUTIVE_UNUSABLE:
-                    paired.stopped = "unusable"
+                failed_in_a_row += 1
+                if failed_in_a_row >= MAX_FAILED_PAIRINGS_IN_A_ROW:
+                    paired.stopped = "unpairable"
                     break
                 continue
-            unusable_in_a_row = 0
+            failed_in_a_row = 0
             assert fresh is not None
             if test.add(is_bad(fresh.outcome), is_bad(made.outcome)) is not Decision.CONTINUE:
                 paired.stopped = "decided"

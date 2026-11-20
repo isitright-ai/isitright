@@ -12,7 +12,7 @@ pip install 'isitright[data]'
 
 **Frozen.** The code an agent executed in its baseline run is recorded (a *recorded program*) and replayed on many generated worlds. This is cheap: no model is called. A frozen finding is scoped to the program: "this program disagrees with the reference on this world". It says nothing about the agent until a live run confirms it.
 
-**Live.** The frozen replay ranks generated worlds, and the agent itself is run on the ranked worlds under the budgets and stopping rules of `isitright agents run`, and the sequential test pairs each run of a world with a fresh baseline run (up to `--max-trials` pairs, 16 by default; see [live agents](concepts/live-agents.md)). A live result records where a candidate was found (the frozen program) and where it was verified (the agent's own runs). The agent may write different code once it sees different data, so the report counts the runs whose code changed.
+**Live.** The frozen replay ranks generated worlds, and the agent itself is run on the ranked worlds under the budgets and stopping rules of `isitright agents run`, and the sequential test pairs each run of a world with a fresh baseline run (up to `--max-trials` pairs, 20 by default; see [live agents](concepts/live-agents.md)). A live result records where a candidate was found (the frozen program) and where it was verified (the agent's own runs). The agent may write different code once it sees different data, so the report counts the runs whose code changed.
 
 The minimized world of a frozen finding is also run live, so that a counterexample small enough to read is checked against the agent.
 

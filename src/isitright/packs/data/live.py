@@ -71,7 +71,7 @@ from isitright.packs.data.programs import RecordedProgram
 @dataclass
 class LiveConfig:
     baseline_runs: int = 3
-    max_trials: int = 16
+    max_trials: int = 20
     attempts: int = 300
     seed: int = 0
     ranking: Ranking = "diverse"
@@ -297,7 +297,7 @@ def run_live(
         results.append(target)
         paired = runner.run_paired(target, comparison, sprt_config)
         target.sprt = paired.test
-        target.baselines = list(base.outcomes)
+        target.baselines = paired.baseline_outcomes
         stop.record(w, any(is_bad(o) for o in target.outcomes))
     verification = _verify_minimized(audit, runner, base, frozen_world, config)
     return _report(

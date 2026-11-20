@@ -923,7 +923,7 @@ def agents_run_command(
     ] = 30,
     max_trials: Annotated[
         int, typer.Option(min=1, help="Most paired runs the sequential test may use per world.")
-    ] = 16,
+    ] = 20,
     hints: Annotated[
         Path | None,
         typer.Option(

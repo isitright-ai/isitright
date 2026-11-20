@@ -71,13 +71,16 @@ def _power_by_pairs(max_pairs: int, min_pairs: int, seed: int) -> float:
 def test_the_pair_limit_figures_in_the_docs_come_from_this_simulation() -> None:
     assert 0.35 <= _power_by_pairs(10, 3, seed=10) <= 0.43  # "about 40%"
     assert 0.82 <= _power_by_pairs(16, 4, seed=16) <= 0.90  # "about 85%"
+    assert 0.91 <= _power_by_pairs(20, 4, seed=20) <= 0.97  # "about 94%"
+    assert 0.88 <= _power_by_pairs(20, 3, seed=21) <= 0.94  # "about 91%"
 
 
 def test_the_live_agents_page_and_the_changelog_give_the_pair_limit_and_the_reason() -> None:
     page = (ROOT / "docs" / "concepts" / "live-agents.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     section = changelog.split("## 0.9.0")[1].split("## 0.8.1")[0]
-    assert re.search(r"16\s+pairs", page) and "about 85%" in page
+    assert re.search(r"20\s+pairs", page) and "about 94%" in page and "about 91%" in page
     assert "fresh" in page and "baseline run" in page
-    assert re.search(r"16\s+in\s+all\s+three\s+packs", section), "the changelog names 16 pairs"
-    assert "about 40%" in section and "about 85%" in section, "the reason quotes the simulation"
+    assert re.search(r"20\s+in\s+all\s+three\s+packs", section), "the changelog names 20 pairs"
+    for figure in ("about 40%", "about 85%", "about 94%", "about 91%"):
+        assert figure in section, f"the reason quotes the simulation: {figure}"

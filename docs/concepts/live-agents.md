@@ -65,11 +65,13 @@ research packs, and one loop in the core makes the runs (`SubjectRunner` in
 every call from the base seed and the call's index, and records the cost of every run, an errored
 one included.
 
-- **Pair limit:** `--max-trials` pairs per world (agents 16, data 16; research 16 through
-  `AuditConfig.max_pairs`). At the default alpha and alternative a rate claim needs 7 discordant
-  pairs; a rise in failures from 10% to 70% is detected about 85% of the time at 16 pairs (a
-  simulation of the test, repeated through each pack's audit path in the test suite).
-- **Cost:** a pair is two runs, so a world that goes the full 16 pairs costs 32 runs, plus the
+- **Pair limit:** 20 pairs per world in all three packs (`--max-trials` in the agents and data
+  commands; research through `AuditConfig.max_pairs`). At the default alpha and alternative a rate
+  claim needs 7 discordant pairs. A rise in failures from 10% to 70% is detected about 94% of the
+  time with the research and agents minimum of 4 pairs and about 91% with the data minimum of 3
+  (`--baseline-runs`); it is about 85% at 16 pairs and about 40% at 10. These are simulations of
+  the test, repeated through each pack's audit path in the test suite.
+- **Cost:** a pair is two runs, so a world that goes the full 20 pairs costs 40 runs, plus the
   baseline runs made before the search (`--trials`, `--baseline-runs`, research `--runs`). Before
   0.9.0 the research and data packs paired a world only with the baseline runs they had (about
   4 and 3), so a world cost about as many runs as the baseline had; the agents pack reused its
@@ -77,9 +79,20 @@ one included.
   pairs (agents `--trials`, data `--baseline-runs`, research 4), so 8 runs in research by default.
 - **Left out of a pair:** a run that errored or could not be judged forms no pair. The report counts
   them (`excluded_errored`, `excluded_unjudged` in the sequential record), with the world runs and
-  baseline runs that were made. When two runs in a row form no pair, the world is given up, so an
-  agent that fails to complete costs a few runs, not the whole pair limit. The world run is made
-  first and the baseline run only when the world run can form a pair.
+  baseline runs that were made. The world run is made first, and the baseline run only when the
+  world run can form a pair.
+- **Giving a world up:** an attempt to form a pair fails when the world run is unusable, or when it
+  is usable and the baseline run made for it is not. After two failed attempts in a row the world
+  is given up, so an agent that fails to complete costs a few runs, not the whole pair limit. A
+  valid pair resets the count, so isolated failures never end a world (a world run met by an
+  unusable baseline run counts as one failed attempt, however many usable runs came before).
+- **Per finding:** `stability.baseline` counts the baseline runs made for that world's pairs
+  (unusable ones included), `stability.world` the world's own runs, and `stability.sequential`
+  how many of them formed valid pairs. The baseline runs made before the search are reported
+  apart (agents: the `baseline` world; data: `inputs.baseline_runs`; research:
+  `extensions.research.baseline`). A rate claim comes only from the sequential test crossing its
+  upper boundary: a test that ends undecided (pair limit, budget, or failed attempts) gives counts
+  only.
 - Reports from 0.8.0 of the research and data packs: treat a rate claim as unsupported (they paired
   runs against an assumed pass or reused baseline outcomes). 0.8.1 stopped the claims at the number
   of baseline runs; 0.9.0 replaces that with a fresh baseline run per pair.

@@ -40,7 +40,7 @@ from isitright.core.mutations import Candidate, Mutator, World
 from isitright.core.oracles import Outcome, Role, controls_status
 from isitright.core.replay import ReplayArtifact
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
-from isitright.core.sequential import Decision, PairedSprt, SprtConfig
+from isitright.core.sequential import PairedSprt, SprtConfig
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import (
     Budget,
@@ -106,7 +106,7 @@ class AuditConfig:
     runs: int | None = None
     """Runs per world (default 1 for a deterministic subject, 4 for a stochastic one)."""
     sequential: bool = True
-    max_pairs: int = 16
+    max_pairs: int = 20
     minimize: bool = True
     minimized_findings: int = 3
     minimization_max_attempts: int = 300
@@ -164,6 +164,8 @@ class WorldResult:
     runs: list[RecordedRun] = field(default_factory=list)
     judged: list[Judged] = field(default_factory=list)
     outcomes: list[RunOutcome] = field(default_factory=list)
+    paired_baseline: list[RunOutcome] = field(default_factory=list)
+    """Every baseline run made for this world's pairs, unusable ones included."""
     sequential: PairedSprt | None = None
     role: Role = Role.TRAP
     role_basis: str = ""
@@ -487,6 +489,7 @@ class ResearchAudit:
             )
             wr.outcomes = paired.world_outcomes
             wr.sequential = paired.test
+            wr.paired_baseline = paired.baseline_outcomes
         else:
             wr.outcomes = [e.outcome for e in self._runner.run_repeated(placed, k, "search")]
         if not wr.outcomes:
@@ -690,10 +693,9 @@ class ResearchAudit:
             validity=validity_record(shown.validity, shown.unobservable),
             oracles=_oracle_records(worst),
             stability=stability_sequential(
-                baseline_outcomes, original.outcomes, k, original.sequential
+                original.paired_baseline, original.outcomes, k, original.sequential
             )
             if original.sequential is not None
-            and original.sequential.decision is not Decision.CONTINUE
             else stability(baseline_outcomes, original.outcomes, k)
             if subject.stochastic
             else None,

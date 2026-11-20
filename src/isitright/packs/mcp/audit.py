@@ -96,7 +96,7 @@ __all__ = ["AgentsInputError", "RunWorld", "prepare_worlds", "run_scenario", "wr
 
 DEFAULT_MAX_WORLDS = 50
 """A safety rail on generated worlds, not a recommendation: set a money, run or time budget."""
-DEFAULT_MAX_TRIALS = 16
+DEFAULT_MAX_TRIALS = 20
 GENERATION_REPORT_EVERY = 100
 """Candidates visited between two progress reports while the worlds are generated."""
 """The most paired runs the sequential test may use on one world."""
@@ -783,7 +783,7 @@ def build_report(
                 oracles=oracles,
                 stability=(
                     stability_sequential(r.paired_baseline, outcomes, k, r.sequential)
-                    if r.sequential is not None and baseline_outcomes
+                    if r.sequential is not None
                     else stability(baseline_outcomes, outcomes, k)
                 ),
                 world_diff=diff_states(scenario.base, rw.world.state),

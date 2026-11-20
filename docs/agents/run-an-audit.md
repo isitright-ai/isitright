@@ -27,7 +27,7 @@ cost is spent.
 | Spend limits | `--max-money X` (needs agent-reported cost), `--max-runs N`, `--max-seconds S` |
 | Stop on rules | `--stratum-patience N` (default 10) and `--run-patience N` (default 30); `0` turns a rule off |
 | Order worlds | `--ranking diverse` (default), `screening`, `coverage`, `random` |
-| Statistics | `--sequential` (default) with `--max-trials N` (default 16); `--no-sequential` for counts only |
+| Statistics | `--sequential` (default) with `--max-trials N` (default 20); `--no-sequential` for counts only |
 | Shrink findings | `--minimize` (costs runs) |
 | Add [hints](../concepts/hints.md) | `--hints hints.yaml` |
 | Per-run timeout | `--timeout SECONDS` (default 300) |
@@ -68,7 +68,7 @@ directory with the full trace. See [Evidence](../concepts/evidence.md) and the
 
 - Screening costs nothing: it replays the baseline trace on each candidate world without the agent.
 - Every pair of the sequential test is a run of the world and a fresh baseline run, so a world that
-  goes the full `--max-trials` pairs costs twice that many runs (32 at the default 16), and a world
+  goes the full `--max-trials` pairs costs twice that many runs (40 at the default 20), and a world
   with no failure costs `2 x --trials` runs. The baseline runs made before the search (`--trials`)
   are not reused as pairs.
 - `isitright agents order --report report.json --trust-code` re-ranks a finished run's executed

@@ -59,20 +59,22 @@ def _assert_power(detected: int, tests: int) -> None:
 
 
 def test_the_default_pair_limits_leave_room_for_a_rate_increase() -> None:
-    """7 discordant pairs cross the boundary at the default test, and a rise from 10% to 70% is
-    found 80% of the time only from 16 pairs on (the run loop's null and power tests): no pack
-    defaults below that."""
+    """7 discordant pairs cross the boundary at the default test. A rise from 10% to 70% is found
+    about 84% of the time at 16 pairs and about 91% (minimum 3 pairs) to 94% (minimum 4) at 20:
+    all three packs default to 20 pairs."""
     import inspect
 
+    from isitright.cli import agents_run_command
     from isitright.packs.data.cli import audit_command
     from isitright.packs.data.live import LiveConfig
     from isitright.packs.mcp.audit import DEFAULT_MAX_TRIALS
     from isitright.packs.research.audit import AuditConfig
 
-    assert DEFAULT_MAX_TRIALS >= 16
-    assert AuditConfig().max_pairs >= 16
-    assert LiveConfig().max_trials >= 16
-    assert inspect.signature(audit_command).parameters["max_trials"].default >= 16
+    assert DEFAULT_MAX_TRIALS == 20
+    assert AuditConfig().max_pairs == 20
+    assert LiveConfig().max_trials == 20
+    assert inspect.signature(audit_command).parameters["max_trials"].default == 20
+    assert inspect.signature(agents_run_command).parameters["max_trials"].default == 20
 
 
 # -- research ----------------------------------------------------------------------------------
@@ -105,6 +107,27 @@ def _flaky_research_subject(a: Any, base_rate: float, world_rate: float) -> Any:
         return run
 
     return Subject(careful.label, True, execute)
+
+
+def _research_audit_worlds(
+    base_rate: float, world_rate: float, seed: int = 5, **config: Any
+) -> tuple[Any, list[tuple[bool, Any]]]:
+    """One audit through ``check`` with its report and every evaluated world's result."""
+    from .research_fixtures import audit
+
+    a = audit(**{"depth": 1, "runs": 4, "minimize": False, "seed": seed, **config})
+    seen: list[tuple[str, Any]] = []
+    original = a._evaluate_live
+
+    def spy(candidate: Any, *args: Any) -> Any:
+        evaluation = original(candidate, *args)
+        seen.append((candidate.world.fingerprint(), args[-1][candidate.world.fingerprint()]))
+        return evaluation
+
+    a._evaluate_live = spy  # type: ignore[method-assign]
+    report = a.check(_flaky_research_subject(a, base_rate, world_rate))
+    base = a.base.fingerprint()
+    return report, [(fp == base, result) for fp, result in seen]
 
 
 def _research_decisions(
@@ -152,6 +175,103 @@ def test_research_ten_against_seventy_percent_is_found(size: str) -> None:
     decisions = _research_decisions(RESEARCH_AUDITS[size], 0.10, 0.70, seed=2)
     worlds = [d for is_base, d in decisions if not is_base]
     _assert_power(sum(d is Decision.RATE_INCREASE for d in worlds), len(worlds))
+
+
+def test_research_the_careful_stand_in_passes_every_world_and_the_injection_fails_every_run():
+    """The null and power runs assume that, without the injected failure, the oracle passes the
+    stand-in in every world, and that the injection fails a run in every world and in the
+    baseline."""
+    from isitright.core.stochastic import is_bad
+
+    report, worlds = _research_audit_worlds(0.0, 0.0)
+    assert report.findings == [] and len(worlds) >= 10
+    for _, result in worlds:
+        assert result.outcomes and not any(is_bad(o) for o in result.outcomes), result.world
+        assert not any(o.error for o in result.outcomes)
+    report, worlds = _research_audit_worlds(1.0, 1.0)
+    for is_base, result in worlds:
+        runs = result.outcomes[1:] if is_base else result.outcomes  # the first call is never failed
+        assert runs and all(is_bad(o) for o in runs), (is_base, result.world)
+
+
+def _research_subject_with_unusable_baselines(a: Any, unusable: frozenset[int]) -> Any:
+    """The baseline always passes and every mutated world always fails. The fresh baseline runs
+    paired with a mutated world are numbered per world (from 1); those in ``unusable`` end in a
+    subject error."""
+    from isitright.packs.research.agents import STAND_INS
+    from isitright.packs.research.audit import Subject
+    from isitright.packs.research.runs import Citation, Claim
+
+    careful = a.stand_in(STAND_INS["careful"](a.task))
+    base = a.base.fingerprint()
+    state = {"last": None, "numbers": {}}
+
+    def execute(world: Any, seed: int) -> Any:
+        run = careful.execute(world, seed)
+        fingerprint = world.fingerprint()
+        if fingerprint != base:
+            state["last"] = fingerprint
+            ghost = Claim(text="x", citations=[Citation(doc_id="no-such-document", quote="x")])
+            report = run.report.model_copy(
+                update={"claims": [ghost], "answer": run.report.answer or "x"}
+            )
+            return run.model_copy(update={"report": report})
+        last = state["last"]
+        if last is not None:  # a fresh baseline run made for a pair with a mutated world
+            number = state["numbers"][last] = state["numbers"].get(last, 0) + 1
+            if number in unusable:
+                return run.model_copy(update={"status": "SUBJECT_ERROR"})
+        return run
+
+    return Subject(careful.label, True, execute)
+
+
+def test_research_an_incomplete_paired_test_makes_no_rate_claim():
+    """Eight failing runs of a world and eight passing preliminary baseline runs would give a
+    significant fixed-sample McNemar claim by index. But two baseline runs were unusable, so only
+    six pairs exist, the sequential test is undecided when the budget ends, and a rate claim would
+    be a claim the paired test never made."""
+    from isitright.core.oracles import Outcome
+    from isitright.core.sequential import Decision
+    from isitright.core.stochastic import RunOutcome, rate_claim
+
+    premise = rate_claim([RunOutcome(Outcome.MET)] * 8, [RunOutcome(Outcome.NOT_MET)] * 8)
+    assert premise is not None, "the index-based comparison would claim a rate increase"
+
+    from .research_fixtures import audit
+
+    a = audit(depth=1, runs=8, minimize=False, max_runs=32)
+    report = a.check(_research_subject_with_unusable_baselines(a, frozenset({2, 5})))
+    (finding,) = report.findings
+    stability = finding.stability
+    assert stability.rate_claim is None, "an undecided sequential test supports no rate claim"
+    sequential = stability.sequential
+    assert sequential is not None and sequential.decision is Decision.CONTINUE
+    assert sequential.pairs == 6
+    assert (sequential.world_runs, sequential.baseline_runs) == (8, 8)
+    assert (sequential.excluded_errored, sequential.excluded_unjudged) == (2, 0)
+    assert stability.world.n == 8 and stability.world.not_met + stability.world.violated >= 8
+    assert "counts only" in sequential.note or "stopped before a decision" in sequential.note
+
+
+def test_research_a_finding_counts_the_baseline_runs_made_for_its_own_world():
+    from .research_fixtures import audit
+
+    a = audit(depth=1, runs=3, minimize=False)
+    report = a.check(_research_subject_with_unusable_baselines(a, frozenset({2, 5})))
+    findings = [
+        f
+        for f in report.findings
+        if f.stability and f.stability.sequential and f.stability.sequential.baseline_runs >= 5
+    ]
+    assert findings
+    for f in findings:
+        stability = f.stability
+        assert stability.baseline.n == stability.sequential.baseline_runs != 3
+        assert stability.baseline.errors == 2, "this world's two unusable baseline runs, no others"
+        assert stability.sequential.excluded_errored == 2
+        assert stability.sequential.pairs <= stability.baseline.n - 2
+        assert stability.world.n == stability.sequential.world_runs
 
 
 def test_research_never_reuses_a_seed_across_search_minimization_and_confirmation() -> None:
@@ -213,7 +333,13 @@ class _FlakyDataAgent:
     name = "flaky"
     model = "none"
 
-    def __init__(self, rng: random.Random, base_rate: float, world_rate: float) -> None:
+    def __init__(
+        self,
+        rng: random.Random,
+        base_rate: float,
+        world_rate: float,
+        base_errors: frozenset[int] = frozenset(),
+    ) -> None:
         from tests.data_agents import CsvAgent
         from tests.data_factories import ORDERS
 
@@ -222,12 +348,19 @@ class _FlakyDataAgent:
         self.inner = CsvAgent()
         self.orders = ORDERS
         self.calls = 0
+        self.base_calls = 0
+        self.base_errors = base_errors
+        """Numbers (from 1) of the baseline executions that end in an error."""
 
     def solve(self, question: str, directory: Path) -> Any:
         from isitright.packs.data.adapters import AgentRun
 
         self.calls += 1
         on_base = (directory / "orders.csv").read_text(encoding="utf-8") == self.orders
+        if on_base:
+            self.base_calls += 1
+            if self.base_calls in self.base_errors:
+                return AgentRun(code="", answer=None, error="the agent crashed")
         rate = self.rates[0] if on_base else self.rates[1]
         if self.rng.random() < rate:
             return AgentRun(code="# wrong", answer=-1.0, input_tokens=5, output_tokens=5)
@@ -322,6 +455,58 @@ def test_data_runs_the_agent_exactly_as_often_as_the_budget_says(data_audit: Any
     assert agent.calls == budget.spent_runs == 25 and budget.exhausted == "runs"
 
 
+def _data_case(audit: Any, agent: Any, **config: Any) -> Any:
+    from isitright.packs.data.live import LiveConfig, run_live
+
+    settings = {"baseline_runs": 3, "attempts": 40, "max_worlds": 6, "verify_minimized_runs": 0}
+    return run_live(audit, agent, config=LiveConfig(**{**settings, **config}))
+
+
+def test_data_the_correct_agent_passes_and_the_sentinel_fails_in_every_tested_world(
+    data_audit: Any,
+) -> None:
+    """The null and power runs assume this. They also assume that the agent recognizes the
+    baseline by its file: every call it classified as the baseline was a baseline run, so no
+    generated world kept the original file and silently took the baseline's failure rate."""
+    right = _FlakyDataAgent(random.Random(1), 0.0, 0.0)
+    case = _data_case(data_audit, right)
+    runs = [w for w in case.worlds if w.run_status != "NOT_RUN" and w.counts and w.counts["n"]]
+    assert len(runs) >= 3
+    for w in runs:
+        assert w.counts["not_met"] == 0 and w.counts["errors"] == 0, w
+        assert w.counts["met"] + w.counts["cannot_judge"] == w.counts["n"], w
+    wrong = _FlakyDataAgent(random.Random(2), 1.0, 1.0)
+    case = _data_case(data_audit, wrong)
+    runs = [w for w in case.worlds if w.run_status != "NOT_RUN" and w.counts and w.counts["n"]]
+    for w in runs:
+        assert (
+            w.counts["met"] == 0 and w.counts["not_met"] + w.counts["cannot_judge"] == w.counts["n"]
+        )
+    made = case.inputs["baseline_runs"]["n"] + case.inputs["paired_baseline_runs"]["n"]
+    assert wrong.base_calls == made, "every call on the original file was a baseline run"
+
+
+def test_data_a_finding_counts_the_baseline_runs_made_for_its_own_world(data_audit: Any) -> None:
+    agent = _FlakyDataAgent(random.Random(3), 0.0, 1.0, base_errors=frozenset({5, 8}))
+    case = _data_case(data_audit, agent, max_worlds=4)
+    sequential = [
+        f for f in case.findings if f.stability is not None and f.stability.sequential is not None
+    ]
+    assert sequential
+    injected = 0
+    for f in sequential:
+        stability = f.stability
+        record = stability.sequential
+        assert stability.baseline.n == record.baseline_runs
+        assert stability.baseline.n != case.inputs["baseline_runs"]["n"] or record.pairs == 0
+        assert stability.world.n == record.world_runs
+        assert record.pairs <= min(record.world_runs, record.baseline_runs)
+        assert stability.baseline.errors == record.excluded_errored - stability.world.errors
+        injected += stability.baseline.errors
+    assert 1 <= injected <= 2, "the two unusable baseline runs are in the worlds they were made for"
+    assert case.inputs["baseline_runs"]["n"] == 3, "the preliminary baseline is reported apart"
+
+
 def test_data_never_reuses_a_baseline_outcome_across_pairs(data_audit: Any) -> None:
     from isitright.packs.data.live import LiveConfig, run_live
 
@@ -402,8 +587,13 @@ def _fake_agent(
     base_rate: float,
     world_rate: float,
     calls: list[str],
+    base_errors: frozenset[int] = frozenset(),
 ) -> None:
+    """Replace the agent command by a copy of a recorded run. ``base_errors`` numbers (from 1) the
+    baseline executions that end in a subject error."""
     from isitright.packs.mcp import audit as mcp_audit
+
+    baseline_calls = [0]
 
     def fake_run_agent(
         argv: list[str],
@@ -414,8 +604,20 @@ def _fake_agent(
         timeout: float,
     ) -> tuple[str, int]:
         calls.append(world_id)
+        if world_id == "baseline":
+            baseline_calls[0] += 1
+            if baseline_calls[0] in base_errors:
+                return "SUBJECT_ERROR", 1
         rate = base_rate if world_id == "baseline" else world_rate
-        source = artifacts["runs"]["bad" if rng.random() < rate else "good"][world_id]
+        kind = "bad" if rng.random() < rate else "good"
+        source = artifacts["runs"][kind][world_id]
+        required = ["state_before.json", "state_after.json"]
+        if kind == "good":
+            required.append(
+                "trace.jsonl"
+            )  # the reference procedure calls tools; a refusal does not
+        for name in required:
+            assert (source / name).is_file(), f"the recorded {kind} run of {world_id} lacks {name}"
         for name in ("state_before.json", "state_after.json", "trace.jsonl"):
             if (source / name).is_file():
                 shutil.copy(source / name, run_dir / name)
@@ -433,12 +635,11 @@ def _agents_audit(tmp_path: Path, artifacts: dict[str, Any], n: int, **extra: An
         scenario_ref=SHOP_REF,
         agent_command="fake",
         output_dir=tmp_path / f"out{n}",
-        k=4,
         only=[artifacts["world"]],
         attempts=2000,
         trust_code=True,
         minimize=False,
-        **extra,
+        **{"k": 4, **extra},
     )
 
 
@@ -503,6 +704,57 @@ def test_agents_executes_exactly_the_runs_it_reports_and_no_more_than_the_limit(
     listed = len(report.cases[0].extensions["mcp"]["runs"])
     assert len(calls) == budget.spent_runs == listed
     assert len(calls) <= limit
+
+
+def test_agents_the_recorded_runs_give_the_outcome_matrix_the_tests_rely_on(
+    shop_artifacts: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """good (reference procedure): MET on the baseline and on the control world; bad (refusal):
+    NOT_MET on both. The fake copies real shop runs; it does not make up verdicts."""
+    for n, (rate, expected) in enumerate([(0.0, "MET"), (1.0, "NOT_MET")]):
+        _fake_agent(monkeypatch, shop_artifacts, random.Random(n), rate, rate, [])
+        report = _agents_audit(tmp_path, shop_artifacts, n, sequential=False, k=2)
+        runs = report.cases[0].extensions["mcp"]["runs"]
+        assert {r["world_id"] for r in runs} == {"baseline", shop_artifacts["world"]}
+        assert all(r["outcome"] == expected for r in runs), [
+            (r["world_id"], r["outcome"]) for r in runs
+        ]
+
+
+def test_agents_the_fake_refuses_a_recorded_run_that_lacks_a_file(
+    shop_artifacts: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = tmp_path / "broken"
+    shutil.copytree(shop_artifacts["runs"]["good"]["baseline"], broken)
+    (broken / "trace.jsonl").unlink()
+    artifacts = {
+        **shop_artifacts,
+        "runs": {
+            **shop_artifacts["runs"],
+            "good": {**shop_artifacts["runs"]["good"], "baseline": broken},
+        },
+    }
+    _fake_agent(monkeypatch, artifacts, random.Random(1), 0.0, 0.0, [])
+    with pytest.raises(AssertionError, match=r"lacks trace\.jsonl"):
+        _agents_audit(tmp_path, artifacts, 0, sequential=False, k=1)
+
+
+def test_agents_a_finding_counts_the_baseline_runs_made_for_its_own_world(
+    shop_artifacts: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_agent(
+        monkeypatch, shop_artifacts, random.Random(4), 0.0, 1.0, [], base_errors=frozenset({6, 9})
+    )
+    report = _agents_audit(tmp_path, shop_artifacts, 0)
+    (finding,) = [f for f in report.cases[0].findings if f.stability]
+    stability = finding.stability
+    record = stability.sequential
+    assert stability.baseline.n == record.baseline_runs != 4, "not the 4 preliminary runs"
+    assert stability.baseline.errors == record.excluded_errored == 2
+    assert stability.world.n == record.world_runs
+    assert record.pairs == record.baseline_runs - 2
+    baseline_world = next(w for w in report.cases[0].worlds if w.id == "baseline")
+    assert baseline_world.counts["n"] == 4, "the preliminary baseline is reported apart"
 
 
 def test_agents_runs_carry_distinct_seeds(

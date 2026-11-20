@@ -28,13 +28,16 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   the world is given up, so an agent that never completes costs a few runs.
 - **Cost.** A sequential test now costs two runs per pair. A world with no failure costs
   `2 x minimum pairs` runs (agents: `2 x --trials`, research: 8, data: `2 x --baseline-runs`); a
-  world that runs to the limit costs 32 runs at the default 16 pairs. The baseline runs made before
-  the search are no longer part of the pairs. Default pair limits are 16 in all three packs: the
-  data pack's `--max-trials` (and `LiveConfig.max_trials`) rises from 10 to 16, because at 10 pairs
-  a rise from 10% to 70% was found in about 40% of simulated tests, at 16 in about 85%.
+  world that runs to the limit costs 40 runs at the default 20 pairs. The baseline runs made before
+  the search are no longer part of the pairs. The pair limit is 20 in all three packs: the data
+  pack's `--max-trials` (and `LiveConfig.max_trials`) rises from 10, and research
+  (`AuditConfig.max_pairs`) and agents (`--max-trials`) from 16. In a simulation of a rise from
+  10% to 70%, 10 pairs found it in about 40% of tests and 16 in about 85%; 20 pairs find it in
+  about 94% of tests with a minimum of 4 pairs (research, agents) and about 91% with 3 (data).
+  The minimum pair counts are unchanged.
 - **Research:** a budget that allows no run at all (`--max-runs 0`) is refused with an input error
   instead of making one baseline run past the budget. The research pack's pair limit is
-  `AuditConfig.max_pairs` (default 16, as before); the baseline run count (`runs`) no longer caps it.
+  `AuditConfig.max_pairs` (default 20); the baseline run count (`runs`) no longer caps it.
 - **Data:** the report's `inputs.baseline_runs` still counts the runs made before the search; the
   fresh runs made for the pairs are in `inputs.paired_baseline_runs`.
 - **Agents:** each run in `extensions.mcp.runs` carries its `seed`. The seed is derived and
@@ -42,6 +45,16 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
 - **Report schema 0.9.** `stability.sequential` gains `world_runs`, `baseline_runs`,
   `excluded_errored` and `excluded_unjudged` (default 0). Reports in schema 0.4 to 0.8 still load,
   and `replay` and `export` read them.
+- **Per finding.** `stability.baseline` counts the baseline runs made for that world's pairs
+  (unusable ones included), in all three packs; the runs made before the search are reported
+  apart. A research finding whose paired test ended undecided (budget spent or failed pairing
+  attempts) no longer falls back to the fixed-sample comparison by run index, which could give a
+  rate claim the sequential test never made: it gives counts only.
+- **Giving a world up.** After two failed attempts in a row to form a pair (a world run that was
+  unusable, or a usable one whose baseline run was not), the world's test ends with counts only;
+  a valid pair resets the count.
+- **Budget stop reason.** A run refused after the search reports the limit that refused it (runs,
+  money or time), not an earlier attempts limit.
 - **Tests.** Seeded null simulations through each pack's audit path (equal failure rates of 30%
   and 50%: at most 5% of worlds get a rate increase, plus three standard errors) and power runs
   (10% against 70%: at least 80%, minus three standard errors). The default suite runs a small
