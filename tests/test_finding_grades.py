@@ -719,3 +719,40 @@ def test_a_report_cannot_call_an_observation_a_counterexample(
     decided = {**data, "findings": [{**data["findings"][0], "evidence_grade": "RATE_INCREASE"}]}
     with pytest.raises(ValidationError, match="status"):
         CaseReport.model_validate(decided)
+
+
+def test_multiplicity_counts_only_worlds_with_a_judged_run() -> None:
+    from isitright.core.oracles import Outcome
+    from isitright.core.stochastic import EvidenceGrade, RunOutcome, multiplicity_of
+
+    ok, bad = RunOutcome(Outcome.MET), RunOutcome(Outcome.NOT_MET)
+    errored, unjudged = RunOutcome(None, error=True), RunOutcome(Outcome.CANNOT_JUDGE)
+    m = multiplicity_of(
+        [
+            ([ok, ok], None),
+            ([ok, bad], EvidenceGrade.OBSERVED_FAILURE),
+            ([bad, bad], EvidenceGrade.RATE_INCREASE),
+            ([errored, errored], None),
+            ([unjudged], None),
+        ],
+        [ok, ok, ok, ok],
+    )
+    assert m.worlds_tested == 3
+    assert (m.worlds_with_observed_failure, m.worlds_with_rate_increase) == (2, 1)
+    assert m.expected_rate_increase_claims_under_no_effect == pytest.approx(0.15)
+    assert m.expected_worlds_with_observed_failure_under_no_effect == 0.0  # baseline never failed
+    assert m.decisions_corrected is False
+
+
+def test_research_without_the_sequential_test_makes_no_rate_claim() -> None:
+    """Eight failing runs of a world against eight passing baseline runs would give a fixed-sample
+    comparison by run index a rate claim; no pairs were made, so none is made."""
+    from .research_fixtures import audit
+
+    a = audit(depth=1, runs=8, minimize=False, seed=11, max_runs=200, sequential=False)
+    case = a.check(_research_subject(a, frozenset(), True))
+    assert case.findings
+    for finding in case.findings:
+        assert finding.evidence_grade.value == "OBSERVED_FAILURE"
+        assert finding.stability.rate_claim is None and "no rate claim" in finding.stability.note
+    assert case.divergence_status.value == "OBSERVED_FAILURE"
