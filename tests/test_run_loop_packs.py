@@ -383,7 +383,7 @@ def data_audit(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Any]:
 
 
 def _data_decisions(
-    audit: Any, audits: int, base_rate: float, world_rate: float, seed: int, max_trials: int = 16
+    audit: Any, audits: int, base_rate: float, world_rate: float, seed: int, max_trials: int = 20
 ) -> tuple[list[Decision], int]:
     from isitright.packs.data.live import LiveConfig, run_live
 

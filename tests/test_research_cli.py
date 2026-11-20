@@ -232,5 +232,5 @@ def test_the_server_serves_two_tools_and_refuses_the_rest(tmp_path: Path) -> Non
 
 def test_config_defaults_are_the_documented_ones() -> None:
     c = AuditConfig()
-    assert (c.attempts, c.depth, c.sequential, c.max_pairs) == (500, 2, True, 16)
+    assert (c.attempts, c.depth, c.sequential, c.max_pairs) == (500, 2, True, 20)
     assert isinstance(ResearchAudit(corpus(), task(), c).task, ResearchTask)
