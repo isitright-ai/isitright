@@ -174,8 +174,8 @@ several documents counts once; it sees no authority because `open` does not show
 tool call).
 
 Live agents get repeated runs, counts, a baseline repeated `k` times (flakiness is reported first),
-the paired sequential test (each world is paired only with baseline runs that were made, so at the
-default 4 runs no rate claim is reachable; see [live agents](../concepts/live-agents.md)),
+the paired sequential test (each pair is a run of the world and a fresh baseline run, up to 20
+pairs per world; see [live agents](../concepts/live-agents.md)),
 noise-tolerant minimization of the mutation path,
 and budgets in runs, wall time and money (money is refused for an agent that reports no cost).
 `--seconds` is a cooperative budget checked between worlds, not a hard timeout on one run; use

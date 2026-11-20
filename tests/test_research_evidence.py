@@ -102,7 +102,9 @@ def test_a_stochastic_agent_gets_counts_and_a_sequential_test() -> None:
     assert plant, "a half-credulous agent follows the planted summary in some runs"
     stab = plant[0].stability
     assert stab is not None and stab.world.n >= 1 and stab.world.not_met >= 1
-    assert stab.baseline is not None and stab.baseline.n == 4
+    # the baseline counts are the fresh baseline runs made for this world's pairs
+    assert stab.sequential is not None and stab.baseline is not None
+    assert stab.baseline.n == stab.sequential.baseline_runs
     # an observed failure is not a rate claim: a claim needs the sequential test to cross a boundary
     assert stab.rate_claim is None or stab.sequential is not None
     assert plant[0].minimization["mode"] == "mutation path, noise tolerant"

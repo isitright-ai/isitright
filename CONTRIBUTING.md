@@ -16,7 +16,9 @@ uv build
 ```
 
 Tests must run offline after dependencies are installed and must not require API
-keys. Add a regression test for every bug fix. Changes to report models require
+keys. The sequential tests of the agents, data and research packs have a small seeded run in
+the default suite and a full-size run behind a marker: `uv run pytest -m statistical
+tests/test_run_loop_packs.py` (several minutes). Add a regression test for every bug fix. Changes to report models require
 running `uv run python tools/export_schemas.py` and committing the updated files in
 `schemas/`.
 

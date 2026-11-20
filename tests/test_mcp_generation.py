@@ -241,20 +241,21 @@ def test_flaky_agent_run_counts_no_rate_claim_and_a_money_budget(
         worlds="fixed",
         only=["booked_24h_01m", "booked_23h_59m"],
         k=4,
-        budget=Budget(money=0.85),
+        budget=Budget(money=1.25),
         trust_code=True,
         timeout_seconds=120,
     )
     case = report.cases[0]
     runs = case.extensions["mcp"]["runs"]
-    # A money budget of 0.85 stops the search after 9 runs of 0.1 (0.9 spent): the baseline
-    # gets all 4 runs, the next world 4, the last world only 1.
-    assert len(runs) == 9
+    # A money budget of 1.25 stops the search after 13 runs of 0.1 (1.3 spent): the baseline
+    # gets all 4 runs, the next world 4 pairs (8 runs: each pair has a fresh baseline run), the
+    # last world only 1.
+    assert len(runs) == 13
     per_world = {w.id: w.counts["n"] for w in case.worlds}
     assert per_world["baseline"] == 4 and per_world["booked_24h_01m"] == 4
     assert per_world["booked_23h_59m"] == 1
     assert case.search.budget["runs"]["stopped_by"] == "money"
-    assert case.search.budget["runs"]["spent"]["money"] == pytest.approx(0.9)
+    assert case.search.budget["runs"]["spent"]["money"] == pytest.approx(1.3)
     # The baseline is itself flaky: careful on odd trials, careless on even trials.
     assert case.stability is not None and case.stability.baseline is not None
     assert case.stability.baseline.met == 2 and case.stability.baseline.not_met == 2

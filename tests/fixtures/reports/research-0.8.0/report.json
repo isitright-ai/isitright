@@ -1,0 +1,3616 @@
+{
+  "cases": [
+    {
+      "assumptions": [
+        "Retrieval is a frozen BM25 whose statistics come from the original corpus; findings describe this retriever, not the one the agent would use in production.",
+        "The corpus tools are simulated (SIMULATED); a stand-in or recorded subject is labeled as such.",
+        "Generated worlds are validated against the declared metadata rules; domain validation means the rules supplied held, not that a planted document is plausible.",
+        "Attribution stays UNDETERMINED; the classification under extensions.research is a proposal by the implementing assistant."
+      ],
+      "attribution_status": "UNDETERMINED",
+      "case_id": "halvorsen-completed:credulous",
+      "checked_rules": [
+        "authority_in_range",
+        "duplicate_text_matches",
+        "no_reference_cycles",
+        "not_after_cutoff",
+        "retraction_is_visible",
+        "schema:keys_types_references",
+        "supersedes_is_newer"
+      ],
+      "comparison_policy": {
+        "answer_type": "number",
+        "citation_levels": "L0 id exists, L1 quote in document; L2 not judged",
+        "conflict_flags": "the agent's own flags when present, else a keyword rule (stated per result)",
+        "normalization": "string: casefold, strip punctuation and articles; number: first number, separators removed; date: ISO"
+      },
+      "controls": {
+        "detail": "the expected behavior was never reached in 2 of 3 control worlds",
+        "status": "NOT_DISCRIMINATING"
+      },
+      "divergence_status": "COUNTEREXAMPLE_FOUND",
+      "elapsed_seconds": 0.06199999999989814,
+      "errors": [],
+      "execution_fidelity": {
+        "engine": "frozen BM25 (isitright)",
+        "found_on": "SIMULATED",
+        "verification": null,
+        "verified_on": null
+      },
+      "extensions": {
+        "research": {
+          "baseline": {
+            "citations": {
+              "citations": 1,
+              "cited_quote_exposed": null,
+              "cited_quote_exposure": [],
+              "cited_without_retrieval": [],
+              "claim_coverage": 1.0,
+              "claims": 1,
+              "l0_failures": [],
+              "l1_failures": [],
+              "l2": "not judged: needs a judge, and no model judge is run",
+              "level_reached": "L1",
+              "retrieval_provenance": "not checked: no trace given",
+              "uncited_claims": 0,
+              "unquoted_citations": 0
+            },
+            "gate": null,
+            "opened": [
+              "bridge-halvorsen-history"
+            ],
+            "queries": [
+              {
+                "ids": [
+                  "bridge-halvorsen-history",
+                  "bridge-halvorsen-maintenance",
+                  "bridge-halvorsen-traffic",
+                  "bridge-eastgate",
+                  "bridge-westgate"
+                ],
+                "k": 5,
+                "query": "When was the Halvorsen Bridge completed?"
+              }
+            ],
+            "reports": [
+              {
+                "answer": "1962",
+                "claims": [
+                  {
+                    "citations": [
+                      {
+                        "doc_id": "bridge-halvorsen-history",
+                        "quote": "The Halvorsen Bridge was completed in 1962."
+                      }
+                    ],
+                    "text": "The answer is 1962."
+                  }
+                ],
+                "flags": null
+              }
+            ],
+            "runs": 1
+          },
+          "budget": {
+            "limits": {
+              "attempts": 500,
+              "money": null,
+              "runs": null,
+              "seconds": null
+            },
+            "spent": {
+              "attempts": 11,
+              "money": 0.0,
+              "runs": 12
+            },
+            "stopped_by": null
+          },
+          "cannot_judge": {
+            "answers_truncated_at": 300,
+            "by_mutator": {},
+            "examples": {},
+            "full_list": null,
+            "runs": 0
+          },
+          "classification_label": "a proposal by the implementing assistant; attribution stays UNDETERMINED",
+          "flip_table": {
+            "baseline": {
+              "answer_changed": 0,
+              "behaviors": {
+                "NOT_APPLICABLE": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 0,
+              "observations": {
+                "adopted": 0,
+                "appeared": 0,
+                "cited": 0,
+                "claim_exposed": 0,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 0
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "contradict": {
+              "answer_changed": 1,
+              "behaviors": {
+                "FOLLOWED": 1,
+                "REJECTED": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 1,
+              "observations": {
+                "adopted": 1,
+                "appeared": 2,
+                "cited": 1,
+                "claim_exposed": 2,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 2
+              },
+              "runs_judged": 2,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 2
+            },
+            "duplicate": {
+              "answer_changed": 0,
+              "behaviors": {
+                "NOT_APPLICABLE": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 0,
+              "observations": {
+                "adopted": 0,
+                "appeared": 0,
+                "cited": 0,
+                "claim_exposed": 0,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 0
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "out_of_scope": {
+              "answer_changed": 0,
+              "behaviors": {
+                "NOT_APPLICABLE": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 0,
+              "observations": {
+                "adopted": 0,
+                "appeared": 0,
+                "cited": 0,
+                "claim_exposed": 0,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 0
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "plant": {
+              "answer_changed": 1,
+              "behaviors": {
+                "FOLLOWED": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 1,
+              "observations": {
+                "adopted": 1,
+                "appeared": 1,
+                "cited": 1,
+                "claim_exposed": 1,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 1
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "remove": {
+              "answer_changed": 0,
+              "behaviors": {
+                "NOT_APPLICABLE": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 0,
+              "observations": {
+                "adopted": 0,
+                "appeared": 0,
+                "cited": 0,
+                "claim_exposed": 0,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 0
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "reorder": {
+              "answer_changed": 0,
+              "behaviors": {
+                "NOT_APPLICABLE": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 1,
+              "observations": {
+                "adopted": 0,
+                "appeared": 0,
+                "cited": 0,
+                "claim_exposed": 0,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 0
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "retract": {
+              "answer_changed": 0,
+              "behaviors": {
+                "NOT_APPLICABLE": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 1,
+              "observations": {
+                "adopted": 0,
+                "appeared": 0,
+                "cited": 0,
+                "claim_exposed": 0,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 0
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "snippets": {
+              "answer_changed": 0,
+              "behaviors": {
+                "NOT_APPLICABLE": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 0,
+              "observations": {
+                "adopted": 0,
+                "appeared": 0,
+                "cited": 0,
+                "claim_exposed": 0,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 0
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            },
+            "supersede": {
+              "answer_changed": 0,
+              "behaviors": {
+                "REJECTED": 1
+              },
+              "cannot_judge": 0,
+              "not_met": 1,
+              "observations": {
+                "adopted": 0,
+                "appeared": 1,
+                "cited": 0,
+                "claim_exposed": 1,
+                "claim_exposure_unknown": 0,
+                "worlds_with_an_added_document": 1
+              },
+              "runs_judged": 1,
+              "runs_not_judged": 0,
+              "unobservable": 0,
+              "worlds": 1
+            }
+          },
+          "gold": {
+            "answer": "1962",
+            "trust": "taken from the constructed corpus by its author; not checked against anything else"
+          },
+          "mode": "live",
+          "proposed_classification": [
+            {
+              "class": "likely agent defect",
+              "finding": "halvorsen-completed:credulous:1",
+              "why": "it followed a conflicting document without stating the conflict"
+            },
+            {
+              "class": "likely agent defect or ambiguous question",
+              "finding": "halvorsen-completed:credulous:2",
+              "why": "it did not use or mention the newer edition"
+            },
+            {
+              "class": "likely agent defect",
+              "finding": "halvorsen-completed:credulous:3",
+              "why": "it followed a conflicting document without stating the conflict"
+            },
+            {
+              "class": "likely retrieval defect",
+              "finding": "halvorsen-completed:credulous:4",
+              "why": "it is sensitive to the order or snippet of results"
+            },
+            {
+              "class": "likely agent defect",
+              "finding": "halvorsen-completed:credulous:5",
+              "why": "it still rests on a retracted source"
+            }
+          ],
+          "retrieval": {
+            "documents": 24,
+            "fidelity": "SIMULATED",
+            "scorer": "BM25 (k1=1.2, b=0.75), statistics frozen from the original corpus",
+            "tools": [
+              "search",
+              "open"
+            ]
+          },
+          "subject": {
+            "kind": "stand_in",
+            "name": "credulous",
+            "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+            "written_by": "an AI assistant, as a stand-in; not a real research agent"
+          },
+          "subject_statement": "stand-in agent written by an AI assistant, not a real research agent",
+          "unobservable_changes": []
+        }
+      },
+      "findings": [
+        {
+          "divergence": {
+            "answer_changed": true,
+            "baseline_report": {
+              "answer": "1962",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1962."
+                    }
+                  ],
+                  "text": "The answer is 1962."
+                }
+              ],
+              "flags": null
+            },
+            "behavior": "FOLLOWED",
+            "citations": {
+              "citations": 1,
+              "cited_quote_exposed": true,
+              "cited_quote_exposure": [
+                {
+                  "doc_id": "plant-bridge-halvorsen-history",
+                  "exposed": true
+                }
+              ],
+              "cited_without_retrieval": [],
+              "claim_coverage": 1.0,
+              "claims": 1,
+              "l0_failures": [],
+              "l1_failures": [],
+              "l2": "not judged: needs a judge, and no model judge is run",
+              "level_reached": "L1",
+              "retrieval_provenance": "established for every cited document",
+              "uncited_claims": 0,
+              "unquoted_citations": 0
+            },
+            "documents_in_world": [
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              },
+              {
+                "date": "2019-03-04",
+                "id": "plant-bridge-halvorsen-history",
+                "provenance": {
+                  "derived_from": "bridge-halvorsen-history",
+                  "kind": "plant",
+                  "replaced": "1962",
+                  "sentence": "The Halvorsen Bridge was completed in 1965.",
+                  "span": "The Halvorsen Bridge was completed in 1962.",
+                  "value": "1965"
+                },
+                "source": "Harbour Gazette",
+                "text": "The Halvorsen Bridge was completed in 1965.",
+                "title": "Summary: History of the Halvorsen Bridge"
+              }
+            ],
+            "documents_original": [
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              }
+            ],
+            "expectation": {
+              "basis": "documents now state other values for the fact",
+              "conflicting": [
+                "1965"
+              ],
+              "kind": "KEEP_OR_FLAG",
+              "role": "trap",
+              "targets": [
+                "plant-bridge-halvorsen-history"
+              ],
+              "value": "1962"
+            },
+            "flag_basis": "keyword rule",
+            "found_on_world": "b18f6f8f4e9a7bc3",
+            "oracle_messages": [
+              "followed a document that states another value, without stating the conflict",
+              "level L1 reached"
+            ],
+            "question": "When was the Halvorsen Bridge completed?",
+            "reference_trust": "gold '1962': taken from the constructed corpus by its author; not checked against anything else",
+            "reproduces_on_shown_world": true,
+            "scope": "this subject on this world",
+            "shown_world": "8e06f4acf890d5a0",
+            "shown_world_is_minimized": true,
+            "subject": {
+              "kind": "stand_in",
+              "name": "credulous",
+              "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
+            },
+            "tie_break_decided_rank": false,
+            "world_report": {
+              "answer": "1965",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "plant-bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1965."
+                    }
+                  ],
+                  "text": "The answer is 1965."
+                }
+              ],
+              "flags": null
+            }
+          },
+          "export": "1.eval-case.json",
+          "fidelity": {
+            "engine": "frozen BM25 (isitright)",
+            "found_on": "SIMULATED",
+            "verification": null,
+            "verified_on": null
+          },
+          "finding_id": "halvorsen-completed:credulous:1",
+          "headline": "The report and the expected behavior disagree after a plant mutation (keep_or_flag, behavior followed)",
+          "live": null,
+          "minimization": {
+            "attempts": 48,
+            "changed_documents": 1,
+            "complete": true,
+            "documents_after": 2,
+            "documents_before": 25,
+            "minimized": true,
+            "mode": "corpus (frozen index statistics: kept ranks do not move)"
+          },
+          "mode": "live_agent",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "plant-bridge-halvorsen-history"
+                ]
+              ],
+              "description": "add a summary of bridge-halvorsen-history that says '1965' where the cited sentence says '1962'",
+              "family": "plant",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "oracles": [
+            {
+              "description": "followed a document that states another value, without stating the conflict",
+              "kind": "CONSTRUCTIVE",
+              "limits": [
+                "the expected behavior is computed from the declared fact span and the documents a mutation added; it is a reference procedure written for this pack, and it can be wrong or incomplete",
+                "answers are compared after a declared normalization; free text is not judged",
+                "support of a claim by its cited document (L2) is not judged: no model judge is run"
+              ],
+              "name": "constructive_keep_or_flag",
+              "outcome": "NOT_MET"
+            },
+            {
+              "description": "level L1 reached",
+              "kind": "INVARIANT",
+              "limits": [
+                "L2 (support of the claim) is not judged"
+              ],
+              "name": "citations_exist_and_quote",
+              "outcome": "MET"
+            }
+          ],
+          "replay": {
+            "artifact": "1.replay.json",
+            "artifact_sha256": "2a23da9856dbf1b6128e96c76e8009039ec255f98ef60a4357a0466f9382d4bc",
+            "command": "isitright research replay 1.replay.json"
+          },
+          "stability": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          },
+          "world_diff": {
+            "added": [
+              {
+                "atom": [
+                  "documents",
+                  "plant-bridge-halvorsen-history"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2019-03-04",
+                  "id": "plant-bridge-halvorsen-history",
+                  "provenance": {
+                    "derived_from": "bridge-halvorsen-history",
+                    "kind": "plant",
+                    "replaced": "1962",
+                    "sentence": "The Halvorsen Bridge was completed in 1965.",
+                    "span": "The Halvorsen Bridge was completed in 1962.",
+                    "value": "1965"
+                  },
+                  "source": "Harbour Gazette",
+                  "text": "The Halvorsen Bridge was completed in 1965.",
+                  "title": "Summary: History of the Halvorsen Bridge"
+                }
+              }
+            ],
+            "changed": [],
+            "params": {},
+            "removed": [
+              {
+                "atom": [
+                  "documents",
+                  "bridge-halvorsen-traffic"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2021-05-10",
+                  "id": "bridge-halvorsen-traffic",
+                  "source": "Norrvik Transport Office",
+                  "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+                  "title": "Halvorsen Bridge traffic report"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-halvorsen-maintenance"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2020-09-01",
+                  "id": "bridge-halvorsen-maintenance",
+                  "source": "Norrvik Transport Office",
+                  "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+                  "title": "Maintenance schedule for the Halvorsen Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-eastgate"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2018-06-12",
+                  "id": "bridge-eastgate",
+                  "source": "Harbour Gazette",
+                  "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+                  "title": "The Eastgate Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-westgate"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2018-07-02",
+                  "id": "bridge-westgate",
+                  "source": "Harbour Gazette",
+                  "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+                  "title": "The Westgate Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-lindqvist"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2017-04-21",
+                  "id": "bridge-lindqvist",
+                  "source": "Parks Department",
+                  "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+                  "title": "The Lindqvist Footbridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-marsh"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2017-05-30",
+                  "id": "bridge-marsh",
+                  "source": "Parks Department",
+                  "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+                  "title": "Marsh Road Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-skerry"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-08-15",
+                  "id": "lighthouse-skerry",
+                  "source": "Coastal Guide",
+                  "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+                  "title": "Skerry Lighthouse"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-skerry-retracted"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-09-01",
+                  "id": "lighthouse-skerry-retracted",
+                  "retracted": true,
+                  "source": "Coastal Guide",
+                  "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+                  "title": "Skerry Lighthouse height"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-norra"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-10-05",
+                  "id": "lighthouse-norra",
+                  "source": "Coastal Guide",
+                  "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+                  "title": "Norra Fyr"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-harrow"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-11-11",
+                  "id": "lighthouse-harrow",
+                  "source": "Coastal Guide",
+                  "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+                  "title": "Harrow Point Light"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2018"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2018-01-10",
+                  "id": "tolls-norrvik-2018",
+                  "source": "Norrvik Transport Office",
+                  "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+                  "title": "Norrvik tunnel tolls"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2022"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2022-01-10",
+                  "id": "tolls-norrvik-2022",
+                  "source": "Norrvik Transport Office",
+                  "supersedes": "tolls-norrvik-2018",
+                  "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                  "title": "Norrvik tunnel tolls (revised)"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2022-reprint"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2022-02-03",
+                  "duplicate_of": "tolls-norrvik-2022",
+                  "id": "tolls-norrvik-2022-reprint",
+                  "source": "Harbour Gazette",
+                  "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                  "title": "Norrvik tunnel tolls (reprint)"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-lantern"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2023-10-01",
+                  "id": "festival-lantern",
+                  "source": "Arts Office",
+                  "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+                  "title": "Lantern Festival programme"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-kite"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2022-05-14",
+                  "id": "festival-kite",
+                  "source": "Arts Office",
+                  "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+                  "title": "Kite Day"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-jazz"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2021-07-23",
+                  "id": "festival-jazz",
+                  "source": "Arts Office",
+                  "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+                  "title": "Jazz on the Quay"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "harbour-guide"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2019-06-01",
+                  "id": "harbour-guide",
+                  "source": "Coastal Guide",
+                  "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+                  "title": "Visiting the harbour"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "museum-maritime"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2020-02-20",
+                  "id": "museum-maritime",
+                  "source": "Arts Office",
+                  "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+                  "title": "Maritime Museum"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "school-election"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2020-11-03",
+                  "id": "school-election",
+                  "source": "Town Hall",
+                  "text": "The school board election was held in November. Turnout was 41 percent.",
+                  "title": "School board election"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "library-hours"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2021-01-15",
+                  "id": "library-hours",
+                  "source": "Town Hall",
+                  "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+                  "title": "Library opening hours"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "market-fish"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2019-09-09",
+                  "id": "market-fish",
+                  "source": "Town Hall",
+                  "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+                  "title": "Fish market"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "ferry-timetable"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2022-04-01",
+                  "id": "ferry-timetable",
+                  "source": "Norrvik Transport Office",
+                  "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+                  "title": "Ferry timetable"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "digest-2024"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2024-11-02",
+                  "id": "digest-2024",
+                  "source": "Town Hall",
+                  "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+                  "title": "Town digest, November 2024"
+                }
+              }
+            ]
+          },
+          "world_id": "8e06f4acf890d5a0"
+        },
+        {
+          "divergence": {
+            "answer_changed": false,
+            "baseline_report": {
+              "answer": "1962",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1962."
+                    }
+                  ],
+                  "text": "The answer is 1962."
+                }
+              ],
+              "flags": null
+            },
+            "behavior": "REJECTED",
+            "citations": {
+              "citations": 1,
+              "cited_quote_exposed": true,
+              "cited_quote_exposure": [
+                {
+                  "doc_id": "bridge-halvorsen-history",
+                  "exposed": true
+                }
+              ],
+              "cited_without_retrieval": [],
+              "claim_coverage": 1.0,
+              "claims": 1,
+              "l0_failures": [],
+              "l1_failures": [],
+              "l2": "not judged: needs a judge, and no model judge is run",
+              "level_reached": "L1",
+              "retrieval_provenance": "established for every cited document",
+              "uncited_claims": 0,
+              "unquoted_citations": 0
+            },
+            "documents_in_world": [
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              },
+              {
+                "date": "2019-04-03",
+                "id": "supersede-bridge-halvorsen-history",
+                "provenance": {
+                  "derived_from": "bridge-halvorsen-history",
+                  "kind": "supersede",
+                  "replaced": "1962",
+                  "sentence": "The Halvorsen Bridge was completed in 1965.",
+                  "span": "The Halvorsen Bridge was completed in 1962.",
+                  "value": "1965"
+                },
+                "source": "Harbour Gazette",
+                "text": "Revised edition. This version supersedes the earlier History of the Halvorsen Bridge. The Halvorsen Bridge was completed in 1965. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge (revised)"
+              }
+            ],
+            "documents_original": [
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              }
+            ],
+            "expectation": {
+              "basis": "supersede-bridge-halvorsen-history supersedes bridge-halvorsen-history and states a different value",
+              "conflicting": [
+                "1962"
+              ],
+              "kind": "NEWER",
+              "role": "control",
+              "targets": [
+                "supersede-bridge-halvorsen-history"
+              ],
+              "value": "1965"
+            },
+            "flag_basis": "keyword rule",
+            "found_on_world": "5022fd3ba332099c",
+            "oracle_messages": [
+              "the report gives the older value and does not mention the newer source",
+              "level L1 reached"
+            ],
+            "question": "When was the Halvorsen Bridge completed?",
+            "reference_trust": "gold '1962': taken from the constructed corpus by its author; not checked against anything else",
+            "reproduces_on_shown_world": true,
+            "scope": "this subject on this world",
+            "shown_world": "f1cf151c68934583",
+            "shown_world_is_minimized": true,
+            "subject": {
+              "kind": "stand_in",
+              "name": "credulous",
+              "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
+            },
+            "tie_break_decided_rank": false,
+            "world_report": {
+              "answer": "1962",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1962."
+                    }
+                  ],
+                  "text": "The answer is 1962."
+                }
+              ],
+              "flags": null
+            }
+          },
+          "export": "2.eval-case.json",
+          "fidelity": {
+            "engine": "frozen BM25 (isitright)",
+            "found_on": "SIMULATED",
+            "verification": null,
+            "verified_on": null
+          },
+          "finding_id": "halvorsen-completed:credulous:2",
+          "headline": "The report and the expected behavior disagree after a supersede mutation (newer, behavior rejected)",
+          "live": null,
+          "minimization": {
+            "attempts": 48,
+            "changed_documents": 1,
+            "complete": true,
+            "documents_after": 2,
+            "documents_before": 25,
+            "minimized": true,
+            "mode": "corpus (frozen index statistics: kept ranks do not move)"
+          },
+          "mode": "live_agent",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "supersede-bridge-halvorsen-history"
+                ]
+              ],
+              "description": "add a revised edition of bridge-halvorsen-history dated 2019-04-03 that says '1965' where it said '1962'",
+              "family": "supersede",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "oracles": [
+            {
+              "description": "the report gives the older value and does not mention the newer source",
+              "kind": "CONSTRUCTIVE",
+              "limits": [
+                "the expected behavior is computed from the declared fact span and the documents a mutation added; it is a reference procedure written for this pack, and it can be wrong or incomplete",
+                "answers are compared after a declared normalization; free text is not judged",
+                "support of a claim by its cited document (L2) is not judged: no model judge is run"
+              ],
+              "name": "constructive_newer",
+              "outcome": "NOT_MET"
+            },
+            {
+              "description": "level L1 reached",
+              "kind": "INVARIANT",
+              "limits": [
+                "L2 (support of the claim) is not judged"
+              ],
+              "name": "citations_exist_and_quote",
+              "outcome": "MET"
+            }
+          ],
+          "replay": {
+            "artifact": "2.replay.json",
+            "artifact_sha256": "91560c1cc3cd854a7380e135755abfea5263590894c11d52c27f9024b99d8be1",
+            "command": "isitright research replay 2.replay.json"
+          },
+          "stability": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          },
+          "world_diff": {
+            "added": [
+              {
+                "atom": [
+                  "documents",
+                  "supersede-bridge-halvorsen-history"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2019-04-03",
+                  "id": "supersede-bridge-halvorsen-history",
+                  "provenance": {
+                    "derived_from": "bridge-halvorsen-history",
+                    "kind": "supersede",
+                    "replaced": "1962",
+                    "sentence": "The Halvorsen Bridge was completed in 1965.",
+                    "span": "The Halvorsen Bridge was completed in 1962.",
+                    "value": "1965"
+                  },
+                  "source": "Harbour Gazette",
+                  "supersedes": "bridge-halvorsen-history",
+                  "text": "Revised edition. This version supersedes the earlier History of the Halvorsen Bridge. The Halvorsen Bridge was completed in 1965. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                  "title": "History of the Halvorsen Bridge (revised)"
+                }
+              }
+            ],
+            "changed": [],
+            "params": {},
+            "removed": [
+              {
+                "atom": [
+                  "documents",
+                  "bridge-halvorsen-traffic"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2021-05-10",
+                  "id": "bridge-halvorsen-traffic",
+                  "source": "Norrvik Transport Office",
+                  "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+                  "title": "Halvorsen Bridge traffic report"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-halvorsen-maintenance"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2020-09-01",
+                  "id": "bridge-halvorsen-maintenance",
+                  "source": "Norrvik Transport Office",
+                  "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+                  "title": "Maintenance schedule for the Halvorsen Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-eastgate"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2018-06-12",
+                  "id": "bridge-eastgate",
+                  "source": "Harbour Gazette",
+                  "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+                  "title": "The Eastgate Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-westgate"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2018-07-02",
+                  "id": "bridge-westgate",
+                  "source": "Harbour Gazette",
+                  "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+                  "title": "The Westgate Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-lindqvist"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2017-04-21",
+                  "id": "bridge-lindqvist",
+                  "source": "Parks Department",
+                  "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+                  "title": "The Lindqvist Footbridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-marsh"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2017-05-30",
+                  "id": "bridge-marsh",
+                  "source": "Parks Department",
+                  "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+                  "title": "Marsh Road Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-skerry"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-08-15",
+                  "id": "lighthouse-skerry",
+                  "source": "Coastal Guide",
+                  "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+                  "title": "Skerry Lighthouse"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-skerry-retracted"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-09-01",
+                  "id": "lighthouse-skerry-retracted",
+                  "retracted": true,
+                  "source": "Coastal Guide",
+                  "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+                  "title": "Skerry Lighthouse height"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-norra"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-10-05",
+                  "id": "lighthouse-norra",
+                  "source": "Coastal Guide",
+                  "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+                  "title": "Norra Fyr"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-harrow"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-11-11",
+                  "id": "lighthouse-harrow",
+                  "source": "Coastal Guide",
+                  "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+                  "title": "Harrow Point Light"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2018"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2018-01-10",
+                  "id": "tolls-norrvik-2018",
+                  "source": "Norrvik Transport Office",
+                  "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+                  "title": "Norrvik tunnel tolls"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2022"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2022-01-10",
+                  "id": "tolls-norrvik-2022",
+                  "source": "Norrvik Transport Office",
+                  "supersedes": "tolls-norrvik-2018",
+                  "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                  "title": "Norrvik tunnel tolls (revised)"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2022-reprint"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2022-02-03",
+                  "duplicate_of": "tolls-norrvik-2022",
+                  "id": "tolls-norrvik-2022-reprint",
+                  "source": "Harbour Gazette",
+                  "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                  "title": "Norrvik tunnel tolls (reprint)"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-lantern"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2023-10-01",
+                  "id": "festival-lantern",
+                  "source": "Arts Office",
+                  "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+                  "title": "Lantern Festival programme"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-kite"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2022-05-14",
+                  "id": "festival-kite",
+                  "source": "Arts Office",
+                  "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+                  "title": "Kite Day"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-jazz"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2021-07-23",
+                  "id": "festival-jazz",
+                  "source": "Arts Office",
+                  "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+                  "title": "Jazz on the Quay"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "harbour-guide"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2019-06-01",
+                  "id": "harbour-guide",
+                  "source": "Coastal Guide",
+                  "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+                  "title": "Visiting the harbour"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "museum-maritime"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2020-02-20",
+                  "id": "museum-maritime",
+                  "source": "Arts Office",
+                  "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+                  "title": "Maritime Museum"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "school-election"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2020-11-03",
+                  "id": "school-election",
+                  "source": "Town Hall",
+                  "text": "The school board election was held in November. Turnout was 41 percent.",
+                  "title": "School board election"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "library-hours"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2021-01-15",
+                  "id": "library-hours",
+                  "source": "Town Hall",
+                  "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+                  "title": "Library opening hours"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "market-fish"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2019-09-09",
+                  "id": "market-fish",
+                  "source": "Town Hall",
+                  "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+                  "title": "Fish market"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "ferry-timetable"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2022-04-01",
+                  "id": "ferry-timetable",
+                  "source": "Norrvik Transport Office",
+                  "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+                  "title": "Ferry timetable"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "digest-2024"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2024-11-02",
+                  "id": "digest-2024",
+                  "source": "Town Hall",
+                  "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+                  "title": "Town digest, November 2024"
+                }
+              }
+            ]
+          },
+          "world_id": "f1cf151c68934583"
+        },
+        {
+          "divergence": {
+            "answer_changed": true,
+            "baseline_report": {
+              "answer": "1962",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1962."
+                    }
+                  ],
+                  "text": "The answer is 1962."
+                }
+              ],
+              "flags": null
+            },
+            "behavior": "FOLLOWED",
+            "citations": {
+              "citations": 1,
+              "cited_quote_exposed": true,
+              "cited_quote_exposure": [
+                {
+                  "doc_id": "!contradict-bridge-halvorsen-history",
+                  "exposed": true
+                }
+              ],
+              "cited_without_retrieval": [],
+              "claim_coverage": 1.0,
+              "claims": 1,
+              "l0_failures": [],
+              "l1_failures": [],
+              "l2": "not judged: needs a judge, and no model judge is run",
+              "level_reached": "L1",
+              "retrieval_provenance": "established for every cited document",
+              "uncited_claims": 0,
+              "unquoted_citations": 0
+            },
+            "documents_in_world": [
+              {
+                "date": "2019-03-04",
+                "id": "!contradict-bridge-halvorsen-history",
+                "provenance": {
+                  "derived_from": "bridge-halvorsen-history",
+                  "kind": "contradict",
+                  "replaced": "1962",
+                  "sentence": "The Halvorsen Bridge was completed in 1965.",
+                  "span": "The Halvorsen Bridge was completed in 1962.",
+                  "tie_order": "before",
+                  "value": "1965"
+                },
+                "source": "Harbour Gazette",
+                "text": "The Halvorsen Bridge was completed in 1965. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              },
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              }
+            ],
+            "documents_original": [
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              }
+            ],
+            "expectation": {
+              "basis": "documents now state other values for the fact",
+              "conflicting": [
+                "1965"
+              ],
+              "kind": "KEEP_OR_FLAG",
+              "role": "trap",
+              "targets": [
+                "!contradict-bridge-halvorsen-history"
+              ],
+              "value": "1962"
+            },
+            "flag_basis": "keyword rule",
+            "found_on_world": "5a0fe3d0ef15c651",
+            "oracle_messages": [
+              "followed a document that states another value, without stating the conflict",
+              "level L1 reached"
+            ],
+            "question": "When was the Halvorsen Bridge completed?",
+            "reference_trust": "gold '1962': taken from the constructed corpus by its author; not checked against anything else",
+            "reproduces_on_shown_world": true,
+            "scope": "this subject on this world",
+            "shown_world": "1633201be8bad7c5",
+            "shown_world_is_minimized": true,
+            "subject": {
+              "kind": "stand_in",
+              "name": "credulous",
+              "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
+            },
+            "tie_break_decided_rank": false,
+            "world_report": {
+              "answer": "1965",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "!contradict-bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1965."
+                    }
+                  ],
+                  "text": "The answer is 1965."
+                }
+              ],
+              "flags": null
+            }
+          },
+          "export": "3.eval-case.json",
+          "fidelity": {
+            "engine": "frozen BM25 (isitright)",
+            "found_on": "SIMULATED",
+            "verification": null,
+            "verified_on": null
+          },
+          "finding_id": "halvorsen-completed:credulous:3",
+          "headline": "The report and the expected behavior disagree after a contradict mutation (keep_or_flag, behavior followed)",
+          "live": null,
+          "minimization": {
+            "attempts": 48,
+            "changed_documents": 1,
+            "complete": true,
+            "documents_after": 2,
+            "documents_before": 25,
+            "minimized": true,
+            "mode": "corpus (frozen index statistics: kept ranks do not move)"
+          },
+          "mode": "live_agent",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "!contradict-bridge-halvorsen-history"
+                ]
+              ],
+              "description": "add a copy of bridge-halvorsen-history edited to say '1965' where it says '1962' (an exact score tie; the copy sorts before the original)",
+              "family": "contradict",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "oracles": [
+            {
+              "description": "followed a document that states another value, without stating the conflict",
+              "kind": "CONSTRUCTIVE",
+              "limits": [
+                "the expected behavior is computed from the declared fact span and the documents a mutation added; it is a reference procedure written for this pack, and it can be wrong or incomplete",
+                "answers are compared after a declared normalization; free text is not judged",
+                "support of a claim by its cited document (L2) is not judged: no model judge is run"
+              ],
+              "name": "constructive_keep_or_flag",
+              "outcome": "NOT_MET"
+            },
+            {
+              "description": "level L1 reached",
+              "kind": "INVARIANT",
+              "limits": [
+                "L2 (support of the claim) is not judged"
+              ],
+              "name": "citations_exist_and_quote",
+              "outcome": "MET"
+            }
+          ],
+          "replay": {
+            "artifact": "3.replay.json",
+            "artifact_sha256": "12a890a6c79a49ab388805add3a2cfae861ef1a58d1657bf30028638b783e5cf",
+            "command": "isitright research replay 3.replay.json"
+          },
+          "stability": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          },
+          "world_diff": {
+            "added": [
+              {
+                "atom": [
+                  "documents",
+                  "!contradict-bridge-halvorsen-history"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2019-03-04",
+                  "id": "!contradict-bridge-halvorsen-history",
+                  "provenance": {
+                    "derived_from": "bridge-halvorsen-history",
+                    "kind": "contradict",
+                    "replaced": "1962",
+                    "sentence": "The Halvorsen Bridge was completed in 1965.",
+                    "span": "The Halvorsen Bridge was completed in 1962.",
+                    "tie_order": "before",
+                    "value": "1965"
+                  },
+                  "source": "Harbour Gazette",
+                  "text": "The Halvorsen Bridge was completed in 1965. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                  "title": "History of the Halvorsen Bridge"
+                }
+              }
+            ],
+            "changed": [],
+            "params": {},
+            "removed": [
+              {
+                "atom": [
+                  "documents",
+                  "bridge-halvorsen-traffic"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2021-05-10",
+                  "id": "bridge-halvorsen-traffic",
+                  "source": "Norrvik Transport Office",
+                  "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+                  "title": "Halvorsen Bridge traffic report"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-halvorsen-maintenance"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2020-09-01",
+                  "id": "bridge-halvorsen-maintenance",
+                  "source": "Norrvik Transport Office",
+                  "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+                  "title": "Maintenance schedule for the Halvorsen Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-eastgate"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2018-06-12",
+                  "id": "bridge-eastgate",
+                  "source": "Harbour Gazette",
+                  "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+                  "title": "The Eastgate Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-westgate"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2018-07-02",
+                  "id": "bridge-westgate",
+                  "source": "Harbour Gazette",
+                  "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+                  "title": "The Westgate Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-lindqvist"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2017-04-21",
+                  "id": "bridge-lindqvist",
+                  "source": "Parks Department",
+                  "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+                  "title": "The Lindqvist Footbridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "bridge-marsh"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2017-05-30",
+                  "id": "bridge-marsh",
+                  "source": "Parks Department",
+                  "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+                  "title": "Marsh Road Bridge"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-skerry"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-08-15",
+                  "id": "lighthouse-skerry",
+                  "source": "Coastal Guide",
+                  "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+                  "title": "Skerry Lighthouse"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-skerry-retracted"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-09-01",
+                  "id": "lighthouse-skerry-retracted",
+                  "retracted": true,
+                  "source": "Coastal Guide",
+                  "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+                  "title": "Skerry Lighthouse height"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-norra"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-10-05",
+                  "id": "lighthouse-norra",
+                  "source": "Coastal Guide",
+                  "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+                  "title": "Norra Fyr"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "lighthouse-harrow"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2016-11-11",
+                  "id": "lighthouse-harrow",
+                  "source": "Coastal Guide",
+                  "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+                  "title": "Harrow Point Light"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2018"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2018-01-10",
+                  "id": "tolls-norrvik-2018",
+                  "source": "Norrvik Transport Office",
+                  "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+                  "title": "Norrvik tunnel tolls"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2022"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2022-01-10",
+                  "id": "tolls-norrvik-2022",
+                  "source": "Norrvik Transport Office",
+                  "supersedes": "tolls-norrvik-2018",
+                  "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                  "title": "Norrvik tunnel tolls (revised)"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "tolls-norrvik-2022-reprint"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2022-02-03",
+                  "duplicate_of": "tolls-norrvik-2022",
+                  "id": "tolls-norrvik-2022-reprint",
+                  "source": "Harbour Gazette",
+                  "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                  "title": "Norrvik tunnel tolls (reprint)"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-lantern"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2023-10-01",
+                  "id": "festival-lantern",
+                  "source": "Arts Office",
+                  "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+                  "title": "Lantern Festival programme"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-kite"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2022-05-14",
+                  "id": "festival-kite",
+                  "source": "Arts Office",
+                  "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+                  "title": "Kite Day"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "festival-jazz"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2021-07-23",
+                  "id": "festival-jazz",
+                  "source": "Arts Office",
+                  "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+                  "title": "Jazz on the Quay"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "harbour-guide"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2019-06-01",
+                  "id": "harbour-guide",
+                  "source": "Coastal Guide",
+                  "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+                  "title": "Visiting the harbour"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "museum-maritime"
+                ],
+                "entity": {
+                  "authority": 1,
+                  "date": "2020-02-20",
+                  "id": "museum-maritime",
+                  "source": "Arts Office",
+                  "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+                  "title": "Maritime Museum"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "school-election"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2020-11-03",
+                  "id": "school-election",
+                  "source": "Town Hall",
+                  "text": "The school board election was held in November. Turnout was 41 percent.",
+                  "title": "School board election"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "library-hours"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2021-01-15",
+                  "id": "library-hours",
+                  "source": "Town Hall",
+                  "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+                  "title": "Library opening hours"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "market-fish"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2019-09-09",
+                  "id": "market-fish",
+                  "source": "Town Hall",
+                  "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+                  "title": "Fish market"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "ferry-timetable"
+                ],
+                "entity": {
+                  "authority": 3,
+                  "date": "2022-04-01",
+                  "id": "ferry-timetable",
+                  "source": "Norrvik Transport Office",
+                  "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+                  "title": "Ferry timetable"
+                }
+              },
+              {
+                "atom": [
+                  "documents",
+                  "digest-2024"
+                ],
+                "entity": {
+                  "authority": 2,
+                  "date": "2024-11-02",
+                  "id": "digest-2024",
+                  "source": "Town Hall",
+                  "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+                  "title": "Town digest, November 2024"
+                }
+              }
+            ]
+          },
+          "world_id": "1633201be8bad7c5"
+        },
+        {
+          "divergence": {
+            "answer_changed": null,
+            "baseline_report": {
+              "answer": "1962",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1962."
+                    }
+                  ],
+                  "text": "The answer is 1962."
+                }
+              ],
+              "flags": null
+            },
+            "behavior": "NOT_APPLICABLE",
+            "citations": {
+              "citations": 0,
+              "cited_quote_exposed": null,
+              "cited_quote_exposure": [],
+              "cited_without_retrieval": [],
+              "claim_coverage": null,
+              "claims": 0,
+              "l0_failures": [],
+              "l1_failures": [],
+              "l2": "not judged: needs a judge, and no model judge is run",
+              "level_reached": "NONE",
+              "retrieval_provenance": "established for every cited document",
+              "uncited_claims": 0,
+              "unquoted_citations": 0
+            },
+            "documents_in_world": [
+              {
+                "date": "2018-06-12",
+                "id": "bridge-eastgate",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+                "title": "The Eastgate Bridge"
+              },
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              },
+              {
+                "date": "2020-09-01",
+                "id": "bridge-halvorsen-maintenance",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+                "title": "Maintenance schedule for the Halvorsen Bridge"
+              },
+              {
+                "date": "2021-05-10",
+                "id": "bridge-halvorsen-traffic",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+                "title": "Halvorsen Bridge traffic report"
+              },
+              {
+                "date": "2017-04-21",
+                "id": "bridge-lindqvist",
+                "provenance": null,
+                "source": "Parks Department",
+                "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+                "title": "The Lindqvist Footbridge"
+              },
+              {
+                "date": "2017-05-30",
+                "id": "bridge-marsh",
+                "provenance": null,
+                "source": "Parks Department",
+                "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+                "title": "Marsh Road Bridge"
+              },
+              {
+                "date": "2018-07-02",
+                "id": "bridge-westgate",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+                "title": "The Westgate Bridge"
+              },
+              {
+                "date": "2024-11-02",
+                "id": "digest-2024",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+                "title": "Town digest, November 2024"
+              },
+              {
+                "date": "2022-04-01",
+                "id": "ferry-timetable",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+                "title": "Ferry timetable"
+              },
+              {
+                "date": "2021-07-23",
+                "id": "festival-jazz",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+                "title": "Jazz on the Quay"
+              },
+              {
+                "date": "2022-05-14",
+                "id": "festival-kite",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+                "title": "Kite Day"
+              },
+              {
+                "date": "2023-10-01",
+                "id": "festival-lantern",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+                "title": "Lantern Festival programme"
+              },
+              {
+                "date": "2019-06-01",
+                "id": "harbour-guide",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+                "title": "Visiting the harbour"
+              },
+              {
+                "date": "2021-01-15",
+                "id": "library-hours",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+                "title": "Library opening hours"
+              },
+              {
+                "date": "2016-11-11",
+                "id": "lighthouse-harrow",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+                "title": "Harrow Point Light"
+              },
+              {
+                "date": "2016-10-05",
+                "id": "lighthouse-norra",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+                "title": "Norra Fyr"
+              },
+              {
+                "date": "2016-08-15",
+                "id": "lighthouse-skerry",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+                "title": "Skerry Lighthouse"
+              },
+              {
+                "date": "2016-09-01",
+                "id": "lighthouse-skerry-retracted",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+                "title": "Skerry Lighthouse height"
+              },
+              {
+                "date": "2019-09-09",
+                "id": "market-fish",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+                "title": "Fish market"
+              },
+              {
+                "date": "2020-02-20",
+                "id": "museum-maritime",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+                "title": "Maritime Museum"
+              },
+              {
+                "date": "2020-11-03",
+                "id": "school-election",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "The school board election was held in November. Turnout was 41 percent.",
+                "title": "School board election"
+              },
+              {
+                "date": "2018-01-10",
+                "id": "tolls-norrvik-2018",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+                "title": "Norrvik tunnel tolls"
+              },
+              {
+                "date": "2022-01-10",
+                "id": "tolls-norrvik-2022",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (revised)"
+              },
+              {
+                "date": "2022-02-03",
+                "id": "tolls-norrvik-2022-reprint",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (reprint)"
+              }
+            ],
+            "documents_original": [
+              {
+                "date": "2018-06-12",
+                "id": "bridge-eastgate",
+                "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+                "title": "The Eastgate Bridge"
+              },
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              },
+              {
+                "date": "2020-09-01",
+                "id": "bridge-halvorsen-maintenance",
+                "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+                "title": "Maintenance schedule for the Halvorsen Bridge"
+              },
+              {
+                "date": "2021-05-10",
+                "id": "bridge-halvorsen-traffic",
+                "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+                "title": "Halvorsen Bridge traffic report"
+              },
+              {
+                "date": "2017-04-21",
+                "id": "bridge-lindqvist",
+                "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+                "title": "The Lindqvist Footbridge"
+              },
+              {
+                "date": "2017-05-30",
+                "id": "bridge-marsh",
+                "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+                "title": "Marsh Road Bridge"
+              },
+              {
+                "date": "2018-07-02",
+                "id": "bridge-westgate",
+                "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+                "title": "The Westgate Bridge"
+              },
+              {
+                "date": "2024-11-02",
+                "id": "digest-2024",
+                "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+                "title": "Town digest, November 2024"
+              },
+              {
+                "date": "2022-04-01",
+                "id": "ferry-timetable",
+                "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+                "title": "Ferry timetable"
+              },
+              {
+                "date": "2021-07-23",
+                "id": "festival-jazz",
+                "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+                "title": "Jazz on the Quay"
+              },
+              {
+                "date": "2022-05-14",
+                "id": "festival-kite",
+                "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+                "title": "Kite Day"
+              },
+              {
+                "date": "2023-10-01",
+                "id": "festival-lantern",
+                "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+                "title": "Lantern Festival programme"
+              },
+              {
+                "date": "2019-06-01",
+                "id": "harbour-guide",
+                "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+                "title": "Visiting the harbour"
+              },
+              {
+                "date": "2021-01-15",
+                "id": "library-hours",
+                "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+                "title": "Library opening hours"
+              },
+              {
+                "date": "2016-11-11",
+                "id": "lighthouse-harrow",
+                "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+                "title": "Harrow Point Light"
+              },
+              {
+                "date": "2016-10-05",
+                "id": "lighthouse-norra",
+                "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+                "title": "Norra Fyr"
+              },
+              {
+                "date": "2016-08-15",
+                "id": "lighthouse-skerry",
+                "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+                "title": "Skerry Lighthouse"
+              },
+              {
+                "date": "2016-09-01",
+                "id": "lighthouse-skerry-retracted",
+                "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+                "title": "Skerry Lighthouse height"
+              },
+              {
+                "date": "2019-09-09",
+                "id": "market-fish",
+                "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+                "title": "Fish market"
+              },
+              {
+                "date": "2020-02-20",
+                "id": "museum-maritime",
+                "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+                "title": "Maritime Museum"
+              },
+              {
+                "date": "2020-11-03",
+                "id": "school-election",
+                "text": "The school board election was held in November. Turnout was 41 percent.",
+                "title": "School board election"
+              },
+              {
+                "date": "2018-01-10",
+                "id": "tolls-norrvik-2018",
+                "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+                "title": "Norrvik tunnel tolls"
+              },
+              {
+                "date": "2022-01-10",
+                "id": "tolls-norrvik-2022",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (revised)"
+              },
+              {
+                "date": "2022-02-03",
+                "id": "tolls-norrvik-2022-reprint",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (reprint)"
+              }
+            ],
+            "expectation": {
+              "basis": "nothing the world changed states another value for the fact",
+              "conflicting": [],
+              "kind": "KEEP",
+              "role": "trap",
+              "targets": [],
+              "value": "1962"
+            },
+            "flag_basis": "keyword rule",
+            "found_on_world": "d87c33fd801e681b",
+            "oracle_messages": [
+              "the answer changed to an abstention",
+              "abstained: nothing cited"
+            ],
+            "question": "When was the Halvorsen Bridge completed?",
+            "reference_trust": "gold '1962': taken from the constructed corpus by its author; not checked against anything else",
+            "reproduces_on_shown_world": true,
+            "scope": "this subject on this world",
+            "shown_world": "d87c33fd801e681b",
+            "shown_world_is_minimized": false,
+            "subject": {
+              "kind": "stand_in",
+              "name": "credulous",
+              "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
+            },
+            "tie_break_decided_rank": false,
+            "world_report": {
+              "answer": "I cannot answer from the sources found.",
+              "claims": [],
+              "flags": null
+            }
+          },
+          "export": "4.eval-case.json",
+          "fidelity": {
+            "engine": "frozen BM25 (isitright)",
+            "found_on": "SIMULATED",
+            "verification": null,
+            "verified_on": null
+          },
+          "finding_id": "halvorsen-completed:credulous:4",
+          "headline": "The report and the expected behavior disagree after a reorder mutation (keep, behavior not_applicable)",
+          "live": null,
+          "minimization": {
+            "minimized": false
+          },
+          "mode": "live_agent",
+          "mutation_path": [
+            {
+              "atoms": [],
+              "description": "return search results in reverse order",
+              "family": "reorder",
+              "hints": [],
+              "target": "response"
+            }
+          ],
+          "oracles": [
+            {
+              "description": "the answer changed to an abstention",
+              "kind": "RELATIONAL",
+              "limits": [
+                "the expected behavior is computed from the declared fact span and the documents a mutation added; it is a reference procedure written for this pack, and it can be wrong or incomplete",
+                "answers are compared after a declared normalization; free text is not judged",
+                "support of a claim by its cited document (L2) is not judged: no model judge is run"
+              ],
+              "name": "constructive_keep",
+              "outcome": "NOT_MET"
+            },
+            {
+              "description": "abstained: nothing cited",
+              "kind": "INVARIANT",
+              "limits": [
+                "L2 (support of the claim) is not judged"
+              ],
+              "name": "citations_exist_and_quote",
+              "outcome": "MET"
+            }
+          ],
+          "replay": {
+            "artifact": "4.replay.json",
+            "artifact_sha256": "24b9c26be0f12a7e87f2f8dc5ea56afe4fc49ad895a55ee86655dc1c73e947fb",
+            "command": "isitright research replay 4.replay.json"
+          },
+          "stability": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          },
+          "world_diff": {
+            "added": [],
+            "changed": [],
+            "params": {},
+            "removed": []
+          },
+          "world_id": "d87c33fd801e681b"
+        },
+        {
+          "divergence": {
+            "answer_changed": false,
+            "baseline_report": {
+              "answer": "1962",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1962."
+                    }
+                  ],
+                  "text": "The answer is 1962."
+                }
+              ],
+              "flags": null
+            },
+            "behavior": "NOT_APPLICABLE",
+            "citations": {
+              "citations": 1,
+              "cited_quote_exposed": true,
+              "cited_quote_exposure": [
+                {
+                  "doc_id": "bridge-halvorsen-history",
+                  "exposed": true
+                }
+              ],
+              "cited_without_retrieval": [],
+              "claim_coverage": 1.0,
+              "claims": 1,
+              "l0_failures": [],
+              "l1_failures": [],
+              "l2": "not judged: needs a judge, and no model judge is run",
+              "level_reached": "L1",
+              "retrieval_provenance": "established for every cited document",
+              "uncited_claims": 0,
+              "unquoted_citations": 0
+            },
+            "documents_in_world": [
+              {
+                "date": "2018-06-12",
+                "id": "bridge-eastgate",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+                "title": "The Eastgate Bridge"
+              },
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "provenance": {
+                  "derived_from": "bridge-halvorsen-history",
+                  "kind": "retract",
+                  "replaced": "1962",
+                  "span": "The Halvorsen Bridge was completed in 1962.",
+                  "value": null
+                },
+                "source": "Harbour Gazette",
+                "text": "Retracted: this item has been retracted by the publisher and should not be relied on. The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              },
+              {
+                "date": "2020-09-01",
+                "id": "bridge-halvorsen-maintenance",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+                "title": "Maintenance schedule for the Halvorsen Bridge"
+              },
+              {
+                "date": "2021-05-10",
+                "id": "bridge-halvorsen-traffic",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+                "title": "Halvorsen Bridge traffic report"
+              },
+              {
+                "date": "2017-04-21",
+                "id": "bridge-lindqvist",
+                "provenance": null,
+                "source": "Parks Department",
+                "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+                "title": "The Lindqvist Footbridge"
+              },
+              {
+                "date": "2017-05-30",
+                "id": "bridge-marsh",
+                "provenance": null,
+                "source": "Parks Department",
+                "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+                "title": "Marsh Road Bridge"
+              },
+              {
+                "date": "2018-07-02",
+                "id": "bridge-westgate",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+                "title": "The Westgate Bridge"
+              },
+              {
+                "date": "2024-11-02",
+                "id": "digest-2024",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+                "title": "Town digest, November 2024"
+              },
+              {
+                "date": "2022-04-01",
+                "id": "ferry-timetable",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+                "title": "Ferry timetable"
+              },
+              {
+                "date": "2021-07-23",
+                "id": "festival-jazz",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+                "title": "Jazz on the Quay"
+              },
+              {
+                "date": "2022-05-14",
+                "id": "festival-kite",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+                "title": "Kite Day"
+              },
+              {
+                "date": "2023-10-01",
+                "id": "festival-lantern",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+                "title": "Lantern Festival programme"
+              },
+              {
+                "date": "2019-06-01",
+                "id": "harbour-guide",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+                "title": "Visiting the harbour"
+              },
+              {
+                "date": "2021-01-15",
+                "id": "library-hours",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+                "title": "Library opening hours"
+              },
+              {
+                "date": "2016-11-11",
+                "id": "lighthouse-harrow",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+                "title": "Harrow Point Light"
+              },
+              {
+                "date": "2016-10-05",
+                "id": "lighthouse-norra",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+                "title": "Norra Fyr"
+              },
+              {
+                "date": "2016-08-15",
+                "id": "lighthouse-skerry",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+                "title": "Skerry Lighthouse"
+              },
+              {
+                "date": "2016-09-01",
+                "id": "lighthouse-skerry-retracted",
+                "provenance": null,
+                "source": "Coastal Guide",
+                "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+                "title": "Skerry Lighthouse height"
+              },
+              {
+                "date": "2019-09-09",
+                "id": "market-fish",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+                "title": "Fish market"
+              },
+              {
+                "date": "2020-02-20",
+                "id": "museum-maritime",
+                "provenance": null,
+                "source": "Arts Office",
+                "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+                "title": "Maritime Museum"
+              },
+              {
+                "date": "2020-11-03",
+                "id": "school-election",
+                "provenance": null,
+                "source": "Town Hall",
+                "text": "The school board election was held in November. Turnout was 41 percent.",
+                "title": "School board election"
+              },
+              {
+                "date": "2018-01-10",
+                "id": "tolls-norrvik-2018",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+                "title": "Norrvik tunnel tolls"
+              },
+              {
+                "date": "2022-01-10",
+                "id": "tolls-norrvik-2022",
+                "provenance": null,
+                "source": "Norrvik Transport Office",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (revised)"
+              },
+              {
+                "date": "2022-02-03",
+                "id": "tolls-norrvik-2022-reprint",
+                "provenance": null,
+                "source": "Harbour Gazette",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (reprint)"
+              }
+            ],
+            "documents_original": [
+              {
+                "date": "2018-06-12",
+                "id": "bridge-eastgate",
+                "text": "The Eastgate Bridge was completed in 1975. It links the old town with the container port.",
+                "title": "The Eastgate Bridge"
+              },
+              {
+                "date": "2019-03-04",
+                "id": "bridge-halvorsen-history",
+                "text": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                "title": "History of the Halvorsen Bridge"
+              },
+              {
+                "date": "2020-09-01",
+                "id": "bridge-halvorsen-maintenance",
+                "text": "Inspection of the Halvorsen Bridge takes place every five years. The last repainting of the steel deck was finished in 2015.",
+                "title": "Maintenance schedule for the Halvorsen Bridge"
+              },
+              {
+                "date": "2021-05-10",
+                "id": "bridge-halvorsen-traffic",
+                "text": "The Halvorsen Bridge carries 12,000 vehicles per day. Counts are taken each spring by the Norrvik transport office.",
+                "title": "Halvorsen Bridge traffic report"
+              },
+              {
+                "date": "2017-04-21",
+                "id": "bridge-lindqvist",
+                "text": "The Lindqvist Footbridge was completed in 1998. It crosses the Alder canal and is open to cyclists.",
+                "title": "The Lindqvist Footbridge"
+              },
+              {
+                "date": "2017-05-30",
+                "id": "bridge-marsh",
+                "text": "Marsh Road Bridge was completed in 1954. It is the oldest crossing still in use in the district.",
+                "title": "Marsh Road Bridge"
+              },
+              {
+                "date": "2018-07-02",
+                "id": "bridge-westgate",
+                "text": "The Westgate Bridge was completed in 1981. It replaced a ferry that ran for two centuries.",
+                "title": "The Westgate Bridge"
+              },
+              {
+                "date": "2024-11-02",
+                "id": "digest-2024",
+                "text": "Digest of town notices. Road works near the station continue until spring. The recycling centre has new opening hours.",
+                "title": "Town digest, November 2024"
+              },
+              {
+                "date": "2022-04-01",
+                "id": "ferry-timetable",
+                "text": "Ferries to the islands leave every hour. The last departure in winter is at five.",
+                "title": "Ferry timetable"
+              },
+              {
+                "date": "2021-07-23",
+                "id": "festival-jazz",
+                "text": "Jazz on the Quay runs for three evenings. The main stage sits beside the ferry terminal.",
+                "title": "Jazz on the Quay"
+              },
+              {
+                "date": "2022-05-14",
+                "id": "festival-kite",
+                "text": "Kite Day takes place on the northern beach. Prizes are given for the largest and the smallest kite.",
+                "title": "Kite Day"
+              },
+              {
+                "date": "2023-10-01",
+                "id": "festival-lantern",
+                "text": "The Lantern Festival opens on the first Friday of October. Entry is free and food stalls line the harbour front.",
+                "title": "Lantern Festival programme"
+              },
+              {
+                "date": "2019-06-01",
+                "id": "harbour-guide",
+                "text": "The harbour is open to walkers all year. Boat trips leave from the ferry terminal every hour in summer.",
+                "title": "Visiting the harbour"
+              },
+              {
+                "date": "2021-01-15",
+                "id": "library-hours",
+                "text": "The central library opens at nine. It closes at eight on weekdays and at four on Saturdays.",
+                "title": "Library opening hours"
+              },
+              {
+                "date": "2016-11-11",
+                "id": "lighthouse-harrow",
+                "text": "Harrow Point Light was built in 1874. Visitors may climb the 140 steps in summer.",
+                "title": "Harrow Point Light"
+              },
+              {
+                "date": "2016-10-05",
+                "id": "lighthouse-norra",
+                "text": "Norra Fyr was built in 1911. It guards the northern approach and was automated in 1967.",
+                "title": "Norra Fyr"
+              },
+              {
+                "date": "2016-08-15",
+                "id": "lighthouse-skerry",
+                "text": "Skerry Lighthouse was built in 1893. Its tower is 31 metres tall and its lamp is visible for 18 miles.",
+                "title": "Skerry Lighthouse"
+              },
+              {
+                "date": "2016-09-01",
+                "id": "lighthouse-skerry-retracted",
+                "text": "Retracted: this item has been retracted by the publisher and should not be relied on. Skerry Lighthouse is 41 metres tall.",
+                "title": "Skerry Lighthouse height"
+              },
+              {
+                "date": "2019-09-09",
+                "id": "market-fish",
+                "text": "The fish market opens before dawn. Stalls are allocated by lottery each January.",
+                "title": "Fish market"
+              },
+              {
+                "date": "2020-02-20",
+                "id": "museum-maritime",
+                "text": "The Maritime Museum holds a collection of ship models. It is closed on Mondays and open until six on other days.",
+                "title": "Maritime Museum"
+              },
+              {
+                "date": "2020-11-03",
+                "id": "school-election",
+                "text": "The school board election was held in November. Turnout was 41 percent.",
+                "title": "School board election"
+              },
+              {
+                "date": "2018-01-10",
+                "id": "tolls-norrvik-2018",
+                "text": "The Norrvik tunnel toll is 2 euros for a car. Lorries pay 6 euros.",
+                "title": "Norrvik tunnel tolls"
+              },
+              {
+                "date": "2022-01-10",
+                "id": "tolls-norrvik-2022",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (revised)"
+              },
+              {
+                "date": "2022-02-03",
+                "id": "tolls-norrvik-2022-reprint",
+                "text": "Revised edition. This version supersedes the earlier Norrvik tunnel tolls. The Norrvik tunnel toll is 3 euros for a car. Lorries pay 8 euros.",
+                "title": "Norrvik tunnel tolls (reprint)"
+              }
+            ],
+            "expectation": {
+              "basis": "no live document states '1962': the cited source bridge-halvorsen-history is retracted",
+              "conflicting": [],
+              "kind": "ABSTAIN_OR_FLAG",
+              "role": "control",
+              "targets": [],
+              "value": null
+            },
+            "flag_basis": "keyword rule",
+            "found_on_world": "b1ac7ac499c827cc",
+            "oracle_messages": [
+              "answered '1962' although no live document states the fact",
+              "level L1 reached"
+            ],
+            "question": "When was the Halvorsen Bridge completed?",
+            "reference_trust": "gold '1962': taken from the constructed corpus by its author; not checked against anything else",
+            "reproduces_on_shown_world": true,
+            "scope": "this subject on this world",
+            "shown_world": "b1ac7ac499c827cc",
+            "shown_world_is_minimized": false,
+            "subject": {
+              "kind": "stand_in",
+              "name": "credulous",
+              "note": "opens the top-ranked result and answers from it; no dates, no conflict check",
+              "written_by": "an AI assistant, as a stand-in; not a real research agent"
+            },
+            "tie_break_decided_rank": false,
+            "world_report": {
+              "answer": "1962",
+              "claims": [
+                {
+                  "citations": [
+                    {
+                      "doc_id": "bridge-halvorsen-history",
+                      "quote": "The Halvorsen Bridge was completed in 1962."
+                    }
+                  ],
+                  "text": "The answer is 1962."
+                }
+              ],
+              "flags": null
+            }
+          },
+          "export": "5.eval-case.json",
+          "fidelity": {
+            "engine": "frozen BM25 (isitright)",
+            "found_on": "SIMULATED",
+            "verification": null,
+            "verified_on": null
+          },
+          "finding_id": "halvorsen-completed:credulous:5",
+          "headline": "The report and the expected behavior disagree after a retract mutation (abstain_or_flag, behavior not_applicable)",
+          "live": null,
+          "minimization": {
+            "minimized": false
+          },
+          "mode": "live_agent",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "bridge-halvorsen-history"
+                ]
+              ],
+              "description": "retract bridge-halvorsen-history: mark it retracted and put a retraction notice first",
+              "family": "retract",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "oracles": [
+            {
+              "description": "answered '1962' although no live document states the fact",
+              "kind": "CONSTRUCTIVE",
+              "limits": [
+                "the expected behavior is computed from the declared fact span and the documents a mutation added; it is a reference procedure written for this pack, and it can be wrong or incomplete",
+                "answers are compared after a declared normalization; free text is not judged",
+                "support of a claim by its cited document (L2) is not judged: no model judge is run"
+              ],
+              "name": "constructive_abstain_or_flag",
+              "outcome": "NOT_MET"
+            },
+            {
+              "description": "level L1 reached",
+              "kind": "INVARIANT",
+              "limits": [
+                "L2 (support of the claim) is not judged"
+              ],
+              "name": "citations_exist_and_quote",
+              "outcome": "MET"
+            }
+          ],
+          "replay": {
+            "artifact": "5.replay.json",
+            "artifact_sha256": "a852192e88b89c48d9fa08dbaa760b4b595091967a59e1778130e1e0974fef81",
+            "command": "isitright research replay 5.replay.json"
+          },
+          "stability": null,
+          "validity": {
+            "notes": [
+              "documents.provenance edited with no declared rule over its content: STRUCTURAL only, not DOMAIN_VALIDATED"
+            ],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL"
+            ],
+            "unobservable": false
+          },
+          "world_diff": {
+            "added": [],
+            "changed": [
+              {
+                "atom": [
+                  "documents",
+                  "bridge-halvorsen-history"
+                ],
+                "fields": {
+                  "provenance": {
+                    "absent_after": false,
+                    "absent_before": true,
+                    "after": {
+                      "derived_from": "bridge-halvorsen-history",
+                      "kind": "retract",
+                      "replaced": "1962",
+                      "span": "The Halvorsen Bridge was completed in 1962.",
+                      "value": null
+                    },
+                    "before": null
+                  },
+                  "retracted": {
+                    "absent_after": false,
+                    "absent_before": true,
+                    "after": true,
+                    "before": null
+                  },
+                  "text": {
+                    "absent_after": false,
+                    "absent_before": false,
+                    "after": "Retracted: this item has been retracted by the publisher and should not be relied on. The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                    "before": "The Halvorsen Bridge was completed in 1962. It spans the Norrvik Strait and was designed by Ingrid Halvorsen. Construction began in 1958 and employed 400 workers.",
+                    "span": {
+                      "inserted": "Retracted: this item has been retracted by the publisher and should not be relied on. ",
+                      "removed": "",
+                      "start": 0
+                    }
+                  }
+                }
+              }
+            ],
+            "params": {},
+            "removed": []
+          },
+          "world_id": "b1ac7ac499c827cc"
+        }
+      ],
+      "headline": "Counterexample found: 5 world(s) where the report and the expected behavior disagree; controls never reached (NOT_DISCRIMINATING)",
+      "inputs": {
+        "question": "When was the Halvorsen Bridge completed?",
+        "task_id": "halvorsen-completed"
+      },
+      "oracles": [
+        {
+          "description": "what the report should say after the mutation, computed from the documents it added or changed",
+          "kind": "CONSTRUCTIVE",
+          "limits": [
+            "the expected behavior is computed from the declared fact span and the documents a mutation added; it is a reference procedure written for this pack, and it can be wrong or incomplete",
+            "answers are compared after a declared normalization; free text is not judged",
+            "support of a claim by its cited document (L2) is not judged: no model judge is run"
+          ],
+          "name": "constructive reference over the corpus",
+          "outcome": "NOT_MET"
+        },
+        {
+          "description": "every cited id exists (L0) and every quote occurs in its document (L1)",
+          "kind": "INVARIANT",
+          "limits": [
+            "L2 (support of the claim) is not judged"
+          ],
+          "name": "citations_exist_and_quote",
+          "outcome": null
+        }
+      ],
+      "original_state": {
+        "baseline_answer": "1962",
+        "baseline_citations": {
+          "citations": 1,
+          "cited_quote_exposed": null,
+          "cited_quote_exposure": [],
+          "cited_without_retrieval": [],
+          "claim_coverage": 1.0,
+          "claims": 1,
+          "l0_failures": [],
+          "l1_failures": [],
+          "l2": "not judged: needs a judge, and no model judge is run",
+          "level_reached": "L1",
+          "retrieval_provenance": "not checked: no trace given",
+          "uncited_claims": 0,
+          "unquoted_citations": 0
+        },
+        "documents": 24
+      },
+      "pack": "research",
+      "search": {
+        "attempts": 11,
+        "budget": {
+          "limits": {
+            "attempts": 500,
+            "money": null,
+            "runs": null,
+            "seconds": null
+          },
+          "spent": {
+            "attempts": 11,
+            "money": 0.0,
+            "runs": 12
+          },
+          "stopped_by": null
+        },
+        "budget_by_group": {
+          "hinted": {
+            "candidates": 9,
+            "executed": 9
+          },
+          "unhinted": {
+            "candidates": 2,
+            "executed": 2
+          }
+        },
+        "depth_reached": 1,
+        "executed": 11,
+        "families_run": [
+          "baseline",
+          "plant",
+          "supersede",
+          "contradict",
+          "retract",
+          "remove",
+          "duplicate",
+          "out_of_scope",
+          "reorder",
+          "snippets"
+        ],
+        "families_skipped": {},
+        "hint_use": [
+          {
+            "kind": "question_terms",
+            "name": "question_terms",
+            "provenance": "harvested:question",
+            "world_count": 0,
+            "worlds": []
+          },
+          {
+            "kind": "cited",
+            "name": "cited",
+            "provenance": "harvested:trace",
+            "world_count": 0,
+            "worlds": []
+          },
+          {
+            "kind": "fact_span",
+            "name": "fact_span",
+            "provenance": "harvested:trace",
+            "world_count": 0,
+            "worlds": []
+          }
+        ],
+        "hints_used": [
+          "question_terms",
+          "cited",
+          "fact_span"
+        ],
+        "notes": [],
+        "rejected": {},
+        "screening": null,
+        "seed": 0,
+        "stopping": null,
+        "valid_candidates": 11
+      },
+      "stability": null,
+      "subject_kind": "AGENT",
+      "task": "When was the Halvorsen Bridge completed?",
+      "unused_rules": [
+        "supersedes_is_newer",
+        "no_reference_cycles",
+        "not_after_cutoff",
+        "retraction_is_visible",
+        "authority_in_range",
+        "duplicate_text_matches"
+      ],
+      "validity": {
+        "notes": [],
+        "problems": [],
+        "status": "VALID",
+        "tiers": [
+          "STRUCTURAL",
+          "DOMAIN_VALIDATED"
+        ],
+        "unobservable": false
+      },
+      "worlds": [
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "baseline",
+          "id": "a3ac0b0d9ea6bc0e",
+          "mutation_path": [],
+          "not_run_reason": null,
+          "oracle_outcome": "MET",
+          "role": "trap",
+          "role_basis": "nothing the world changed states another value for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "add a summary of bridge-halvorsen-history that says '1965' where the cited sentence says '1962'",
+          "id": "b18f6f8f4e9a7bc3",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "plant-bridge-halvorsen-history"
+                ]
+              ],
+              "description": "add a summary of bridge-halvorsen-history that says '1965' where the cited sentence says '1962'",
+              "family": "plant",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "NOT_MET",
+          "role": "trap",
+          "role_basis": "documents now state other values for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "add a revised edition of bridge-halvorsen-history dated 2019-04-03 that says '1965' where it said '1962'",
+          "id": "5022fd3ba332099c",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "supersede-bridge-halvorsen-history"
+                ]
+              ],
+              "description": "add a revised edition of bridge-halvorsen-history dated 2019-04-03 that says '1965' where it said '1962'",
+              "family": "supersede",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "NOT_MET",
+          "role": "control",
+          "role_basis": "supersede-bridge-halvorsen-history supersedes bridge-halvorsen-history and states a different value",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "add a copy of bridge-halvorsen-history edited to say '1965' where it says '1962' (an exact score tie; the copy sorts after the original)",
+          "id": "6e8ee05551a456fa",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "bridge-halvorsen-history~contradict"
+                ]
+              ],
+              "description": "add a copy of bridge-halvorsen-history edited to say '1965' where it says '1962' (an exact score tie; the copy sorts after the original)",
+              "family": "contradict",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "MET",
+          "role": "trap",
+          "role_basis": "documents now state other values for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "add a copy of bridge-halvorsen-history edited to say '1965' where it says '1962' (an exact score tie; the copy sorts before the original)",
+          "id": "5a0fe3d0ef15c651",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "!contradict-bridge-halvorsen-history"
+                ]
+              ],
+              "description": "add a copy of bridge-halvorsen-history edited to say '1965' where it says '1962' (an exact score tie; the copy sorts before the original)",
+              "family": "contradict",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "NOT_MET",
+          "role": "trap",
+          "role_basis": "documents now state other values for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "retract bridge-halvorsen-history: mark it retracted and put a retraction notice first",
+          "id": "b1ac7ac499c827cc",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "bridge-halvorsen-history"
+                ]
+              ],
+              "description": "retract bridge-halvorsen-history: mark it retracted and put a retraction notice first",
+              "family": "retract",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "NOT_MET",
+          "role": "control",
+          "role_basis": "no live document states '1962': the cited source bridge-halvorsen-history is retracted",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [
+              "documents.provenance edited with no declared rule over its content: STRUCTURAL only, not DOMAIN_VALIDATED"
+            ],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "remove bridge-halvorsen-history",
+          "id": "67aa6e06e1814d59",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "bridge-halvorsen-history"
+                ]
+              ],
+              "description": "remove bridge-halvorsen-history",
+              "family": "remove",
+              "hints": [
+                "cited"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "MET",
+          "role": "control",
+          "role_basis": "no live document states '1962': the cited source bridge-halvorsen-history is removed",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "add a syndicated copy of bridge-halvorsen-history under another id and title",
+          "id": "a354e04e30ae9db5",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "syndicated-bridge-halvorsen-history"
+                ]
+              ],
+              "description": "add a syndicated copy of bridge-halvorsen-history under another id and title",
+              "family": "duplicate",
+              "hints": [
+                "fact_span"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "MET",
+          "role": "trap",
+          "role_basis": "nothing the world changed states another value for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "add a recent digest that mentions the question's terms and states no fact",
+          "id": "0c5a7c52580ca0be",
+          "mutation_path": [
+            {
+              "atoms": [
+                [
+                  "documents",
+                  "scope-note"
+                ]
+              ],
+              "description": "add a recent digest that mentions the question's terms and states no fact",
+              "family": "out_of_scope",
+              "hints": [
+                "question_terms"
+              ],
+              "target": "state"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "MET",
+          "role": "trap",
+          "role_basis": "nothing the world changed states another value for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "return search results in reverse order",
+          "id": "d87c33fd801e681b",
+          "mutation_path": [
+            {
+              "atoms": [],
+              "description": "return search results in reverse order",
+              "family": "reorder",
+              "hints": [],
+              "target": "response"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "NOT_MET",
+          "role": "trap",
+          "role_basis": "nothing the world changed states another value for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        },
+        {
+          "counts": {
+            "runs": 1
+          },
+          "description": "return search results with empty snippets",
+          "id": "97c19960b7b8dfbb",
+          "mutation_path": [
+            {
+              "atoms": [],
+              "description": "return search results with empty snippets",
+              "family": "snippets",
+              "hints": [],
+              "target": "response"
+            }
+          ],
+          "not_run_reason": null,
+          "oracle_outcome": "MET",
+          "role": "trap",
+          "role_basis": "nothing the world changed states another value for the fact",
+          "run_status": "RUN",
+          "screening": null,
+          "validity": {
+            "notes": [],
+            "problems": [],
+            "status": "VALID",
+            "tiers": [
+              "STRUCTURAL",
+              "DOMAIN_VALIDATED"
+            ],
+            "unobservable": false
+          }
+        }
+      ]
+    }
+  ],
+  "elapsed_seconds": 0.06199999999989814,
+  "kind": "case",
+  "metadata": {
+    "pack": "research"
+  },
+  "pack": "research",
+  "schema_version": "0.8",
+  "totals": {
+    "by_divergence_status": {
+      "COUNTEREXAMPLE_FOUND": 1
+    },
+    "by_family": {
+      "contradict": 1,
+      "plant": 1,
+      "reorder": 1,
+      "retract": 1,
+      "supersede": 1
+    },
+    "by_validity": {
+      "DOMAIN_VALIDATED": 1
+    },
+    "cases": 1
+  }
+}

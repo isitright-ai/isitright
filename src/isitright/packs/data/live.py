@@ -17,7 +17,7 @@ from __future__ import annotations
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -54,12 +54,12 @@ from isitright.core.sequential import PairedSprt, SprtConfig
 from isitright.core.stochastic import (
     Budget,
     RunOutcome,
+    SubjectRunner,
     is_bad,
-    run_paired_with_baseline,
     stability_sequential,
 )
 from isitright.core.subjects import Cost, SubjectKind
-from isitright.core.world import State, diff_states
+from isitright.core.world import diff_states
 from isitright.packs.data.adapters import AgentRun, DataAgent
 from isitright.packs.data.audit import DataAudit, _path, validity_record
 from isitright.packs.data.comparison import undefined_answer
@@ -71,7 +71,7 @@ from isitright.packs.data.programs import RecordedProgram
 @dataclass
 class LiveConfig:
     baseline_runs: int = 3
-    max_trials: int = 10
+    max_trials: int = 20
     attempts: int = 300
     seed: int = 0
     ranking: Ranking = "diverse"
@@ -199,10 +199,17 @@ def _outcome(audit: DataAudit, gold_answer: Any, run: AgentRun) -> RunOutcome:
     return RunOutcome(Outcome.MET if comparison.matches else Outcome.NOT_MET, cost=cost)
 
 
-def _solve(audit: DataAudit, agent: DataAgent, state: State) -> AgentRun:
-    with tempfile.TemporaryDirectory(prefix="isitright-live-") as scratch:
-        write_state(state, audit.prepared.spec.schema, Path(scratch))
-        return agent.solve(audit.task.question, Path(scratch))
+class _AgentSubject:
+    """The agent as `SubjectRunner` runs it: on a world's state, in a scratch directory."""
+
+    def __init__(self, audit: DataAudit, agent: DataAgent) -> None:
+        self.audit = audit
+        self.agent = agent
+
+    def execute(self, target: WorldRuns, seed: int, /) -> AgentRun:
+        with tempfile.TemporaryDirectory(prefix="isitright-live-") as scratch:
+            write_state(target.world.world.state, self.audit.prepared.spec.schema, Path(scratch))
+            return self.agent.solve(self.audit.task.question, Path(scratch))
 
 
 def run_live(
@@ -249,22 +256,10 @@ def run_live(
         )
     )
 
-    def trial(target: WorldRuns, number: int) -> RunOutcome:
-        run = _solve(audit, agent, target.world.world.state)
-        _check_cost_reported(budget, run)
-        outcome = _outcome(audit, target.world.gold_answer, run)
-        budget.record_run(outcome.cost)
-        target.runs.append(run)
-        target.outcomes.append(outcome)
-        target.answers.append(run.answer)
-        if progress is not None:
-            progress(target.world.id, _marker(outcome))
-        return outcome
-
-    for number in range(config.baseline_runs):
-        if not budget.can_run():
-            break
-        trial(base, number)
+    runner = _runner(audit, agent, budget, config, progress)
+    comparison = WorldRuns(base.world)
+    """Fresh baseline runs made for the pairs; `base` keeps the runs made before the search."""
+    runner.run_repeated(base, config.baseline_runs, "baseline")
 
     ranked = rank_worlds(
         [w for w in worlds if w.role is not Role.UNJUDGEABLE],
@@ -298,24 +293,13 @@ def run_live(
         if reason is not None:
             not_run[w.id] = reason
             continue
-        usable = min(config.max_trials, len(base.outcomes))
-        world_config = replace(
-            sprt_config,
-            min_pairs=max(1, min(sprt_config.min_pairs, usable)),
-            max_pairs=max(1, min(sprt_config.max_pairs, usable)),
-        )
-        target = WorldRuns(w, baselines=list(base.outcomes), sprt=PairedSprt(world_config))
+        target = WorldRuns(w)
         results.append(target)
-        assert target.sprt is not None
-        run_paired_with_baseline(
-            lambda number, target=target: trial(target, number),  # type: ignore[misc]
-            base.outcomes,
-            target.sprt,
-            budget,
-            usable,
-        )
+        paired = runner.run_paired(target, comparison, sprt_config)
+        target.sprt = paired.test
+        target.baselines = paired.baseline_outcomes
         stop.record(w, any(is_bad(o) for o in target.outcomes))
-    verification = _verify_minimized(audit, agent, base, frozen_world, config, budget, progress)
+    verification = _verify_minimized(audit, runner, base, frozen_world, config)
     return _report(
         audit,
         agent,
@@ -323,6 +307,7 @@ def run_live(
         config,
         budget,
         base,
+        comparison,
         results,
         not_run,
         screens,
@@ -347,12 +332,10 @@ def _marker(outcome: RunOutcome) -> str:
 
 def _verify_minimized(
     audit: DataAudit,
-    agent: DataAgent,
+    runner: SubjectRunner[WorldRuns, AgentRun],
     base: WorldRuns,
     world: World | None,
     config: LiveConfig,
-    budget: Budget,
-    progress: Callable[[str, str], None] | None,
 ) -> WorldRuns | None:
     """Run the agent on the minimized world of a frozen finding."""
     if world is None or config.verify_minimized_runs < 1:
@@ -369,19 +352,28 @@ def _verify_minimized(
         ),
         baselines=list(base.outcomes),
     )
-    for _ in range(config.verify_minimized_runs):
-        if not budget.can_run():
-            break
-        run = _solve(audit, agent, world.state)
+    runner.run_repeated(target, config.verify_minimized_runs, "confirm")
+    return target
+
+
+def _runner(
+    audit: DataAudit,
+    agent: DataAgent,
+    budget: Budget,
+    config: LiveConfig,
+    progress: Callable[[str, str], None] | None,
+) -> SubjectRunner[WorldRuns, AgentRun]:
+    def judge(target: WorldRuns, run: AgentRun, tag: str) -> RunOutcome:
         _check_cost_reported(budget, run)
-        outcome = _outcome(audit, gold, run)
-        budget.record_run(outcome.cost)
+        outcome = _outcome(audit, target.world.gold_answer, run)
         target.runs.append(run)
         target.outcomes.append(outcome)
         target.answers.append(run.answer)
         if progress is not None:
-            progress("minimized", _marker(outcome))
-    return target
+            progress(target.world.id, _marker(outcome))
+        return outcome
+
+    return SubjectRunner(_AgentSubject(audit, agent), judge, budget, seed=config.seed)
 
 
 def _counts(outcomes: list[RunOutcome]) -> dict[str, int]:
@@ -420,6 +412,7 @@ def _report(
     config: LiveConfig,
     budget: Budget,
     base: WorldRuns,
+    comparison: WorldRuns,
     results: list[WorldRuns],
     not_run: dict[str, str],
     screens: dict[str, Screened],
@@ -584,6 +577,7 @@ def _report(
             "model": agent.model,
             "frozen_program": program.program_id if program else None,
             "baseline_runs": base_counts,
+            "paired_baseline_runs": _counts(comparison.outcomes),
             "generated_worlds": generated,
         },
         assumptions=[

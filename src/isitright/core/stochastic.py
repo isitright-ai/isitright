@@ -7,16 +7,23 @@ only counts are reported. An observed failure is never turned into a rate change
 
 from __future__ import annotations
 
+import hashlib
 import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Generic, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from isitright.core.oracles import Outcome
-from isitright.core.sequential import Decision, PairedSprt, SequentialRecord
+from isitright.core.sequential import (
+    Decision,
+    PairedSprt,
+    PairingInfo,
+    SequentialRecord,
+    SprtConfig,
+)
 from isitright.core.subjects import Cost
 
 DEFAULT_K = 4
@@ -91,30 +98,6 @@ def is_judged(outcome: RunOutcome) -> bool:
     return not outcome.error and (
         outcome.violated or outcome.outcome in (Outcome.MET, Outcome.NOT_MET)
     )
-
-
-def run_paired_with_baseline(
-    run_once: Callable[[int], RunOutcome],
-    baseline: list[RunOutcome],
-    test: PairedSprt,
-    budget: Budget,
-    max_runs: int,
-) -> None:
-    """Run a world once per real baseline run (up to ``max_runs``), pairing run i with baseline i.
-
-    ``run_once`` records its own outcome and cost. The test stops when the baseline runs that were
-    made are used up: a pair never contains a run that did not happen. A pair in which either run
-    errored or could not be judged is left out of the test (the runs stay in the counts).
-    """
-    test.baseline_runs = len(baseline)
-    for index in range(min(max_runs, len(baseline))):
-        if not budget.can_run():
-            break
-        outcome = run_once(index)
-        if not (is_judged(baseline[index]) and is_judged(outcome)):
-            continue
-        if test.add(is_bad(baseline[index]), is_bad(outcome)) is not Decision.CONTINUE:
-            break
 
 
 def mcnemar_exact(only_baseline: int, only_world: int) -> float:
@@ -248,14 +231,15 @@ class Budget:
         """Whether one more run fits the money, time and run limits.
 
         The attempts limit bounds the search for worlds. It does not stop the runs that follow the
-        search (minimization and confirmation), so it is not part of this check.
+        search (minimization and confirmation), so it is not part of this check. A refusal records
+        the limit that refused it, not an earlier one (an attempts limit that ended the search).
         """
         if self.money is not None and self.spent_money >= self.money:
-            self.exhausted = self.exhausted or "money"
+            self.exhausted = "money"
         elif self.seconds is not None and self.elapsed() >= self.seconds:
-            self.exhausted = self.exhausted or "seconds"
+            self.exhausted = "seconds"
         elif self.runs is not None and self.spent_runs >= self.runs:
-            self.exhausted = self.exhausted or "runs"
+            self.exhausted = "runs"
         else:
             return True
         return False
@@ -292,13 +276,176 @@ class Budget:
         return out
 
 
-def run_repeated(run_once: Callable[[int], RunOutcome], k: int, budget: Budget) -> list[RunOutcome]:
-    """Up to k runs of one world, stopping early when the run or money budget is spent."""
-    outcomes: list[RunOutcome] = []
-    for trial in range(k):
-        if not budget.can_run():
-            break
-        outcome = run_once(trial)
-        budget.record_run(outcome.cost)
-        outcomes.append(outcome)
-    return outcomes
+T = TypeVar("T")
+R = TypeVar("R")
+T_contra = TypeVar("T_contra", contravariant=True)
+R_co = TypeVar("R_co", covariant=True)
+
+
+def derive_seed(base_seed: int, call: int) -> int:
+    """The seed of call number ``call`` (from 0) of an audit with ``base_seed``.
+
+    One call index runs through the whole audit (baseline, search, minimization, confirmation), so
+    no seed is reused: two repeats of one world, or of one minimization step, differ.
+    """
+    digest = hashlib.sha256(f"{base_seed}:{call}".encode()).hexdigest()
+    return int(digest[:8], 16)
+
+
+class Executes(Protocol[T_contra, R_co]):
+    """A subject: something that runs on a target (a world, a state) with a seed."""
+
+    def execute(self, target: T_contra, seed: int, /) -> R_co: ...
+
+
+@dataclass(frozen=True)
+class Executed(Generic[R]):
+    """One run that happened: its place in the audit, its seed, its result and how it was judged."""
+
+    call: int
+    seed: int
+    value: R
+    outcome: RunOutcome
+
+
+@dataclass
+class PairedRuns(Generic[R]):
+    """The runs behind one sequential comparison of a world with the baseline."""
+
+    test: PairedSprt
+    world: list[Executed[R]] = field(default_factory=list)
+    baseline: list[Executed[R]] = field(default_factory=list)
+    stopped: Literal["decided", "max_pairs", "budget", "unpairable"] = "max_pairs"
+    """Why the loop ended: the test decided, the pair limit was reached, the budget was spent, or
+    two attempts in a row to form a pair failed (``unpairable``)."""
+
+    @property
+    def world_outcomes(self) -> list[RunOutcome]:
+        return [e.outcome for e in self.world]
+
+    @property
+    def baseline_outcomes(self) -> list[RunOutcome]:
+        return [e.outcome for e in self.baseline]
+
+
+MAX_FAILED_PAIRINGS_IN_A_ROW = 2
+"""Consecutive failed attempts to form a pair after which `run_paired` gives a world up."""
+
+
+class SubjectRunner(Generic[T, R]):
+    """The only place an audit executes a subject.
+
+    Every call checks the budget first, takes a seed derived from the audit's base seed and the
+    call's index, is judged, is counted, and has its cost recorded whether or not it errored. A pack
+    that needs a run goes through ``run``, ``run_repeated`` or ``run_paired``; none of them returns
+    a run the budget did not allow.
+
+    ``judge(target, value, tag)`` turns what the subject returned into a `RunOutcome`. It is also
+    where a pack records the run (it is called once per run, in order). ``tag`` says why the run was
+    made (``"search"``, ``"baseline"``, ``"minimize"``, ``"confirm"``, ...).
+    """
+
+    def __init__(
+        self,
+        subject: Executes[T, R],
+        judge: Callable[[T, R, str], RunOutcome],
+        budget: Budget,
+        *,
+        seed: int = 0,
+    ) -> None:
+        self.subject = subject
+        self.judge = judge
+        self.budget = budget
+        self.seed = seed
+        self.calls = 0
+        """Subject calls made so far. Equals ``budget.spent_runs`` when the budget is not shared."""
+
+    def run(self, target: T, tag: str = "", *, after_search: bool = False) -> Executed[R] | None:
+        """One run, or None when the budget does not allow it.
+
+        ``after_search`` leaves the attempts limit out of the check: it bounds the search for
+        worlds, not the runs that follow it (baseline repeats, minimization, confirmation).
+        """
+        allowed = self.budget.can_run_after_search() if after_search else self.budget.can_run()
+        if not allowed:
+            return None
+        call = self.calls
+        self.calls += 1
+        seed = derive_seed(self.seed, call)
+        value = self.subject.execute(target, seed)
+        outcome = self.judge(target, value, tag)
+        self.budget.record_run(outcome.cost)
+        return Executed(call, seed, value, outcome)
+
+    def run_repeated(
+        self, target: T, k: int, tag: str = "", *, after_search: bool = False
+    ) -> list[Executed[R]]:
+        """Up to ``k`` runs of one target, fewer when the budget ends first."""
+        done: list[Executed[R]] = []
+        for _ in range(k):
+            executed = self.run(target, tag, after_search=after_search)
+            if executed is None:
+                break
+            done.append(executed)
+        return done
+
+    def run_paired(
+        self,
+        world: T,
+        baseline: T,
+        config: SprtConfig,
+        tag: str = "search",
+        *,
+        after_search: bool = False,
+    ) -> PairedRuns[R]:
+        """Pairs of a ``world`` run and a *fresh* ``baseline`` run, until the test decides.
+
+        A baseline run is made for every pair: no baseline outcome is reused or assumed. A run that
+        errored or could not be judged forms no pair (it stays in the run lists and is counted in
+        the test's record). The loop gives up when two runs in a row form no pair, so an agent that
+        fails on every run of a world costs a few runs, not the whole pair limit. The world run is
+        made first, and the baseline run only when it can form a pair.
+        """
+        test = PairedSprt(config)
+        paired: PairedRuns[R] = PairedRuns(test)
+        errored = unjudged = failed_in_a_row = 0
+
+        def usable(executed: Executed[R]) -> bool:
+            nonlocal errored, unjudged
+            if executed.outcome.error:
+                errored += 1
+            elif not is_judged(executed.outcome):
+                unjudged += 1
+            else:
+                return True
+            return False
+
+        paired.stopped = "max_pairs"
+        while test.pairs < config.max_pairs:
+            made = self.run(world, tag, after_search=after_search)
+            if made is None:
+                paired.stopped = "budget"
+                break
+            paired.world.append(made)
+            fresh: Executed[R] | None = None
+            ok = usable(made)
+            if ok:
+                fresh = self.run(baseline, tag, after_search=after_search)
+                if fresh is None:
+                    paired.stopped = "budget"
+                    break
+                paired.baseline.append(fresh)
+                ok = usable(fresh)
+            if not ok:
+                failed_in_a_row += 1
+                if failed_in_a_row >= MAX_FAILED_PAIRINGS_IN_A_ROW:
+                    paired.stopped = "unpairable"
+                    break
+                continue
+            failed_in_a_row = 0
+            assert fresh is not None
+            if test.add(is_bad(fresh.outcome), is_bad(made.outcome)) is not Decision.CONTINUE:
+                paired.stopped = "decided"
+                break
+        test.pairing = PairingInfo(len(paired.world), len(paired.baseline), errored, unjudged)
+        return paired

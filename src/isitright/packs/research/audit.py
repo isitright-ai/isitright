@@ -11,7 +11,6 @@ recorded run, not to the agent.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 from collections.abc import Callable, Sequence
@@ -41,15 +40,14 @@ from isitright.core.mutations import Candidate, Mutator, World
 from isitright.core.oracles import Outcome, Role, controls_status
 from isitright.core.replay import ReplayArtifact
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
-from isitright.core.sequential import Decision, PairedSprt, SprtConfig
+from isitright.core.sequential import PairedSprt, SprtConfig
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import (
     Budget,
     RunOutcome,
+    SubjectRunner,
     count,
     is_bad,
-    run_paired_with_baseline,
-    run_repeated,
     stability,
     stability_sequential,
 )
@@ -108,7 +106,7 @@ class AuditConfig:
     runs: int | None = None
     """Runs per world (default 1 for a deterministic subject, 4 for a stochastic one)."""
     sequential: bool = True
-    max_pairs: int = 16
+    max_pairs: int = 20
     minimize: bool = True
     minimized_findings: int = 3
     minimization_max_attempts: int = 300
@@ -159,11 +157,6 @@ def _path(world: World) -> list[MutationRecord]:
     ]
 
 
-def _derived_seed(base: int, label: str, trial: int) -> int:
-    digest = hashlib.sha256(f"{base}:{label}:{trial}".encode()).hexdigest()
-    return int(digest[:8], 16)
-
-
 @dataclass
 class WorldResult:
     world: World
@@ -171,6 +164,8 @@ class WorldResult:
     runs: list[RecordedRun] = field(default_factory=list)
     judged: list[Judged] = field(default_factory=list)
     outcomes: list[RunOutcome] = field(default_factory=list)
+    paired_baseline: list[RunOutcome] = field(default_factory=list)
+    """Every baseline run made for this world's pairs, unusable ones included."""
     sequential: PairedSprt | None = None
     role: Role = Role.TRAP
     role_basis: str = ""
@@ -180,6 +175,27 @@ class WorldResult:
     screening_basis: str = ""
     not_run: str | None = None
     tie: bool = False
+
+
+@dataclass
+class _Placed:
+    """What a run is made on: a world, and the result that collects the runs made on it."""
+
+    world: World
+    result: WorldResult
+    baseline: bool = False
+
+
+class _Executor:
+    """Adapts a `Subject` to what `SubjectRunner` calls: a placed world and a seed."""
+
+    def __init__(self, subject: Subject) -> None:
+        self.subject = subject
+
+    def execute(self, target: _Placed, seed: int, /) -> RecordedRun:
+        run = self.subject.execute(target.world, seed)
+        run.seed = seed
+        return run
 
 
 def in_process_executor(agent: Agent, task: ResearchTask, stats: FrozenStats) -> Executor:
@@ -285,17 +301,25 @@ class ResearchAudit:
             seconds=config.seconds,
             money=config.money,
         )
-        baseline_runs: list[RecordedRun] = []
         baseline_outcomes: list[RunOutcome] = []
         baseline_k = k if subject.stochastic else 1
-        for trial in range(baseline_k):
-            if trial > 0 and not budget.can_run_after_search():
-                break  # the first baseline run is always made; the rest are under the budget
-            seed = _derived_seed(config.seed, "baseline", trial)
-            run = subject.execute(self.base, seed)
-            run.seed = seed
-            budget.record_run(_cost_of(run))
-            baseline_runs.append(run)
+        self._reference = None
+        runner: SubjectRunner[_Placed, RecordedRun] = SubjectRunner(
+            _Executor(subject), self._judge_run, budget, seed=config.seed
+        )
+        self._runner = runner
+        self._baseline_target = _Placed(
+            self.base, WorldResult(self.base, self.base_validity), baseline=True
+        )
+        first_runs = runner.run_repeated(
+            self._baseline_target, baseline_k, "baseline", after_search=True
+        )
+        if not first_runs:
+            raise ResearchInputError(
+                "the budget allows no run, so there is no baseline to audit "
+                "(raise --max-runs, --seconds or --money)"
+            )
+        baseline_runs = [e.value for e in first_runs]
         baseline = baseline_runs[0]
         self.baseline_runs = baseline_runs
         if config.money is not None and "money" not in baseline.cost:
@@ -322,6 +346,7 @@ class ResearchAudit:
             )
         else:
             note = ""
+        self._reference = (baseline, fact)
         baseline_outcomes = [
             self._baseline_outcome(self.base, r, baseline, fact) for r in baseline_runs
         ]
@@ -329,9 +354,7 @@ class ResearchAudit:
         base_citations = check_citations(baseline.report, documents_of(self.state)).to_json()
 
         def evaluate(candidate: Candidate, validity: Validity) -> Evaluation:
-            return self._evaluate_live(
-                candidate, validity, subject, baseline, baseline_outcomes, fact, k, budget, results
-            )
+            return self._evaluate_live(candidate, validity, subject, baseline, fact, k, results)
 
         mutators = list(config.mutators) if config.mutators is not None else all_mutators()
         result = search(
@@ -389,38 +412,34 @@ class ResearchAudit:
     def _baseline_outcome(
         self, world: World, run: RecordedRun, reference: RecordedRun, fact: dict[str, Any] | None
     ) -> RunOutcome:
+        cost = _cost_of(run)
         if run.status != "COMPLETED":
-            return RunOutcome(None, error=True)
+            return RunOutcome(None, error=True, cost=cost)
         verdict = judge(world, run, reference, fact, self.task.answer_type)
-        return RunOutcome(verdict.outcome, violated=verdict.invariant.outcome is Outcome.NOT_MET)
+        return RunOutcome(
+            verdict.outcome, violated=verdict.invariant.outcome is Outcome.NOT_MET, cost=cost
+        )
 
-    def _trial(
-        self,
-        subject: Subject,
-        world: World,
-        baseline: RecordedRun,
-        fact: dict[str, Any] | None,
-        result: WorldResult,
-        label: str,
-    ) -> Callable[[int], RunOutcome]:
-        def run_trial(trial: int) -> RunOutcome:
-            seed = _derived_seed(self.config.seed, label, trial)
-            run = subject.execute(world, seed)
-            run.seed = seed
-            result.runs.append(run)
-            if run.status != "COMPLETED":
-                return RunOutcome(None, error=True, cost=_cost_of(run))
-            verdict = judge(world, run, baseline, fact, self.task.answer_type)
-            result.judged.append(verdict)
-            if label not in ("min", "confirm"):
-                self._note_cannot_judge(world, run, verdict, trial)
-            return RunOutcome(
-                verdict.outcome,
-                violated=verdict.invariant.outcome is Outcome.NOT_MET,
-                cost=_cost_of(run),
-            )
-
-        return run_trial
+    def _judge_run(self, target: _Placed, run: RecordedRun, tag: str) -> RunOutcome:
+        """Record a run on its world's result and judge it (called by the runner once per run)."""
+        result = target.result
+        result.runs.append(run)
+        if run.status != "COMPLETED":
+            return RunOutcome(None, error=True, cost=_cost_of(run))
+        if self._reference is None:  # the baseline runs, before there is a reference to judge by
+            return RunOutcome(None, cost=_cost_of(run))
+        baseline, fact = self._reference
+        if target.baseline:
+            return self._baseline_outcome(self.base, run, baseline, fact)
+        verdict = judge(target.world, run, baseline, fact, self.task.answer_type)
+        result.judged.append(verdict)
+        if tag not in ("minimize", "confirm"):
+            self._note_cannot_judge(target.world, run, verdict, len(result.runs) - 1)
+        return RunOutcome(
+            verdict.outcome,
+            violated=verdict.invariant.outcome is Outcome.NOT_MET,
+            cost=_cost_of(run),
+        )
 
     def _note_cannot_judge(
         self, world: World, run: RecordedRun, verdict: Judged, trial: int
@@ -446,10 +465,8 @@ class ResearchAudit:
         validity: Validity,
         subject: Subject,
         baseline: RecordedRun,
-        baseline_outcomes: list[RunOutcome],
         fact: dict[str, Any] | None,
         k: int,
-        budget: Budget,
         results: dict[str, WorldResult],
     ) -> Evaluation:
         world = candidate.world
@@ -461,11 +478,20 @@ class ResearchAudit:
             if screen in ("RIGHT_IF_UNCHANGED",):
                 wr.not_run = f"screened out: {basis}"
                 return Evaluation(Verdict.REJECTED, validity, reason="screened_out")
-        run_trial = self._trial(subject, world, baseline, fact, wr, world.fingerprint())
-        if subject.stochastic and self.config.sequential and len(baseline_outcomes) > 1:
-            self._paired(subject, world, baseline, baseline_outcomes, fact, wr, budget)
+        placed = _Placed(world, wr)
+        if subject.stochastic and self.config.sequential and k > 1:
+            paired = self._runner.run_paired(
+                placed,
+                self._baseline_target,
+                SprtConfig(
+                    min_pairs=min(4, self.config.max_pairs), max_pairs=self.config.max_pairs
+                ),
+            )
+            wr.outcomes = paired.world_outcomes
+            wr.sequential = paired.test
+            wr.paired_baseline = paired.baseline_outcomes
         else:
-            wr.outcomes = run_repeated(run_trial, k, budget)
+            wr.outcomes = [e.outcome for e in self._runner.run_repeated(placed, k, "search")]
         if not wr.outcomes:
             return Evaluation(Verdict.INCONCLUSIVE, validity, reason="no run completed")
         if wr.judged:
@@ -487,29 +513,6 @@ class ResearchAudit:
         if all(o.outcome is Outcome.CANNOT_JUDGE or o.error for o in wr.outcomes):
             return Evaluation(Verdict.INCONCLUSIVE, validity, detail=wr, reason="cannot_judge")
         return Evaluation(Verdict.AGREE, validity, detail=wr)
-
-    def _paired(
-        self,
-        subject: Subject,
-        world: World,
-        baseline: RecordedRun,
-        baseline_outcomes: list[RunOutcome],
-        fact: dict[str, Any] | None,
-        wr: WorldResult,
-        budget: Budget,
-    ) -> None:
-        usable = min(self.config.max_pairs, len(baseline_outcomes))
-        test = PairedSprt(SprtConfig(min_pairs=min(4, usable), max_pairs=usable))
-        wr.sequential = test
-        run_trial = self._trial(subject, world, baseline, fact, wr, world.fingerprint())
-
-        def run_once(pair: int) -> RunOutcome:
-            outcome = run_trial(pair)
-            budget.record_run(outcome.cost)
-            wr.outcomes.append(outcome)
-            return outcome
-
-        run_paired_with_baseline(run_once, baseline_outcomes, test, budget, usable)
 
     def _observability(self, wr: WorldResult, baseline: RecordedRun) -> None:
         """A planted or changed document no query can retrieve is unobservable: a corpus or
@@ -639,15 +642,11 @@ class ResearchAudit:
             final, minimization = self._minimize(world, subject, baseline, fact, kind, budget)
         # Confirmation and the verdict shown are on the world that is shown.
         shown = WorldResult(final, self.spec.validate_world(final.state, world.path))
-        trial = self._trial(subject, final, baseline, fact, shown, "confirm")
         k = max(1, len(original.runs))
-        bad_runs = 0
-        for t in range(k):
-            if not budget.can_run_after_search():
-                break
-            outcome = trial(t)
-            budget.record_run(outcome.cost)
-            bad_runs += is_bad(outcome)
+        confirmed = self._runner.run_repeated(
+            _Placed(final, shown), k, "confirm", after_search=True
+        )
+        bad_runs = sum(is_bad(e.outcome) for e in confirmed)
         if not shown.runs:
             # The run budget was spent before one confirmation run: report the world the search
             # ran, with the search's own runs, rather than a world no run has been made on.
@@ -694,10 +693,9 @@ class ResearchAudit:
             validity=validity_record(shown.validity, shown.unobservable),
             oracles=_oracle_records(worst),
             stability=stability_sequential(
-                baseline_outcomes, original.outcomes, k, original.sequential
+                original.paired_baseline, original.outcomes, k, original.sequential
             )
             if original.sequential is not None
-            and original.sequential.decision is not Decision.CONTINUE
             else stability(baseline_outcomes, original.outcomes, k)
             if subject.stochastic
             else None,
@@ -744,16 +742,14 @@ class ResearchAudit:
         budget: Budget,
     ) -> tuple[World, dict[str, Any]]:
         def reproduces(candidate: World) -> bool:
-            if not budget.can_run_after_search():
-                return False  # not shown to reproduce: the minimizer keeps what it has
             wr = WorldResult(candidate, self.base_validity)
-            run_trial = self._trial(subject, candidate, baseline, fact, wr, "min")
             try:
-                outcome = run_trial(0)
+                executed = self._runner.run(_Placed(candidate, wr), "minimize", after_search=True)
             except Exception:
                 return False
-            budget.record_run(outcome.cost)
-            if not is_bad(outcome) or not wr.judged:
+            if executed is None:
+                return False  # not shown to reproduce: the minimizer keeps what it has
+            if not is_bad(executed.outcome) or not wr.judged:
                 return False
             return kind is None or wr.judged[0].expectation.kind is kind
 

@@ -3,6 +3,63 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
+## 0.9.0 - Unreleased
+
+Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by package.
+
+### N1: one run loop in the core (breaking: cost and report fields)
+
+- **One loop runs every subject.** `isitright.core.stochastic.SubjectRunner` is the only code that
+  executes a subject (an agent command, a data agent, a research stand-in or agent). It checks the
+  budget before every call (baseline, search, minimization and confirmation alike), records the
+  cost of every run (an errored run included), counts the calls and derives a distinct seed for
+  every call from the audit's base seed and the call's index, so no seed repeats across worlds,
+  minimization repeats or confirmation runs. The agents, data and research packs had one loop each
+  and now call it; their copies are removed, together with `run_repeated` and
+  `run_paired_with_baseline`. A test fails if code outside the runner calls a subject's `execute`.
+- **A fresh baseline run for every pair, in all three packs.** A pair is one run of the world and
+  one run of the baseline made for that pair. No baseline outcome is reused, cycled or assumed.
+  The agents pack reused the baseline runs made before the search for the first pairs; the
+  research pack stopped at the baseline runs it had (0.8.1) after assuming a pass beyond them
+  (0.8.0); the data pack stopped likewise (0.8.1) after cycling three outcomes (0.8.0).
+- **A run that errored or could not be judged forms no pair.** The sequential record counts the
+  world runs and baseline runs that were made and the runs left out (`world_runs`,
+  `baseline_runs`, `excluded_errored`, `excluded_unjudged`). When two runs in a row form no pair
+  the world is given up, so an agent that never completes costs a few runs.
+- **Cost.** A sequential test now costs two runs per pair. A world with no failure costs
+  `2 x minimum pairs` runs (agents: `2 x --trials`, research: 8, data: `2 x --baseline-runs`); a
+  world that runs to the limit costs 40 runs at the default 20 pairs. The baseline runs made before
+  the search are no longer part of the pairs. The pair limit is 20 in all three packs: the data
+  pack's `--max-trials` (and `LiveConfig.max_trials`) rises from 10, and research
+  (`AuditConfig.max_pairs`) and agents (`--max-trials`) from 16. In a simulation of a rise from
+  10% to 70%, 10 pairs found it in about 40% of tests and 16 in about 85%; 20 pairs find it in
+  about 94% of tests with a minimum of 4 pairs (research, agents) and about 91% with 3 (data).
+  The minimum pair counts are unchanged.
+- **Research:** a budget that allows no run at all (`--max-runs 0`) is refused with an input error
+  instead of making one baseline run past the budget. The research pack's pair limit is
+  `AuditConfig.max_pairs` (default 20); the baseline run count (`runs`) no longer caps it.
+- **Data:** the report's `inputs.baseline_runs` still counts the runs made before the search; the
+  fresh runs made for the pairs are in `inputs.paired_baseline_runs`.
+- **Agents:** each run in `extensions.mcp.runs` carries its `seed`. The seed is derived and
+  recorded; it is not passed to the agent command (an agent that takes a seed is a later change).
+- **Report schema 0.9.** `stability.sequential` gains `world_runs`, `baseline_runs`,
+  `excluded_errored` and `excluded_unjudged` (default 0). Reports in schema 0.4 to 0.8 still load,
+  and `replay` and `export` read them.
+- **Per finding.** `stability.baseline` counts the baseline runs made for that world's pairs
+  (unusable ones included), in all three packs; the runs made before the search are reported
+  apart. A research finding whose paired test ended undecided (budget spent or failed pairing
+  attempts) no longer falls back to the fixed-sample comparison by run index, which could give a
+  rate claim the sequential test never made: it gives counts only.
+- **Giving a world up.** After two failed attempts in a row to form a pair (a world run that was
+  unusable, or a usable one whose baseline run was not), the world's test ends with counts only;
+  a valid pair resets the count.
+- **Budget stop reason.** A run refused after the search reports the limit that refused it (runs,
+  money or time), not an earlier attempts limit.
+- **Tests.** Seeded null simulations through each pack's audit path (equal failure rates of 30%
+  and 50%: at most 5% of worlds get a rate increase, plus three standard errors) and power runs
+  (10% against 70%: at least 80%, minus three standard errors). The default suite runs a small
+  number of audits; `pytest -m statistical` runs the full size.
+
 ## 0.8.1 - Hotfix
 
 A hotfix for 0.8.0. It changes no report schema (still 0.8). The release was built and tested

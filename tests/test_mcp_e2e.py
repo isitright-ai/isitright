@@ -20,7 +20,7 @@ from isitright.packs.mcp.runner import AgentsInputError
 EXAMPLES = Path(__file__).parents[1] / "examples" / "agents"
 SCENARIO_REF = f"{EXAMPLES / 'booking_scenario.py'}:SCENARIO"
 DEMO = f'"{sys.executable}" "{EXAMPLES / "demo_agent.py"}"'
-SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.8.schema.json"
+SCHEMA = Path(__file__).parents[1] / "schemas" / "report-0.9.schema.json"
 TRAP = ["booked_24h_01m"]
 CONTROL = ["flight_cancelled"]
 BOTH = [*TRAP, *CONTROL]
@@ -107,7 +107,7 @@ def test_the_written_report_matches_the_checked_in_schema(
 def test_recorded_runs_replay_offline(careless: tuple[AuditReport, Path]) -> None:
     report, output = careless
     outcomes = replay_report(report, load_scenario(SCENARIO_REF), output)
-    assert len(outcomes) == 5 and all(o.reproduced for o in outcomes), outcomes
+    assert len(outcomes) == 9 and all(o.reproduced for o in outcomes), outcomes
 
 
 def test_every_finding_exports_as_an_eval_case_that_reproduces_its_disagreement(
@@ -129,7 +129,7 @@ def test_cli_replay_reproduces_a_report(careless: tuple[AuditReport, Path]) -> N
         app, ["agents", "replay", "--report", str(output / "report.json"), "--trust-code"]
     )
     assert result.exit_code == 0, result.output
-    assert result.output.count("reproduced") == 5 and "NOT reproduced" not in result.output
+    assert result.output.count("reproduced") == 9 and "NOT reproduced" not in result.output
     tampered = output / "runs" / "booked_24h_01m" / "1" / "state_after.json"
     saved = tampered.read_text(encoding="utf-8")
     tampered.write_text(saved.replace("cancelled", "active"), encoding="utf-8")
@@ -271,7 +271,7 @@ def test_a_crashing_agent_is_reported_as_a_subject_error(tmp_path: Path) -> None
 def test_an_agent_that_never_connects_is_evaluated_on_the_untouched_world(tmp_path: Path) -> None:
     case = _quick(tmp_path, f'"{sys.executable}" -c "pass"', k=2).cases[0]
     runs = case.extensions["mcp"]["runs"]
-    assert [r["tool_calls"] for r in runs] == [0, 0, 0, 0]
+    assert [r["tool_calls"] for r in runs] == [0, 0, 0, 0, 0, 0]
     assert all(r["outcome"] == "MET" for r in runs)  # not cancelling is right here
     assert case.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
     assert case.stability is not None and case.stability.k == 2
@@ -422,7 +422,7 @@ def test_the_stack_under_test_and_its_cost_are_read_from_the_transcript(tmp_path
     runs = case.extensions["mcp"]["runs"]
     assert [(r["model_calls"], r["input_tokens"], r["output_tokens"]) for r in runs] == [
         (1, 7, 2)
-    ] * 4
+    ] * 6
     assert all(r["agent_stop_reason"] == "final" and r["cost"] == 0.5 for r in runs)
     text = (tmp_path / "out" / "report.md").read_text(encoding="utf-8")
     assert "Stack under test: prov mod-1; harness writes_transcript sha256:" in text

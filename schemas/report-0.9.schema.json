@@ -921,6 +921,11 @@
           "title": "Alternative Share",
           "type": "number"
         },
+        "baseline_runs": {
+          "default": 0,
+          "title": "Baseline Runs",
+          "type": "integer"
+        },
         "beta": {
           "title": "Beta",
           "type": "number"
@@ -934,6 +939,16 @@
         },
         "discordant_world_only": {
           "title": "Discordant World Only",
+          "type": "integer"
+        },
+        "excluded_errored": {
+          "default": 0,
+          "title": "Excluded Errored",
+          "type": "integer"
+        },
+        "excluded_unjudged": {
+          "default": 0,
+          "title": "Excluded Unjudged",
           "type": "integer"
         },
         "log_likelihood_ratio": {
@@ -985,6 +1000,11 @@
         "upper_boundary": {
           "title": "Upper Boundary",
           "type": "number"
+        },
+        "world_runs": {
+          "default": 0,
+          "title": "World Runs",
+          "type": "integer"
         }
       },
       "required": [
@@ -1435,12 +1455,13 @@
       "type": "string"
     },
     "schema_version": {
-      "default": "0.8",
+      "default": "0.9",
       "enum": [
         "0.4",
         "0.5",
         "0.6",
-        "0.8"
+        "0.8",
+        "0.9"
       ],
       "title": "Schema Version",
       "type": "string"

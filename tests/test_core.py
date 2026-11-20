@@ -55,10 +55,10 @@ from isitright.core.spec import Operation, ParamSpec, ToolSpec, WorldSpec
 from isitright.core.stochastic import (
     Budget,
     RunOutcome,
+    SubjectRunner,
     count,
     mcnemar_exact,
     rate_claim,
-    run_repeated,
     stability,
 )
 from isitright.core.subjects import Cost
@@ -692,9 +692,15 @@ def test_a_rate_claim_needs_a_paired_test_and_names_it() -> None:
     assert mcnemar_exact(0, 0) == 1.0 and mcnemar_exact(1, 9) < 0.05
 
 
+class _CountingSubject:
+    def execute(self, target: object, seed: int, /) -> RunOutcome:
+        return RunOutcome(Outcome.MET, cost=Cost(money=0.1))
+
+
 def test_run_repeated_stops_at_the_money_budget() -> None:
     budget = Budget(money=0.25)
-    outcomes = run_repeated(lambda _t: RunOutcome(Outcome.MET, cost=Cost(money=0.1)), 10, budget)
+    runner = SubjectRunner(_CountingSubject(), lambda _t, value, _tag: value, budget)
+    outcomes = runner.run_repeated(None, 10)
     assert len(outcomes) == 3 and budget.exhausted == "money"
     assert budget.to_json()["spent"]["runs"] == 3  # type: ignore[index]
     assert not Budget(seconds=0.0).can_run() and not Budget(runs=0).can_run()
