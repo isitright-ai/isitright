@@ -43,7 +43,7 @@ Compare one query pair on perturbed worlds of a database or schema.
 | `--float-rtol X`, `--float-atol X` | `1e-9`, `1e-12` | |
 | `--output-dir DIR` | `artifacts/check` | |
 | `--format json\|markdown\|both` | `both` | |
-| `--fail-on none\|domain-counterexample\|any-counterexample` | `none` | Exit code 3 |
+| `--fail-on none\|domain-counterexample\|any-counterexample` | `none` | Exit code 3. The live research modes also accept `rate-increase` and `observed-failure` ([CI](../guides/ci.md#live-agent-gates)) |
 | `--verify-native` / `--no-verify-native` | on | Re-execute DuckDB findings on PostgreSQL when installed |
 
 Writes `case_report.json`, `case_report.md`, and for a counterexample `counterexample.sql` and
@@ -107,7 +107,7 @@ Run an agent on the [baseline](../concepts/live-agents.md#baseline-first) and on
 | `--max-money X` | | Needs agent-reported cost |
 | `--max-runs N`, `--max-seconds S` | | |
 | `--output-dir DIR` | `artifacts/agents-run` | |
-| `--fail-on none\|invariant-violation\|any-finding` | `none` | Exit code 3 |
+| `--fail-on none\|invariant-violation\|any-finding\|rate-increase\|observed-failure` | `none` | Exit code 3. `any-finding` and `rate-increase` need a decided rate increase; `observed-failure` also trips on an observation ([CI](../guides/ci.md#live-agent-gates)) |
 
 ## `isitright agents replay`
 
@@ -116,9 +116,9 @@ check they reproduce. The report records the scenario reference as you typed it;
 file has moved (or you replay from another directory), `--scenario file.py:SCENARIO` says where it is
 now. Without it, a recorded reference that cannot be loaded exits with code 2 and names `--scenario`.
 
-## `isitright agents export REPORT --output FILE`
+## `isitright agents export REPORT --output FILE [--include-observed]`
 
-Append the report's findings as eval cases (world, task, recorded trace, verdict).
+Append the report's findings as eval cases (world, task, recorded trace, verdict). Findings graded `OBSERVED_FAILURE` are left out (the command says how many) unless `--include-observed` is given.
 
 ## `isitright agents order`
 
@@ -150,18 +150,19 @@ result. See [Data analysis agents](../data.md#long-audits-resume-and-the-run-cac
 
 `--agent module:callable --output DIR --trust-code [--programs FILE] [--pass-env NAME ...]
 [--baseline-runs N] [--max-trials N] [--max-worlds N] [--ranking diverse|screening|coverage|random]
-[--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]`. Live
+[--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]
+[--allow-failing-baseline]`. Live
 audit: the agent is run on ranked worlds, each run paired with a fresh baseline run (`--max-trials`
 pairs per world, default 20), in a separate process that sees only the variables named by
-`--pass-env`.
+`--pass-env`. A world is first run `--baseline-runs` times and goes on to the pairs only if one of those runs failed. The audit stops with a message (exit code 2) unless every baseline run met the expectation; `--allow-failing-baseline` audits anyway.
 
 ## `isitright data replay REPORT`
 
 `--trust-code [--finding N]`. Rerun a finding from its concrete minimized world.
 
-## `isitright data export REPORT --output DIR`
+## `isitright data export REPORT --output DIR [--include-observed]`
 
-Write each finding as an eval case: the dataset (CSV), the question, the gold program, the expected
+Write each finding as an eval case (live findings graded `OBSERVED_FAILURE` only with `--include-observed`): the dataset (CSV), the question, the gold program, the expected
 answer, and an index `cases.jsonl`.
 
 ## `isitright research check CORPUS`
@@ -173,8 +174,8 @@ isitright research check CORPUS --task task.json --output DIR \
   (--stand-in NAME | --agent module:attr | --agent-command "..." | --recorded-run run.json) \
   [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] [--runs K] [--max-runs N] \
   [--seconds S] [--max-money USD] [--timeout S] [--screen] [--no-minimize] \
-  [--allow-failing-baseline] [--record-runs DIR] \
-  [--fail-on none|domain-counterexample|any-counterexample]
+  [--allow-failing-baseline] [--record-runs DIR] [--export-observed] \
+  [--fail-on none|domain-counterexample|any-counterexample|rate-increase|observed-failure]
 ```
 
 `CORPUS` is a JSONL file or a directory. Choose exactly one subject. `--agent` and
@@ -189,9 +190,9 @@ Reproduce a finding offline: the recorded tool calls must give the same results 
 corpus, the recorded report must earn the recorded verdict, and a stand-in agent run again with the
 recorded seed must give the same report. A live agent is not run again.
 
-## `isitright research export REPORT --output DIR`
+## `isitright research export REPORT --output DIR [--include-observed]`
 
-Write each finding as an eval case: the minimized corpus, the question and the expectation.
+Write each finding as an eval case: the minimized corpus, the question and the expectation. A finding of a stochastic agent graded `OBSERVED_FAILURE` gets its replay artifact but no eval case at audit time (`--export-observed` writes it) and is skipped here unless `--include-observed`.
 
 ## Exit codes
 

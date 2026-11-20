@@ -240,7 +240,7 @@ def test_research_an_incomplete_paired_test_makes_no_rate_claim():
 
     from .research_fixtures import audit
 
-    a = audit(depth=1, runs=8, minimize=False, max_runs=32)
+    a = audit(depth=1, runs=8, minimize=False, max_runs=40)  # 8 more for the screening runs
     report = a.check(_research_subject_with_unusable_baselines(a, frozenset({2, 5})))
     (finding,) = report.findings
     stability = finding.stability
@@ -250,7 +250,8 @@ def test_research_an_incomplete_paired_test_makes_no_rate_claim():
     assert sequential.pairs == 6
     assert (sequential.world_runs, sequential.baseline_runs) == (8, 8)
     assert (sequential.excluded_errored, sequential.excluded_unjudged) == (2, 0)
-    assert stability.world.n == 8 and stability.world.not_met + stability.world.violated >= 8
+    # the 8 screening runs and the 8 runs paired with a baseline run
+    assert stability.world.n == 16 and stability.world.not_met + stability.world.violated >= 16
     assert "counts only" in sequential.note or "stopped before a decision" in sequential.note
 
 
@@ -271,7 +272,7 @@ def test_research_a_finding_counts_the_baseline_runs_made_for_its_own_world():
         assert stability.baseline.errors == 2, "this world's two unusable baseline runs, no others"
         assert stability.sequential.excluded_errored == 2
         assert stability.sequential.pairs <= stability.baseline.n - 2
-        assert stability.world.n == stability.sequential.world_runs
+        assert stability.world.n == stability.sequential.world_runs + 3  # + 3 screening runs
 
 
 def test_research_never_reuses_a_seed_across_search_minimization_and_confirmation() -> None:
@@ -401,6 +402,7 @@ def _data_decisions(
                 max_worlds=6,
                 verify_minimized_runs=0,
                 seed=seed * 1000 + n,
+                allow_failing_baseline=True,  # the baseline fails at the simulated rate
             ),
         )
         world_tests += sum(
@@ -458,7 +460,13 @@ def test_data_runs_the_agent_exactly_as_often_as_the_budget_says(data_audit: Any
 def _data_case(audit: Any, agent: Any, **config: Any) -> Any:
     from isitright.packs.data.live import LiveConfig, run_live
 
-    settings = {"baseline_runs": 3, "attempts": 40, "max_worlds": 6, "verify_minimized_runs": 0}
+    settings = {
+        "baseline_runs": 3,
+        "attempts": 40,
+        "max_worlds": 6,
+        "verify_minimized_runs": 0,
+        "allow_failing_baseline": True,  # these agents fail at a chosen rate, the baseline included
+    }
     return run_live(audit, agent, config=LiveConfig(**{**settings, **config}))
 
 
@@ -499,7 +507,7 @@ def test_data_a_finding_counts_the_baseline_runs_made_for_its_own_world(data_aud
         record = stability.sequential
         assert stability.baseline.n == record.baseline_runs
         assert stability.baseline.n != case.inputs["baseline_runs"]["n"] or record.pairs == 0
-        assert stability.world.n == record.world_runs
+        assert stability.world.n == record.world_runs + 3  # + the 3 screening runs
         assert record.pairs <= min(record.world_runs, record.baseline_runs)
         assert stability.baseline.errors == record.excluded_errored - stability.world.errors
         injected += stability.baseline.errors
@@ -514,7 +522,13 @@ def test_data_never_reuses_a_baseline_outcome_across_pairs(data_audit: Any) -> N
     case = run_live(
         data_audit,
         agent,
-        config=LiveConfig(baseline_runs=3, attempts=40, max_worlds=4, verify_minimized_runs=0),
+        config=LiveConfig(
+            baseline_runs=3,
+            attempts=40,
+            max_worlds=4,
+            verify_minimized_runs=0,
+            allow_failing_baseline=True,
+        ),
     )
     sequential = [
         f.stability.sequential for f in case.findings if f.stability and f.stability.sequential
@@ -751,7 +765,7 @@ def test_agents_a_finding_counts_the_baseline_runs_made_for_its_own_world(
     record = stability.sequential
     assert stability.baseline.n == record.baseline_runs != 4, "not the 4 preliminary runs"
     assert stability.baseline.errors == record.excluded_errored == 2
-    assert stability.world.n == record.world_runs
+    assert stability.world.n == record.world_runs + 4  # + the 4 screening runs
     assert record.pairs == record.baseline_runs - 2
     baseline_world = next(w for w in report.cases[0].worlds if w.id == "baseline")
     assert baseline_world.counts["n"] == 4, "the preliminary baseline is reported apart"

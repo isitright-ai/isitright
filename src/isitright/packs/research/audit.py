@@ -53,7 +53,7 @@ from isitright.core.stochastic import (
     is_judged,
     multiplicity_of,
     observation_of,
-    stability,
+    stability_counts_only,
     stability_sequential,
 )
 from isitright.core.subjects import Cost, SubjectKind
@@ -704,7 +704,7 @@ class ResearchAudit:
                 original.paired_baseline, original.outcomes, k, original.sequential
             )
             if original.sequential is not None
-            else stability(baseline_outcomes, original.outcomes, k)
+            else stability_counts_only(baseline_outcomes, original.outcomes, k)
             if subject.stochastic
             else None,
             evidence_grade=grade_of(original.sequential) if subject.stochastic else None,
@@ -1131,8 +1131,11 @@ class ResearchAudit:
         )
         executed = result.executed
         graded = [f for f in findings if f.evidence_grade is not EvidenceGrade.OBSERVED_FAILURE]
+        base_world = self.base.fingerprint()
+        # the baseline's own runs are not a judged run of a mutated world
+        mutated = [wr for wr in results.values() if wr.world.fingerprint() != base_world]
         nothing_judged = mode == "live" and not any(
-            is_judged(o) for wr in results.values() for o in wr.outcomes
+            is_judged(o) for wr in mutated for o in wr.outcomes
         )
         if graded:
             status = DivergenceStatus.COUNTEREXAMPLE_FOUND
@@ -1149,9 +1152,9 @@ class ResearchAudit:
                         wr.outcomes,
                         grade_of(wr.sequential) if any(is_bad(o) for o in wr.outcomes) else None,
                     )
-                    for wr in results.values()
+                    for wr in mutated
                 ],
-                [*baseline_outcomes, *(o for wr in results.values() for o in wr.paired_baseline)],
+                [*baseline_outcomes, *(o for wr in mutated for o in wr.paired_baseline)],
             )
             if mode == "live" and subject.stochastic
             else None

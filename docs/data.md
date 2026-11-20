@@ -12,7 +12,7 @@ pip install 'isitright[data]'
 
 **Frozen.** The code an agent executed in its baseline run is recorded (a *recorded program*) and replayed on many generated worlds. This is cheap: no model is called. A frozen finding is scoped to the program: "this program disagrees with the reference on this world". It says nothing about the agent until a live run confirms it.
 
-**Live.** The frozen replay ranks generated worlds, and the agent itself is run on the ranked worlds under the budgets and stopping rules of `isitright agents run`, and the sequential test pairs each run of a world with a fresh baseline run (up to `--max-trials` pairs, 20 by default; see [live agents](concepts/live-agents.md)). A live result records where a candidate was found (the frozen program) and where it was verified (the agent's own runs). The agent may write different code once it sees different data, so the report counts the runs whose code changed.
+**Live.** The frozen replay ranks generated worlds, and the agent itself is run on the ranked worlds under the budgets and stopping rules of `isitright agents run`, and a world on which one of the first `--baseline-runs` runs fails goes on to the sequential test, which pairs each run of the world with a fresh baseline run (up to `--max-trials` pairs, 20 by default; see [live agents](concepts/live-agents.md)). The audit stops, with a message, if a baseline run does not meet the expectation; `--allow-failing-baseline` audits anyway. A finding is graded `RATE_INCREASE` (the test decided a higher failure rate) or `OBSERVED_FAILURE` (a judged run failed; nothing more is claimed), and the report shows failures out of judged runs with an interval. A live result records where a candidate was found (the frozen program) and where it was verified (the agent's own runs). The agent may write different code once it sees different data, so the report counts the runs whose code changed.
 
 The minimized world of a frozen finding is also run live, so that a counterexample small enough to read is checked against the agent.
 
@@ -172,7 +172,7 @@ isitright data check tasks/177 --programs programs.jsonl --output out/177 --trus
 
 ## What a result means
 
-A frozen finding: this program, on this world, in this host, gives an answer the gold program does not. A live finding: the agent itself, run on this world, gave an answer the gold program does not, in the counted number of runs. A statistical claim about a rate needs the sequential test to cross its boundary; below that the report gives counts. `NOT_FOUND_WITHIN_BUDGET` says what was tried, not that the program is correct.
+A frozen finding: this program, on this world, in this host, gives an answer the gold program does not. A live finding: the agent itself, run on this world, gave an answer the gold program does not, in the counted number of runs. A statistical claim about a rate needs the sequential test to cross its boundary; below that the report gives counts and the finding is graded `OBSERVED_FAILURE`, status `OBSERVED_FAILURE`. A live audit in which no mutated world produced a judged run is `INCONCLUSIVE`. `NOT_FOUND_WITHIN_BUDGET` says what was tried, not that the program is correct.
 
 Two cautions for reading a finding:
 

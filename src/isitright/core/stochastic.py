@@ -304,6 +304,21 @@ def observation_of(
     )
 
 
+def stability_counts_only(
+    baseline: list[RunOutcome] | None, world: list[RunOutcome], k: int
+) -> Stability:
+    """Stability for a world with no sequential test: counts, and never a rate claim.
+
+    The runs of a world and the baseline runs made before the search are not pairs, so a
+    comparison by run index would make a claim no paired test made.
+    """
+    value = stability(baseline, world, k)
+    note = "no sequential test was run on this world: counts only, no rate claim"
+    if value.note.startswith("the baseline itself is flaky"):
+        note = "the baseline itself is flaky, which weakens any finding. " + note
+    return value.model_copy(update={"rate_claim": None, "note": note})
+
+
 def stability_sequential(
     baseline: list[RunOutcome], world: list[RunOutcome], k: int, test: PairedSprt
 ) -> Stability:

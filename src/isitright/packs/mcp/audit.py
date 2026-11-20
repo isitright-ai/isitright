@@ -57,7 +57,7 @@ from isitright.core.stochastic import (
     is_judged,
     multiplicity_of,
     observation_of,
-    stability,
+    stability_counts_only,
     stability_sequential,
 )
 from isitright.core.world import diff_states, sha256_text
@@ -792,7 +792,7 @@ def build_report(
                 stability=(
                     stability_sequential(r.paired_baseline, outcomes, k, r.sequential)
                     if r.sequential is not None
-                    else stability(baseline_outcomes, outcomes, k)
+                    else stability_counts_only(baseline_outcomes, outcomes, k)
                 ),
                 evidence_grade=grade_of(r.sequential),
                 observation=observation_of(outcomes, r.paired_baseline),

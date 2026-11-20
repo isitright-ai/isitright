@@ -174,12 +174,12 @@ several documents counts once; it sees no authority because `open` does not show
 tool call).
 
 Live agents get repeated runs, counts, a baseline repeated `k` times (flakiness is reported first),
-the paired sequential test (each pair is a run of the world and a fresh baseline run, up to 20
+the paired sequential test (a world whose first runs include a failure goes on to pairs, each a run of the world and a fresh baseline run, up to 20
 pairs per world; see [live agents](../concepts/live-agents.md)),
 noise-tolerant minimization of the mutation path,
 and budgets in runs, wall time and money (money is refused for an agent that reports no cost).
 `--seconds` is a cooperative budget checked between worlds, not a hard timeout on one run; use
-`--timeout` for an agent command. `--screen` replays the baseline trace on each candidate first and runs the agent only where the
+`--timeout` for an agent command. A finding of a stochastic agent is graded `RATE_INCREASE` (the paired test decided a higher failure rate) or `OBSERVED_FAILURE` (a judged run failed; no rate is claimed); the second gets no eval case unless `--export-observed` is given, and trips `--fail-on` only under `observed-failure`. A finding of a deterministic subject has no grade. `--screen` replays the baseline trace on each candidate first and runs the agent only where the
 replay shows a change it could see; it ranks and skips, it never decides.
 
 ## Reading a report

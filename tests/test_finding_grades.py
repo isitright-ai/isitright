@@ -1,3 +1,4 @@
+# ruff: noqa: F811
 # Proposed fixture: pending owner review
 # The expected values below (what a 5% agent, an agent that only errors, a failing baseline and an
 # observation-only case must produce) were written by the same author as the implementation.
@@ -31,7 +32,6 @@ from typing import Any
 import pytest
 
 from isitright.core.oracles import Role
-from isitright.core.stochastic import is_bad
 
 SHOP = Path(__file__).parents[1] / "examples" / "agents" / "shop"
 SHOP_REF = f"{SHOP / 'scenario.py'}:SCENARIO"
@@ -432,6 +432,9 @@ def test_export_leaves_observed_failures_out_unless_asked(
     assert first.exit_code == 0, first.output
     assert "Exported 0 eval case(s)" in first.output
     assert "1 finding(s) graded OBSERVED_FAILURE were not exported" in first.output
+    # The recorded refusal makes no tool call, so it left no trace file: an empty one will do.
+    example = json.loads(report.read_text(encoding="utf-8"))["cases"][0]["findings"][0]
+    (report.parent / example["divergence"]["example_run_dir"] / "trace.jsonl").touch()
     second = CliRunner().invoke(
         app, ["agents", "export", str(report), "--output", str(out), "--include-observed"]
     )
@@ -446,6 +449,273 @@ def test_a_deterministic_or_recorded_finding_needs_no_rate_decision(
     """Without a sequential test there is no pairing, so nothing can claim a rate: the grade is
     OBSERVED_FAILURE and the audit's status says so."""
     _scripted_agent(monkeypatch, one_world, _always_bad_in_worlds)
-    case = _agents_audit(tmp_path, one_world, 0, sequential=False, k=2).cases[0]
+    case = _agents_audit(tmp_path, one_world, 0, sequential=False, k=8).cases[0]
     assert case.divergence_status.value == "OBSERVED_FAILURE"
     assert [f.evidence_grade.value for f in case.findings] == ["OBSERVED_FAILURE"]
+    # 8 failing runs against 8 passing baseline runs would give a McNemar claim by run index
+    stability = case.findings[0].stability
+    assert stability.rate_claim is None and "no rate claim" in stability.note
+
+
+# -- the data pack ---------------------------------------------------------------------------
+
+
+class _WrongOnce(_FlakyDataAgent):
+    """The _FlakyDataAgent's right answers, with exactly one wrong one: the first run on a file
+    that is not the baseline's."""
+
+    def __init__(self) -> None:
+        super().__init__(random.Random(0), 0.0, 0.0)
+        self.wrong = 0
+
+    def solve(self, question: str, directory: Path) -> Any:
+        from isitright.packs.data.adapters import AgentRun
+
+        on_base = (directory / "orders.csv").read_text(encoding="utf-8") == self.orders
+        if not on_base and self.wrong == 0:
+            self.wrong, self.calls = 1, self.calls + 1
+            return AgentRun(code="# wrong", answer=-1.0, input_tokens=5, output_tokens=5)
+        return super().solve(question, directory)
+
+
+def test_data_one_wrong_run_is_an_observed_failure_with_counts(data_audit: Any) -> None:
+    case = _live(data_audit, _WrongOnce(), max_worlds=2)
+    assert case.divergence_status.value == "OBSERVED_FAILURE"
+    (finding,) = case.findings
+    assert finding.evidence_grade.value == "OBSERVED_FAILURE"
+    assert finding.stability is not None and finding.stability.rate_claim is None
+    world = finding.observation.world
+    assert world.failures == 1 and world.judged >= 4 and world.errors == 0
+    assert 0 < world.interval_low < world.rate < world.interval_high < 1
+    assert case.multiplicity is not None and case.multiplicity.worlds_tested == 2
+    assert case.headline.startswith("Observed disagreement")
+    from isitright.core.evidence import AuditReport, totals_of
+    from isitright.packs.data.reports import markdown
+
+    text = markdown(
+        AuditReport(
+            pack="data", kind="case", cases=[case], totals=totals_of([case]), elapsed_seconds=0
+        )
+    )
+    assert "## Observed failures" in text and "95% Wilson interval" in text
+
+
+def test_data_a_decided_rate_increase_is_the_stronger_grade_and_is_exported(
+    data_audit: Any, tmp_path: Path
+) -> None:
+    from isitright.core.evidence import AuditReport, totals_of
+    from isitright.packs.data.reports import export_eval_cases
+
+    case = _live(data_audit, _FlakyDataAgent(random.Random(1), 0.0, 1.0), max_worlds=2)
+    assert case.divergence_status.value == "COUNTEREXAMPLE_FOUND"
+    assert {f.evidence_grade.value for f in case.findings} == {"RATE_INCREASE"}
+    report = AuditReport(
+        pack="data", kind="case", cases=[case], totals=totals_of([case]), elapsed_seconds=0
+    )
+    assert len(export_eval_cases(report, tmp_path / "a")) == len(case.findings)
+
+
+def test_data_export_leaves_observed_failures_out_unless_asked(
+    data_audit: Any, tmp_path: Path
+) -> None:
+    from isitright.core.evidence import AuditReport, totals_of
+    from isitright.packs.data.reports import export_eval_cases
+
+    case = _live(data_audit, _WrongOnce(), max_worlds=2)
+    report = AuditReport(
+        pack="data", kind="case", cases=[case], totals=totals_of([case]), elapsed_seconds=0
+    )
+    assert export_eval_cases(report, tmp_path / "a") == []
+    assert len(export_eval_cases(report, tmp_path / "b", include_observed=True)) == 1
+
+
+def test_data_a_failing_baseline_can_be_audited_when_asked(data_audit: Any) -> None:
+    agent = _FlakyDataAgent(random.Random(1), 1.0, 0.0)
+    case = _live(data_audit, agent, allow_failing_baseline=True, max_worlds=2)
+    assert case.divergence_status.value in {"NOT_FOUND_WITHIN_BUDGET", "COUNTEREXAMPLE_FOUND"}
+
+
+def test_data_cli_stops_on_a_failing_baseline_with_a_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("pandas")
+    from typer.testing import CliRunner
+
+    from isitright.cli import app
+
+    from .data_factories import make_task
+
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parents[1]))
+    args = [
+        "data", "audit", str(make_task(tmp_path / "orders")),
+        "--agent", "tests.data_agents:failing", "--trust-code", "--pass-env", "PYTHONPATH",
+        "--baseline-runs", "2", "--max-worlds", "2", "--attempts", "12",
+    ]  # fmt: skip
+    stopped = CliRunner().invoke(app, [*args, "--output", str(tmp_path / "a")])
+    assert stopped.exit_code == 2, stopped.output
+    assert "baseline does not meet the expectation in every run" in stopped.output
+    assert "--allow-failing-baseline" in stopped.output
+    assert not (tmp_path / "a" / "report.json").exists()
+
+
+# -- the research pack -------------------------------------------------------------------------
+
+
+def _research_subject(a: Any, fail_calls: frozenset[int], world_always_bad: bool = False) -> Any:
+    """The careful stand-in, with the numbered calls on mutated worlds (from 1, baseline runs not
+    counted) citing a document that does not exist: a violated invariant."""
+    from isitright.packs.research.agents import STAND_INS
+    from isitright.packs.research.audit import Subject
+    from isitright.packs.research.runs import Citation, Claim
+
+    careful = a.stand_in(STAND_INS["careful"](a.task))
+    base = a.base.fingerprint()
+    calls = [0]
+
+    def execute(world: Any, seed: int) -> Any:
+        run = careful.execute(world, seed)
+        on_base = world.fingerprint() == base
+        if on_base:
+            return run
+        calls[0] += 1
+        if world_always_bad or calls[0] in fail_calls:
+            ghost = Claim(text="x", citations=[Citation(doc_id="no-such-document", quote="x")])
+            report = run.report.model_copy(
+                update={"claims": [ghost], "answer": run.report.answer or "x"}
+            )
+            run = run.model_copy(update={"report": report})
+        return run
+
+    return Subject(careful.label, True, execute)
+
+
+def _research(fail_calls: frozenset[int], always: bool = False) -> tuple[Any, Any]:
+    from .research_fixtures import audit
+
+    a = audit(depth=1, runs=4, minimize=False, seed=11, max_runs=60)
+    return a, a.check(_research_subject(a, fail_calls, always))
+
+
+def test_research_one_failed_run_is_an_observed_failure(tmp_path: Path) -> None:
+    from isitright.packs.research.replaying import cases_markdown, write_outputs
+
+    a, case = _research(frozenset({2}))
+    assert case.divergence_status.value == "OBSERVED_FAILURE", case.headline
+    assert case.findings and {f.evidence_grade.value for f in case.findings} == {"OBSERVED_FAILURE"}
+    assert case.multiplicity is not None and case.multiplicity.worlds_tested >= 2
+    finding = case.findings[0]
+    assert finding.observation.world.failures == 1
+    text = cases_markdown(case)
+    assert "## Observed failures" in text and "Evidence grade: OBSERVED_FAILURE" in text
+    written = write_outputs(tmp_path / "o", case, a.artifacts, a.exports)
+    assert not [p for p in written if p.name.endswith("eval-case.json")]
+    assert all(f.export is None for f in case.findings)
+    again = write_outputs(tmp_path / "p", case, a.artifacts, a.exports, include_observed=True)
+    assert [p for p in again if p.name.endswith("eval-case.json")]
+
+
+def test_research_a_subject_that_fails_every_run_in_the_worlds_is_a_rate_increase() -> None:
+    _, case = _research(frozenset(), always=True)
+    assert case.divergence_status.value == "COUNTEREXAMPLE_FOUND"
+    assert any(f.evidence_grade.value == "RATE_INCREASE" for f in case.findings)
+
+
+def test_research_the_policy_gate_separates_the_grades() -> None:
+    from isitright.core.evidence import FailOn, policy_triggered
+
+    _, observed = _research(frozenset({2}))
+    _, decided = _research(frozenset(), always=True)
+    gate = {
+        FailOn.NONE: (False, False),
+        FailOn.ANY_COUNTEREXAMPLE: (False, True),
+        FailOn.RATE_INCREASE: (False, True),
+        FailOn.OBSERVED_FAILURE: (True, True),
+    }
+    for policy, (on_observed, on_decided) in gate.items():
+        assert policy_triggered(observed, policy) is on_observed, policy
+        assert policy_triggered(decided, policy) is on_decided, policy
+
+
+def test_research_an_agent_that_errors_in_every_world_is_inconclusive() -> None:
+    from isitright.packs.research.agents import STAND_INS
+    from isitright.packs.research.audit import Subject
+
+    from .research_fixtures import audit
+
+    a = audit(depth=1, runs=4, minimize=False, seed=11, max_runs=60)
+    careful = a.stand_in(STAND_INS["careful"](a.task))
+    base = a.base.fingerprint()
+
+    def execute(world: Any, seed: int) -> Any:
+        run = careful.execute(world, seed)
+        if world.fingerprint() == base:
+            return run
+        return run.model_copy(update={"status": "ERROR"})
+
+    case = a.check(Subject(careful.label, True, execute))
+    assert case.divergence_status.value == "INCONCLUSIVE", case.headline
+    assert case.findings == []
+
+
+# -- the shared pieces ---------------------------------------------------------------------------
+
+
+def test_the_wilson_interval_matches_known_values() -> None:
+    from isitright.core.stochastic import wilson_interval
+
+    low, high = wilson_interval(5, 10)  # type: ignore[misc]
+    assert (round(low, 4), round(high, 4)) == (0.2366, 0.7634)
+    low, high = wilson_interval(0, 10)  # type: ignore[misc]
+    assert low == 0.0 and round(high, 4) == 0.2775
+    low, high = wilson_interval(10, 10)  # type: ignore[misc]
+    assert high == pytest.approx(1.0) and round(low, 4) == 0.7225
+    assert wilson_interval(0, 0) is None
+
+
+def test_errored_and_unjudged_runs_are_beside_the_rate_not_in_it() -> None:
+    from isitright.core.oracles import Outcome
+    from isitright.core.stochastic import RunOutcome, rate_with_interval
+
+    rate = rate_with_interval(
+        [
+            RunOutcome(Outcome.NOT_MET),
+            RunOutcome(Outcome.MET),
+            RunOutcome(None, error=True),
+            RunOutcome(Outcome.CANNOT_JUDGE),
+        ]
+    )
+    assert (rate.failures, rate.judged, rate.errors, rate.unjudged) == (1, 2, 1, 1)
+    assert rate.rate == 0.5
+
+
+def test_the_grade_follows_the_sequential_decision_only() -> None:
+    from isitright.core.sequential import PairedSprt, SprtConfig
+    from isitright.core.stochastic import EvidenceGrade, grade_of
+
+    assert grade_of(None) is EvidenceGrade.OBSERVED_FAILURE
+    test = PairedSprt(SprtConfig(min_pairs=4, max_pairs=20))
+    for _ in range(30):
+        test.add(False, True)
+    assert grade_of(test) is EvidenceGrade.RATE_INCREASE
+    quiet = PairedSprt(SprtConfig(min_pairs=4, max_pairs=20))
+    for _ in range(4):
+        quiet.add(False, False)
+    assert grade_of(quiet) is EvidenceGrade.OBSERVED_FAILURE
+
+
+def test_a_report_cannot_call_an_observation_a_counterexample(
+    one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pydantic import ValidationError
+
+    from isitright.core.evidence import CaseReport, DivergenceStatus
+
+    case = _observed_only_report(tmp_path, one_world, monkeypatch).cases[0]
+    data = case.model_dump(mode="json")
+    assert CaseReport.model_validate(data)
+    for status in (DivergenceStatus.COUNTEREXAMPLE_FOUND, DivergenceStatus.NOT_FOUND_WITHIN_BUDGET):
+        with pytest.raises(ValidationError, match="status"):
+            CaseReport.model_validate({**data, "divergence_status": status.value})
+    decided = {**data, "findings": [{**data["findings"][0], "evidence_grade": "RATE_INCREASE"}]}
+    with pytest.raises(ValidationError, match="status"):
+        CaseReport.model_validate(decided)
