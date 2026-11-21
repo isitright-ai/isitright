@@ -26,9 +26,9 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   world runs and baseline runs that were made and the runs left out (`world_runs`,
   `baseline_runs`, `excluded_errored`, `excluded_unjudged`). When two runs in a row form no pair
   the world is given up, so an agent that never completes costs a few runs.
-- **Cost.** A sequential test now costs two runs per pair. A world with no failure costs
-  `2 x minimum pairs` runs (agents: `2 x --trials`, research: 8, data: `2 x --baseline-runs`); a
-  world that runs to the limit costs 40 runs at the default 20 pairs. The baseline runs made before
+- **Cost.** A sequential test now costs two runs per pair. A world that runs to the limit costs
+  40 runs at the default 20 pairs. (N1 charged `2 x minimum pairs` for a world with no failure; N2
+  below makes that world cost only its first runs.) The baseline runs made before
   the search are no longer part of the pairs. The pair limit is 20 in all three packs: the data
   pack's `--max-trials` (and `LiveConfig.max_trials`) rises from 10, and research
   (`AuditConfig.max_pairs`) and agents (`--max-trials`) from 16. In a simulation of a rise from
@@ -59,6 +59,56 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   and 50%: at most 5% of worlds get a rate increase, plus three standard errors) and power runs
   (10% against 70%: at least 80%, minus three standard errors). The default suite runs a small
   number of audits; `pytest -m statistical` runs the full size.
+
+### N2: finding grades (breaking: statuses, `--fail-on`, report fields)
+
+- **Two grades.** A live-agent finding (agents, data live, research with a stochastic agent) has an
+  `evidence_grade`. `RATE_INCREASE`: a paired sequential test crossed its upper boundary, so it
+  decided the world fails more often than the baseline. `OBSERVED_FAILURE`: a judged run failed on a
+  valid mutated world and no test decided a higher rate. Before, one failed run in a world was a
+  counterexample, whatever the baseline did: an agent that fails 5% of its runs at random showed one
+  in about half of the audits of a few worlds. Findings of frozen programs and recorded reports,
+  deterministic subjects and SQL have no grade (`null`) and keep `COUNTEREXAMPLE_FOUND`.
+- **A weaker case status.** `OBSERVED_FAILURE` joins `COUNTEREXAMPLE_FOUND`, `NOT_FOUND_WITHIN_BUDGET`,
+  `INCONCLUSIVE` and `UNSUPPORTED`. `COUNTEREXAMPLE_FOUND` now holds only when some finding is not an
+  observed failure; `--no-sequential` runs make no pairs, so all their findings are observations and
+  a fixed-sample rate claim by run index is no longer printed. The report model enforces this. The
+  headline of an observed failure begins "Observed disagreement" and says no paired test decided a
+  higher rate.
+- **Observed failures are shown.** The console summary, `report.md` (an "Observed failures" section
+  next to "Rate increases") and `report.json` (`findings[].observation`) give failures out of
+  judged runs with errored and unjudged runs beside them (not in the denominator), a 95% Wilson
+  interval, the same for the baseline runs made for the world's pairs, the concrete world diff and a
+  replay command, whatever the paired test said.
+- **The report says how many worlds were tested** (`multiplicity`): that the per-world decisions are
+  not corrected for it, and the number of rate-increase claims expected by chance under no effect (at
+  most worlds tested x 0.05; the test's real rate is lower) and of worlds with an observed failure if
+  every world failed at the baseline's rate.
+- **CI.** `--fail-on` gains `rate-increase` and `observed-failure` for `agents run` and the live
+  research modes. `any-finding`, `invariant-violation` and `any-counterexample` now trip only on a
+  rate increase (an observed failure no longer does); `observed-failure` also trips on observations.
+  The data pack's live audit still has no `--fail-on`.
+- **Export.** Findings graded `OBSERVED_FAILURE` are exported on request: `agents export` and
+  `data export` take `--include-observed`; `research check` writes their eval case only with
+  `--export-observed` (`research export --include-observed` writes it later).
+- **Extra pairs only for worlds that failed.** A world is run `--trials` times (data
+  `--baseline-runs`, research `--runs`) first; only one with a failed run goes on to the paired test,
+  whose runs are new. A world with no failure costs those runs and no baseline run. The first runs
+  take no part in the test, so choosing a world by its failure does not bias it. `stability.world`
+  counts all runs of the world; `stability.sequential.world_runs` the paired ones.
+- **Data live: a failing baseline stops the audit** with a message (exit code 2) unless every
+  baseline run met the expectation or `--allow-failing-baseline` (`LiveConfig.allow_failing_baseline`)
+  is given.
+- **Nothing judged is not "not found".** An agents, data live or research live audit in which no
+  mutated world produced a judged run (every run errored or could not be judged; baseline runs do
+  not count) is `INCONCLUSIVE`.
+- **Report schema 0.9.** New optional fields: `evidence_grade` and `observation` on findings,
+  `multiplicity` on cases, status `OBSERVED_FAILURE`. Reports in schema 0.4 to 0.8 still load.
+  Update any script that treats every finding of a live report as a rate statement.
+- **Tests.** `tests/test_finding_grades.py`: 5% random failures over 8 worlds (small) or 50 worlds
+  (`pytest -m statistical`), the two grades through the agents, data and research packs, the CLI
+  gate and export selection, a failing data baseline, no judged run. Existing tests that encoded the
+  old counts or statuses are changed and listed in the pull request.
 
 ## 0.8.1 - Hotfix
 

@@ -40,7 +40,7 @@ Each field answers one question and is never merged with another.
 
 | Field | Values |
 |---|---|
-| `divergence_status` | [`COUNTEREXAMPLE_FOUND`](../concepts/evidence.md#divergence_status), `NOT_FOUND_WITHIN_BUDGET`, `INCONCLUSIVE`, `UNSUPPORTED` |
+| `divergence_status` | [`COUNTEREXAMPLE_FOUND`](../concepts/evidence.md#divergence_status), `OBSERVED_FAILURE` (0.9, live agents), `NOT_FOUND_WITHIN_BUDGET`, `INCONCLUSIVE`, `UNSUPPORTED` |
 | `validity` | `status`: `VALID`, `INVALID`, `INDETERMINATE`, `NOT_ASSESSED`. `tiers`: [`STRUCTURAL`](../concepts/validity-and-fidelity.md#validity-tiers), `DOMAIN_VALIDATED`, `REACHABLE`, `TASK_CONSISTENT`, `OBSERVABLE`, `SIMULATOR_CONSISTENT` |
 | `execution_fidelity` | `found_on`: [`NATIVE_ISOLATED`](../concepts/validity-and-fidelity.md#execution-fidelity), `NATIVE_INLINE`, `EMULATED`, `SIMULATED`, `GENERATED`, `REPLAY_ONLY`. `verified_on`: `NATIVE_ISOLATED` once an emulated finding is re-executed on PostgreSQL. `engine`. `verification`: `VERIFIED`, `EMULATION_ARTIFACT` or `NOT_VERIFIED`, with a note |
 | `oracles` | `name`, `kind` (`REFERENCE_PROGRAM`, `INVARIANT`, `RELATIONAL`, `CONSTRUCTIVE`, `JUDGE`), `outcome` (`MET`, `NOT_MET`, `CANNOT_JUDGE`), `limits` |
@@ -48,14 +48,16 @@ Each field answers one question and is never merged with another.
 | `stability` | `k`; baseline and world `counts`; `rate_claim` (test, pair counts, p-value) only with adequate evidence; `sequential` (test, alpha, beta, boundaries, every look, decision, and how the pairs were made: `world_runs`, `baseline_runs`, `excluded_errored`, `excluded_unjudged`) |
 | `attribution_status` | `UNDETERMINED` by default; reserved: `AGENT_DEFECT`, `REFERENCE_DEFECT`, `AMBIGUOUS_TASK`, `POLICY_AMBIGUOUS`, `TOOL_CONTRACT_AMBIGUOUS`, `SIMULATOR_DEFECT` |
 | `search` | Seed, attempts, valid candidates, executed, rejections by reason, families run and skipped, budget per [hint](../concepts/hints.md) group (`hinted`, `unhinted`), hints used, depth reached, budget, `screening`, `stopping`, `hint_use` |
-| `findings` | Per finding: world, validity, [oracle](../concepts/oracles-and-roles.md) results, stability, world diff, mutation path (family, target, description, hints, atoms), pack-specific `divergence`, fidelity, replay, minimization |
+| `multiplicity` | 0.9, live agents: `worlds_tested`, `worlds_with_observed_failure`, `worlds_with_rate_increase`, `alpha`, `decisions_corrected` (always false), `expected_rate_increase_claims_under_no_effect` (at most `worlds_tested x alpha`), `expected_worlds_with_observed_failure_under_no_effect` (from the baseline's observed rate; null when no baseline run was judged) and a note |
+| `findings` | Per finding: `evidence_grade` (0.9, live stochastic agents: `RATE_INCREASE` or `OBSERVED_FAILURE`; null for frozen programs and reports, deterministic subjects and SQL), `observation` (0.9: `world` and `baseline` each with `failures`, `judged`, `errors`, `unjudged`, `rate` and a 95% Wilson interval, descriptive), world, validity, [oracle](../concepts/oracles-and-roles.md) results, stability, world diff, mutation path (family, target, description, hints, atoms), pack-specific `divergence`, fidelity, replay, minimization |
 | `worlds`, `controls` | Every world run and the best-ranked worlds not run, with role, counts, screening class and rank, `run_status` (`RUN` or `NOT_RUN` with the reason) and validity `notes`. `controls`: `DISCRIMINATING`, `NOT_DISCRIMINATING` or `NOT_APPLICABLE` |
 | `headline` | One line derived from the above. It never says pass, fail, correct or wrong; the model rejects it |
 | `extensions` | `sql`, `mcp`, `data`: pack-specific fields, not part of the common contract |
 
 ### Invariants the model enforces
 
-- The status and the findings must agree.
+- The status and the findings must agree: `COUNTEREXAMPLE_FOUND` holds exactly when some finding is not graded `OBSERVED_FAILURE`; `OBSERVED_FAILURE` holds exactly when there are findings and all are.
+- A `RATE_INCREASE` grade is set only from a paired sequential test that crossed its upper boundary; a finding with no test, or an undecided one, is `OBSERVED_FAILURE`.
 - An `UNSUPPORTED` case has no executed worlds.
 - A DuckDB result must be labeled `EMULATED`; a PostgreSQL or SQLite one must not.
 - `NOT_FOUND_WITHIN_BUDGET` means no disagreement was found within the budget. It is never a claim of

@@ -124,7 +124,9 @@ def test_an_exported_case_replays_from_a_moved_scenario_given_a_reference(
 ) -> None:
     report, scenario_file, third = _moved(audited, tmp_path, monkeypatch)
     cases_file = third / "cases.jsonl"
-    exported = runner.invoke(app, ["agents", "export", str(report), "--output", str(cases_file)])
+    exported = runner.invoke(
+        app, ["agents", "export", str(report), "--output", str(cases_file), "--include-observed"]
+    )
     assert exported.exit_code == 0, exported.output
     cases = [
         EvalCase.model_validate(json.loads(line))

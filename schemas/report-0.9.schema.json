@@ -96,6 +96,17 @@
           "title": "Inputs",
           "type": "object"
         },
+        "multiplicity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Multiplicity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "oracles": {
           "items": {
             "$ref": "#/$defs/OracleRecord"
@@ -264,11 +275,21 @@
     "DivergenceStatus": {
       "enum": [
         "COUNTEREXAMPLE_FOUND",
+        "OBSERVED_FAILURE",
         "NOT_FOUND_WITHIN_BUDGET",
         "INCONCLUSIVE",
         "UNSUPPORTED"
       ],
       "title": "DivergenceStatus",
+      "type": "string"
+    },
+    "EvidenceGrade": {
+      "description": "What a live-agent finding supports. The two grades are never merged.",
+      "enum": [
+        "RATE_INCREASE",
+        "OBSERVED_FAILURE"
+      ],
+      "title": "EvidenceGrade",
       "type": "string"
     },
     "FidelityRecord": {
@@ -328,6 +349,17 @@
           "additionalProperties": true,
           "title": "Divergence",
           "type": "object"
+        },
+        "evidence_grade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceGrade"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "export": {
           "anyOf": [
@@ -391,6 +423,17 @@
           },
           "title": "Mutation Path",
           "type": "array"
+        },
+        "observation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Observation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "oracles": {
           "items": {
@@ -551,6 +594,66 @@
       "title": "Look",
       "type": "object"
     },
+    "Multiplicity": {
+      "additionalProperties": false,
+      "description": "What an audit that looks at many worlds must say about its per-world decisions.",
+      "properties": {
+        "alpha": {
+          "title": "Alpha",
+          "type": "number"
+        },
+        "decisions_corrected": {
+          "default": false,
+          "title": "Decisions Corrected",
+          "type": "boolean"
+        },
+        "expected_rate_increase_claims_under_no_effect": {
+          "title": "Expected Rate Increase Claims Under No Effect",
+          "type": "number"
+        },
+        "expected_worlds_with_observed_failure_under_no_effect": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Worlds With Observed Failure Under No Effect"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "worlds_tested": {
+          "minimum": 0,
+          "title": "Worlds Tested",
+          "type": "integer"
+        },
+        "worlds_with_observed_failure": {
+          "minimum": 0,
+          "title": "Worlds With Observed Failure",
+          "type": "integer"
+        },
+        "worlds_with_rate_increase": {
+          "minimum": 0,
+          "title": "Worlds With Rate Increase",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "worlds_tested",
+        "worlds_with_observed_failure",
+        "worlds_with_rate_increase",
+        "alpha",
+        "expected_rate_increase_claims_under_no_effect",
+        "note"
+      ],
+      "title": "Multiplicity",
+      "type": "object"
+    },
     "MutationRecord": {
       "additionalProperties": false,
       "properties": {
@@ -588,6 +691,36 @@
         "description"
       ],
       "title": "MutationRecord",
+      "type": "object"
+    },
+    "Observation": {
+      "additionalProperties": false,
+      "description": "What was seen on one world, apart from the label that summarizes it.",
+      "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RateWithInterval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "note": {
+          "default": "counts of judged runs on this world; an observation, not a statement that the mutation raises the agent's failure probability",
+          "title": "Note",
+          "type": "string"
+        },
+        "world": {
+          "$ref": "#/$defs/RateWithInterval"
+        }
+      },
+      "required": [
+        "world"
+      ],
+      "title": "Observation",
       "type": "object"
     },
     "OracleRecord": {
@@ -675,6 +808,81 @@
         "alpha"
       ],
       "title": "RateClaim",
+      "type": "object"
+    },
+    "RateWithInterval": {
+      "additionalProperties": false,
+      "description": "failures / judged runs, with errors and unjudged runs beside them and a Wilson interval.",
+      "properties": {
+        "errors": {
+          "minimum": 0,
+          "title": "Errors",
+          "type": "integer"
+        },
+        "failures": {
+          "minimum": 0,
+          "title": "Failures",
+          "type": "integer"
+        },
+        "interval": {
+          "default": "95% Wilson score interval, descriptive",
+          "title": "Interval",
+          "type": "string"
+        },
+        "interval_high": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interval High"
+        },
+        "interval_low": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interval Low"
+        },
+        "judged": {
+          "minimum": 0,
+          "title": "Judged",
+          "type": "integer"
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rate"
+        },
+        "unjudged": {
+          "minimum": 0,
+          "title": "Unjudged",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "failures",
+        "judged",
+        "errors",
+        "unjudged"
+      ],
+      "title": "RateWithInterval",
       "type": "object"
     },
     "ReplayRecord": {

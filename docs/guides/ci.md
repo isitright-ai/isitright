@@ -9,14 +9,26 @@ never fails.
 |---|---|---|
 | SQL | `--fail-on domain-counterexample` | A [`COUNTEREXAMPLE_FOUND`](../concepts/evidence.md#divergence_status) is [`DOMAIN_VALIDATED`](../concepts/validity-and-fidelity.md#validity-tiers) |
 | SQL | `--fail-on any-counterexample` | Any `COUNTEREXAMPLE_FOUND` |
-| Agents | `--fail-on invariant-violation` | A run violated an invariant |
-| Agents | `--fail-on any-finding` | Any finding |
+| Agents | `--fail-on invariant-violation` | A finding graded `RATE_INCREASE` involves an invariant violation |
+| Agents | `--fail-on any-finding` | A finding graded `RATE_INCREASE` (the same as `rate-increase`) |
+| Agents, research | `--fail-on rate-increase` | A paired test decided a higher failure rate: status `COUNTEREXAMPLE_FOUND` (research also accepts `any-counterexample`, which means the same for a live agent) |
+| Agents, research | `--fail-on observed-failure` | Also a failure observed on a valid world with no rate decision: status `OBSERVED_FAILURE` |
 | Both | `--fail-on none` (default) | Never |
 
 An **emulated** SQL finding that no native run verified never fails CI. A finding that PostgreSQL
 confirmed (`verified_on: NATIVE_ISOLATED`) may. A divergence that does not reproduce natively is an
 emulation artifact and does not count. `--no-verify-native` turns verification off, and then
 emulated findings never fail.
+
+### Live-agent gates
+
+A live-agent finding has one of two grades. `RATE_INCREASE`: a paired sequential test decided that the world
+fails more often than the baseline. `OBSERVED_FAILURE`: a judged run failed on a valid mutated world and no
+test decided a higher rate. Both are shown in the report. The gate keeps them apart: every `--fail-on` policy
+that existed before 0.9 (`any-finding`, `invariant-violation`, `any-counterexample`) fails only on a rate
+increase, so one failed run of an agent that fails at random does not break a build. `--fail-on
+observed-failure` fails on any finding, an observation included; use it for an agent that must not fail on
+a valid world at all, such as a fixed regression set. The data pack's live audit has no `--fail-on` yet.
 
 ## Exit codes
 
@@ -65,8 +77,8 @@ A live-agent audit costs money and is noisy. If you run one in CI:
 - set `--max-money`, `--max-runs` and `--max-seconds` so a bad day cannot run away;
 - use `--worlds fixed` or a pinned list of `--world` ids for a stable regression check, and
   generated worlds on a schedule rather than on every pull request;
-- prefer `--fail-on invariant-violation`. An observed invariant violation is evidence about a run.
-  `any-finding` also fails when the expected behavior was not reached, which is a broader and
-  noisier signal.
+- prefer `--fail-on rate-increase` for generated worlds: it needs a paired test. For a pinned list of
+  worlds that must never fail, `--fail-on observed-failure` is the stricter gate. `invariant-violation`
+  narrows the rate-increase gate to findings that involve an invariant.
 
 Replay exported [eval cases](replay-and-export.md#export) offline in CI instead: `rerun_eval_case` calls no agent and costs nothing.
