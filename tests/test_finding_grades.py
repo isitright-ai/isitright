@@ -757,3 +757,28 @@ def test_research_without_the_sequential_test_makes_no_rate_claim() -> None:
         assert finding.evidence_grade.value == "OBSERVED_FAILURE"
         assert finding.stability.rate_claim is None and "no rate claim" in finding.stability.note
     assert case.divergence_status.value == "OBSERVED_FAILURE"
+
+
+def test_the_status_and_the_grades_of_a_case_must_agree() -> None:
+    """No fixture run: the model alone refuses a status that says more than the grades do."""
+    from pydantic import ValidationError
+
+    from isitright.core.evidence import CaseReport, DivergenceStatus
+
+    from .factories import make_case
+
+    strong = make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND).model_dump(mode="json")
+    assert CaseReport.model_validate(strong)  # a finding with no grade is not an observation
+    observed = {
+        **strong,
+        "findings": [{**strong["findings"][0], "evidence_grade": "OBSERVED_FAILURE"}],
+    }
+    with pytest.raises(ValidationError, match="status"):
+        CaseReport.model_validate(observed)  # an observation is not a counterexample
+    assert CaseReport.model_validate({**observed, "divergence_status": "OBSERVED_FAILURE"})
+    with pytest.raises(ValidationError, match="status"):
+        CaseReport.model_validate({**strong, "divergence_status": "OBSERVED_FAILURE"})
+    with pytest.raises(ValidationError, match="status"):
+        CaseReport.model_validate(
+            {**strong, "divergence_status": "OBSERVED_FAILURE", "findings": []}
+        )
