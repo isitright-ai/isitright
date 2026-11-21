@@ -57,11 +57,14 @@ def _artifacts(n_worlds: int, root: Path) -> dict[str, Any]:
 
     scenario = load_scenario(SHOP_REF)
     found, _ = generate_worlds(scenario, attempts=2000, depth=2)
-    worlds = [w for w in found if w.role is Role.CONTROL and w.observable and len(w.families) == 1][
-        :n_worlds
-    ]
-    assert len(worlds) == n_worlds
-    ids = [w.id for w in worlds]
+    # Record a few more worlds than asked for: a recording can fail (a timeout on a busy machine),
+    # and a world whose recorded run is missing would silently be judged as a failure.
+    spare = max(4, n_worlds // 2)
+    candidates = [
+        w for w in found if w.role is Role.CONTROL and w.observable and len(w.families) == 1
+    ][: n_worlds + spare]
+    assert len(candidates) >= n_worlds
+    ids = [w.id for w in candidates]
     runs: dict[str, dict[str, Path]] = {}
     saved = os.environ.get("SHOP_AGENT_MODE")
     try:
@@ -77,7 +80,7 @@ def _artifacts(n_worlds: int, root: Path) -> dict[str, Any]:
                 sequential=False,
                 attempts=2000,
                 trust_code=True,
-                timeout_seconds=120,
+                timeout_seconds=300,
             )
             runs[label] = {"baseline": out / "runs" / "baseline" / "1"} | {
                 i: out / "runs" / i / "1" for i in ids
@@ -87,6 +90,19 @@ def _artifacts(n_worlds: int, root: Path) -> dict[str, Any]:
             os.environ.pop("SHOP_AGENT_MODE", None)
         else:
             os.environ["SHOP_AGENT_MODE"] = saved
+
+    def recorded(world_id: str) -> bool:
+        files = {"good": ("state_before.json", "state_after.json", "trace.jsonl")}
+        files["bad"] = files["good"][:2]  # a refusal makes no tool call: no trace
+        return all(
+            (runs[label][world_id] / name).is_file()
+            for label, names in files.items()
+            for name in names
+        )
+
+    assert recorded("baseline"), "the baseline was not recorded"
+    ids = [i for i in ids if recorded(i)][:n_worlds]
+    assert len(ids) == n_worlds, f"only {len(ids)} of {n_worlds} worlds were recorded"
     prepared = mcp_audit.prepare_worlds(scenario, "generated", attempts=2000, seed=0, only=ids)
     _ARTIFACTS[n_worlds] = {"worlds": ids, "runs": runs, "prepared": prepared}
     return _ARTIFACTS[n_worlds]
@@ -123,9 +139,11 @@ def _scripted_agent(
         if kind == "error":
             return "SUBJECT_ERROR", 1
         source = artifacts["runs"][kind][world_id]
-        for name in ("state_before.json", "state_after.json", "trace.jsonl"):
-            if (source / name).is_file():
-                shutil.copy(source / name, run_dir / name)
+        for name in ("state_before.json", "state_after.json"):
+            assert (source / name).is_file(), f"the recorded {kind} run of {world_id} lacks {name}"
+            shutil.copy(source / name, run_dir / name)
+        if (source / "trace.jsonl").is_file():  # a recorded refusal makes no tool call
+            shutil.copy(source / "trace.jsonl", run_dir / "trace.jsonl")
         (run_dir / "agent.log").write_bytes(b"")
         return "COMPLETED", 0
 
