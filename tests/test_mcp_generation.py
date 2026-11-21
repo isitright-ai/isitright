@@ -248,12 +248,12 @@ def test_flaky_agent_run_counts_no_rate_claim_and_a_money_budget(
     case = report.cases[0]
     runs = case.extensions["mcp"]["runs"]
     # A money budget of 1.25 stops the search after 13 runs of 0.1 (1.3 spent): the baseline
-    # gets all 4 runs, the next world 4 pairs (8 runs: each pair has a fresh baseline run), the
-    # last world only 1.
+    # gets all 4 runs, the next world its 4 runs and, because some failed, 3 more world runs
+    # paired with fresh baseline runs (5 runs), and the last world none.
     assert len(runs) == 13
     per_world = {w.id: w.counts["n"] for w in case.worlds}
-    assert per_world["baseline"] == 4 and per_world["booked_24h_01m"] == 4
-    assert per_world["booked_23h_59m"] == 1
+    assert per_world["baseline"] == 4 and per_world["booked_24h_01m"] == 7
+    assert per_world["booked_23h_59m"] == 0
     assert case.search.budget["runs"]["stopped_by"] == "money"
     assert case.search.budget["runs"]["spent"]["money"] == pytest.approx(1.3)
     # The baseline is itself flaky: careful on odd trials, careless on even trials.
@@ -266,10 +266,10 @@ def test_flaky_agent_run_counts_no_rate_claim_and_a_money_budget(
         assert finding.stability is not None and finding.stability.rate_claim is None
     trap = next(f for f in case.findings if f.world_id == "booked_24h_01m")
     assert trap.stability is not None and trap.stability.world is not None
-    assert (trap.stability.world.n, trap.stability.world.violated) == (4, 2)
-    assert trap.divergence["runs_affected"] == 2 and trap.divergence["runs_evaluated"] == 4
+    assert (trap.stability.world.n, trap.stability.world.violated) == (7, 3)
+    assert trap.divergence["runs_affected"] == 3 and trap.divergence["runs_evaluated"] == 7
     assert trap.headline.endswith(
-        "in 2 of 4 runs on world booked_24h_01m (attribution not assessed)"
+        "in 3 of 7 runs on world booked_24h_01m (attribution not assessed)"
     )
     data = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
     assert data["cases"][0]["findings"][0]["stability"]["k"] == 4
@@ -419,7 +419,8 @@ def test_a_careless_agent_gets_a_sequential_rate_claim_in_a_trap_world(tmp_path:
     assert sequential.decision.value == "RATE_INCREASE"
     assert sequential.pairs == 7 and sequential.alpha == 0.05
     assert stability.rate_claim is not None and stability.rate_claim.paired_runs == 7
-    assert stability.world is not None and stability.world.n == 7
+    # the 4 runs that showed a failure, then the 7 runs paired with fresh baseline runs
+    assert stability.world is not None and stability.world.n == 11
     assert stability.baseline is not None and stability.baseline.n == 7  # extended to pair them
     assert [look.pair for look in sequential.looks] == list(range(1, 8))
     screened = next(w for w in case.worlds if w.id == trap.id).screening
@@ -575,9 +576,13 @@ def test_a_run_that_does_not_complete_is_skipped_not_paired_and_the_test_goes_on
         timeout_seconds=60,
     )
     runs = [r for r in report.cases[0].extensions["mcp"]["runs"] if r["world_id"] == world.id]
-    assert [r["run_status"] for r in runs] == ["SUBJECT_ERROR", "COMPLETED", "COMPLETED"]
+    # The error is the world's first run, one of its 2 screening runs: it forms no pair and does not
+    # end the world's sequence. The other (failed) run sent the world on to the pairs.
+    statuses = [r["run_status"] for r in runs]
+    assert statuses[0] == "SUBJECT_ERROR" and set(statuses[1:]) == {"COMPLETED"}
+    assert len(statuses) >= 3
     record = next(w for w in report.cases[0].worlds if w.id == world.id)
-    assert record.counts["errors"] == 1 and record.counts["n"] == 3
+    assert record.counts["errors"] == 1 and record.counts["n"] == len(statuses)
 
 
 # --- the run's own edge cases -----------------------------------------------------------------

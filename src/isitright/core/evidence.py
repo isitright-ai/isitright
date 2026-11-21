@@ -47,11 +47,19 @@ class FailOn(StrEnum):
     NONE = "none"
     DOMAIN_COUNTEREXAMPLE = "domain-counterexample"
     ANY_COUNTEREXAMPLE = "any-counterexample"
+
+
+class LiveFailOn(StrEnum):
+    """`FailOn` for the commands that run a live agent (research): two more policies."""
+
+    NONE = "none"
+    DOMAIN_COUNTEREXAMPLE = "domain-counterexample"
+    ANY_COUNTEREXAMPLE = "any-counterexample"
     RATE_INCREASE = "rate-increase"
-    """Live agents: only a finding whose paired test decided a higher failure rate. The same as
+    """Only a finding whose paired test decided a higher failure rate. The same as
     ``any-counterexample``, which no observed failure ever triggers."""
     OBSERVED_FAILURE = "observed-failure"
-    """Live agents: also a failure observed on a valid world with no rate decision."""
+    """Also a failure observed on a valid world with no rate decision."""
 
 
 class ValidityRecord(Closed):
@@ -391,17 +399,17 @@ def totals_of(cases: list[CaseReport]) -> Totals:
     )
 
 
-def policy_triggered(case: CaseReport, policy: FailOn) -> bool:
+def policy_triggered(case: CaseReport, policy: FailOn | LiveFailOn) -> bool:
     """CI policy. An emulated, natively unverified finding never fails CI by default."""
-    if policy is FailOn.NONE:
+    if policy.value == "none":
         return False
     if case.divergence_status is DivergenceStatus.OBSERVED_FAILURE:
-        return policy is FailOn.OBSERVED_FAILURE
+        return policy.value == "observed-failure"
     if case.divergence_status is not DivergenceStatus.COUNTEREXAMPLE_FOUND:
         return False
     if case.execution_fidelity.found_on == "EMULATED" and not case.execution_fidelity.verified_on:
         return False
-    if policy in {FailOn.ANY_COUNTEREXAMPLE, FailOn.RATE_INCREASE, FailOn.OBSERVED_FAILURE}:
+    if policy.value in {"any-counterexample", "rate-increase", "observed-failure"}:
         return True
     return "DOMAIN_VALIDATED" in case.validity.tiers
 
@@ -460,6 +468,8 @@ def describe_graded_findings(case: CaseReport) -> list[str]:
             baseline = finding.observation.baseline
             if baseline is not None:
                 text += f". Baseline runs made for its pairs: {_rate_text(baseline)}"
+        if finding.mutation_path:
+            text += ". World change: " + "; ".join(m.description for m in finding.mutation_path)
         sequential = finding.stability.sequential if finding.stability else None
         if sequential is not None:
             text += f". Paired test: {sequential.decision.value} after {sequential.pairs} pairs"

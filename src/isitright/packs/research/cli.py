@@ -17,7 +17,7 @@ import typer
 
 from isitright.core.evidence import (
     EvidenceGrade,
-    FailOn,
+    LiveFailOn,
     describe_graded_findings,
     policy_triggered,
 )
@@ -121,7 +121,7 @@ def check_command(
             "findings and those of deterministic subjects get one.",
         ),
     ] = False,
-    fail_on: Annotated[FailOn, typer.Option()] = FailOn.NONE,
+    fail_on: Annotated[LiveFailOn, typer.Option()] = LiveFailOn.NONE,
 ) -> None:
     """Audit a research agent on mutated corpora."""
     from isitright.core.hints import hints_from_json

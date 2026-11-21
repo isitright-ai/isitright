@@ -316,6 +316,7 @@ def test_an_observed_failure_is_in_the_default_markdown_and_never_called_a_rate_
     assert "not a statement that the mutation raises" in text
     assert "no paired test decided" in text
     assert "agents replay" in text, "the replay path is in the report"
+    assert "World change: " in text, "the concrete change to the world is in the report"
     data = json.loads((tmp_path / "out0" / "report.json").read_text(encoding="utf-8"))
     case = data["cases"][0]
     assert case["divergence_status"] == "OBSERVED_FAILURE"
@@ -621,15 +622,15 @@ def test_research_a_subject_that_fails_every_run_in_the_worlds_is_a_rate_increas
 
 
 def test_research_the_policy_gate_separates_the_grades() -> None:
-    from isitright.core.evidence import FailOn, policy_triggered
+    from isitright.core.evidence import LiveFailOn, policy_triggered
 
     _, observed = _research(frozenset({2}))
     _, decided = _research(frozenset(), always=True)
     gate = {
-        FailOn.NONE: (False, False),
-        FailOn.ANY_COUNTEREXAMPLE: (False, True),
-        FailOn.RATE_INCREASE: (False, True),
-        FailOn.OBSERVED_FAILURE: (True, True),
+        LiveFailOn.NONE: (False, False),
+        LiveFailOn.ANY_COUNTEREXAMPLE: (False, True),
+        LiveFailOn.RATE_INCREASE: (False, True),
+        LiveFailOn.OBSERVED_FAILURE: (True, True),
     }
     for policy, (on_observed, on_decided) in gate.items():
         assert policy_triggered(observed, policy) is on_observed, policy

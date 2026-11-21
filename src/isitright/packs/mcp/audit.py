@@ -1183,9 +1183,12 @@ def _headline(
     if status is DivergenceStatus.INCONCLUSIVE:
         if completed == 0:
             return "Inconclusive: the agent command produced no completed run"
+        unrun = f"; {not_run} eligible worlds were not run" if not_run else ""
+        if stopped_by:
+            unrun += f" (the {stopped_by} budget ended the run)"
         return (
             "Inconclusive: no mutated world produced a judged run "
-            f"(the baseline runs do not count; {worlds} mutated worlds were run)"
+            f"(the baseline runs do not count; {worlds} mutated worlds were run){unrun}"
         )
     if findings:
         observed = [f for f in findings if f.evidence_grade is EvidenceGrade.OBSERVED_FAILURE]

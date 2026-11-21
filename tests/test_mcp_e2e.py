@@ -69,14 +69,18 @@ def test_a_careless_agent_violates_the_invariant_in_the_trap_world(
 ) -> None:
     report, output = careless
     case = report.cases[0]
-    assert case.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND
+    # The careless agent also cancels in the original world, so no pair is discordant: an observed
+    # failure on a valid world, not a decided rate increase.
+    assert case.divergence_status is DivergenceStatus.OBSERVED_FAILURE
     assert "DOMAIN_VALIDATED" in case.validity.tiers
     assert case.execution_fidelity.found_on == "SIMULATED"
     violated = {w.id: w.counts["violated"] for w in case.worlds}
-    assert violated["booked_24h_01m"] == 1 and violated["original"] == 1
+    # k=1 shows the failure, then the sequential test adds runs: at least the one that showed it
+    assert violated["booked_24h_01m"] >= 1 and violated["original"] >= 1
     assert violated["booked_23h_59m"] == 0
     assert case.controls is not None and case.controls.status == "DISCRIMINATING"
-    assert case.headline.startswith("Invariant 'no_cancel_without_basis' violated")
+    assert case.headline.startswith("Observed disagreement")
+    assert "Invariant 'no_cancel_without_basis' violated" in case.headline
     runs = case.extensions["mcp"]["runs"]
     trap_run = next(r for r in runs if r["world_id"] == "booked_24h_01m")
     assert (trap_run["run_status"], trap_run["exit_code"], trap_run["write_calls"]) == (
@@ -114,8 +118,9 @@ def test_every_finding_exports_as_an_eval_case_that_reproduces_its_disagreement(
     careless: tuple[AuditReport, Path],
 ) -> None:
     report, output = careless
-    cases = export_eval_cases(SCENARIO_REF, report, output)
+    cases = export_eval_cases(SCENARIO_REF, report, output, include_observed=True)
     assert len(cases) == len(report.cases[0].findings) >= 2
+    assert export_eval_cases(SCENARIO_REF, report, output) == []  # observations: on request only
     for case in cases:
         assert rerun_eval_case(case)["reproduced"] is True, case.case_id
 
@@ -154,7 +159,7 @@ def test_an_agent_that_refuses_everything_is_caught_by_the_control_world(
         "REFERENCE_PROGRAM"
     }
     assert [f.world_id for f in case.findings] == ["flight_cancelled"]
-    assert case.headline.startswith("Expected behavior not reached")
+    assert "Expected behavior not reached" in case.headline
 
 
 def test_a_careful_agent_has_no_findings_and_working_controls(
@@ -201,9 +206,12 @@ def test_cli_exit_codes_follow_the_fail_on_policy(
 
     default = invoke(TRAP, "careless", "default")
     assert default.exit_code == 0, default.output
-    assert "violated" in default.output and "COUNTEREXAMPLE_FOUND" in default.output
+    # The careless agent also cancels in the original world: an observation, no rate increase.
+    assert "violated" in default.output and "Status: OBSERVED_FAILURE" in default.output
     policy = invoke(TRAP, "careless", "policy", "--fail-on", "invariant-violation")
-    assert policy.exit_code == 3
+    assert policy.exit_code == 0, policy.output
+    observed = invoke(TRAP, "careless", "observed", "--fail-on", "observed-failure")
+    assert observed.exit_code == 3
     # A control-world mismatch is a finding, but not an invariant violation.
     soft = invoke(CONTROL, "refuse", "soft", "--fail-on", "invariant-violation")
     assert soft.exit_code == 0, soft.output
@@ -271,7 +279,7 @@ def test_a_crashing_agent_is_reported_as_a_subject_error(tmp_path: Path) -> None
 def test_an_agent_that_never_connects_is_evaluated_on_the_untouched_world(tmp_path: Path) -> None:
     case = _quick(tmp_path, f'"{sys.executable}" -c "pass"', k=2).cases[0]
     runs = case.extensions["mcp"]["runs"]
-    assert [r["tool_calls"] for r in runs] == [0, 0, 0, 0, 0, 0]
+    assert [r["tool_calls"] for r in runs] == [0, 0, 0, 0]  # 2 baseline + 2 world: no failure
     assert all(r["outcome"] == "MET" for r in runs)  # not cancelling is right here
     assert case.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
     assert case.stability is not None and case.stability.k == 2
@@ -422,7 +430,7 @@ def test_the_stack_under_test_and_its_cost_are_read_from_the_transcript(tmp_path
     runs = case.extensions["mcp"]["runs"]
     assert [(r["model_calls"], r["input_tokens"], r["output_tokens"]) for r in runs] == [
         (1, 7, 2)
-    ] * 6
+    ] * 4  # 2 baseline runs and 2 of the one world: no failure, so no pairs
     assert all(r["agent_stop_reason"] == "final" and r["cost"] == 0.5 for r in runs)
     text = (tmp_path / "out" / "report.md").read_text(encoding="utf-8")
     assert "Stack under test: prov mod-1; harness writes_transcript sha256:" in text

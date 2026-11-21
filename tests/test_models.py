@@ -21,6 +21,7 @@ from tests.factories import make_case
 def test_enum_wire_values_are_locked() -> None:
     assert [item.value for item in DivergenceStatus] == [
         "COUNTEREXAMPLE_FOUND",
+        "OBSERVED_FAILURE",
         "NOT_FOUND_WITHIN_BUDGET",
         "INCONCLUSIVE",
         "UNSUPPORTED",
