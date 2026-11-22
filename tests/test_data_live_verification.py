@@ -9,6 +9,7 @@ generated worlds or in the multiplicity of the search.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -152,3 +153,29 @@ def test_no_verification_means_no_verification_record(audit: DataAudit) -> None:
     )
     assert case.extensions["data"]["verification"] is None
     assert "separately" not in case.headline
+
+
+def test_a_report_names_a_replay_artifact_only_for_a_finding_that_has_one(
+    audit: DataAudit, tmp_path: Path
+) -> None:
+    from isitright.packs.data.reports import build_report, write_report
+
+    finding, world = _frozen(audit)
+    agent = FixedProgramAgent(audit.host, DROPNA_FORGOTTEN)
+    case = run_live(
+        audit, agent, program=program(DROPNA_FORGOTTEN, "baseline"), config=CONFIG,
+        frozen_finding=finding, frozen_world=world,
+    )  # fmt: skip
+    assert case.findings
+    write_report(build_report([case], 0.1, kind="case"), tmp_path / "none", {})
+    bare = json.loads((tmp_path / "none" / "report.json").read_text(encoding="utf-8"))
+    for f in bare["cases"][0]["findings"]:
+        assert f["replay"]["artifact"] is None and f["replay"]["command"] is None
+    write_report(build_report([case], 0.1, kind="case"), tmp_path / "all", audit.artifacts)
+    full = json.loads((tmp_path / "all" / "report.json").read_text(encoding="utf-8"))
+    commands = [f["replay"]["command"] for f in full["cases"][0]["findings"]]
+    assert all(c and "--finding" in c for c in commands)
+    for f in full["cases"][0]["findings"]:
+        assert (tmp_path / "all" / f["replay"]["artifact"]).is_file()
+    numbers = [int(c.split("--finding ")[1].split()[0]) for c in commands]
+    assert numbers == list(range(1, len(commands) + 1))
