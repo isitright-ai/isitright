@@ -555,6 +555,9 @@ def test_an_edit_that_a_later_edit_overwrote_does_not_survive() -> None:
     a, b = _mutation("first", _set(1)), _mutation("second", _set(2))
     shown = _world([{"id": 1, "v": 2}])
     assert surviving_path([a, b], shown, base) == (b,)
+    # two edits that assigned the same value: the later one is the one that holds it
+    same = _mutation("same", _set(2))
+    assert surviving_path([same, b], shown, base) == (b,)
     # the later edit put the field back to its base value: neither has an effect
     back = _mutation("third", _set(0))
     assert surviving_path([a, back], _world([{"id": 1, "v": 0}]), base) == ()
