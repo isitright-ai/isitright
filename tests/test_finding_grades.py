@@ -872,6 +872,7 @@ def _observed_case() -> Any:
         {
             **base.model_dump(mode="json"),
             "evidence_grade": EvidenceGrade.OBSERVED_FAILURE.value,
+            "built_from": {**base.built_from, "counts": base.world_fingerprint},
             "observation": Observation(
                 world=RateWithInterval(failures=1, judged=4, errors=0, unjudged=0, rate=0.25)
             ).model_dump(mode="json"),
@@ -898,14 +899,15 @@ def _rate_case() -> Any:
     for _ in range(12):
         test.add(False, True)
     assert test.decision.value == "RATE_INCREASE"
-    stability = stability_sequential([ok] * 7, [bad] * 7, 4, test)
+    stability = stability_sequential([ok] * 12, [bad] * 12, 4, test)
     base = make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND).findings[0]
     finding = Finding.model_validate(
         {
             **base.model_dump(mode="json"),
             "evidence_grade": EvidenceGrade.RATE_INCREASE.value,
+            "built_from": {**base.built_from, "counts": base.world_fingerprint},
             "stability": stability.model_dump(mode="json"),
-            "observation": observation_of([bad] * 7, [ok] * 7).model_dump(mode="json"),
+            "observation": observation_of([bad] * 12, [ok] * 12).model_dump(mode="json"),
         }
     )
     return make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND, findings=[finding])
@@ -1079,6 +1081,7 @@ def test_a_finding_is_graded_on_the_world_it_shows() -> None:
     case = _observed_case()
     text = "\n".join(describe_graded_findings(case))
     assert "describe the world the search ran" not in text and "until N5" not in text
+    assert "was not itself tested by the paired test" not in text
 
 
 def test_research_grades_the_world_it_shows() -> None:

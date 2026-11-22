@@ -80,23 +80,66 @@ reproduction result), `counts` (when the finding has run counts), `replay` (when
 artifact) and `export` (when it names an eval case). Replay and export entries are taken from the
 world stored in the artifact itself. The model enforces that:
 
+- every finding of a report with `schema_version` `0.9` has a non-empty `world_fingerprint`; a 0.9
+  report without one is refused. A finding that names a world is checked whatever the report's
+  version;
 - every `built_from` entry equals `world_fingerprint`; a finding whose parts name different worlds is
   refused when it is built or loaded, naming the parts;
-- `validity` and `world_diff` are always tied to the world, and so are `counts`, `replay` and `export`
-  when the finding has them;
+- `validity`, `world_diff` and `divergence` are always tied to the world, and so are `counts`
+  (when the finding has an `observation` or `stability`), `replay` and `export` when it has them;
 - a finding that names a world does not carry `divergence.reproduces` or
-  `divergence.reproduces_on_shown_world` set to false: a world that does not reproduce is not shown.
+  `divergence.reproduces_on_shown_world` set to false: a world that does not reproduce is not shown;
+- a finding graded `RATE_INCREASE` has a paired decision of `RATE_INCREASE` whose pairs are runs of
+  the world shown: the finding's `observation.world` has at least as many judged runs as the test has
+  pairs. The grade is never carried from another world.
 
-Reports written before 0.9 carry no fingerprint and load as they always did. The packs choose the
+Reports written as `0.8` or earlier carry no fingerprint and load as they always did, including
+findings with the older divergence fields. A stamp written by the code that built a finding is not
+proof that an artifact holds that world, so wherever the artifact and the finding are both at hand the
+world stored in the artifact is compared with `world_fingerprint`: when the data and research packs
+write their replay artifacts, in `data replay`, in `agents export` and in `agents replay` (against
+the world the run was launched with). The packs choose the
 world to show as follows. A SQL finding shows the minimized world when it reproduces a disagreement of
 the kind that was found (an error, a different row count, or different values with the same count);
 otherwise it shows the world the search found. For a warehouse, if only the larger world differs on
 the native engine, that is the world shown, `fidelity.verified_on` describes it, and the minimized
 world is attached as `divergence.minimized_world` with `fidelity: EMULATED` and `verified: false`.
 `minimization.shown` says which world is shown (`minimized` or `unminimized`), and `minimization.reason`
-why it is the larger one. An agents finding shows the minimal mutation path only when that path, run
+why it is the larger one. A minimized SQL world is kept only if its difference has the kind of the one
+found, by this precedence: `error` (the candidate errors and the reference does not), else
+`row_count` (the row counts differ, whatever the columns do), else `row_values` (values or columns
+differ). If the reference itself errors there is no kind, and no finding. Keeping the kind is a coarse
+safeguard, not proof that minimization kept the same root cause. When neither the minimized nor the found
+world reproduces a difference of that kind on a rerun, there is no finding: the case is `INCONCLUSIVE`
+with the error code `NOT_REPRODUCED`. An agents finding shows the minimal mutation path only when that path, run
 as a world of its own, fails at least as strongly as the searched world; the research pack applies
 the same rule, and records a minimized world that is not shown under `minimization.not_adopted`.
+
+### Which mutations a finding names
+
+`mutation_path` lists the mutations with a demonstrable effect in the world the finding shows (SQL,
+frozen data, deterministic and frozen research). An edit counts when it is still in effect: a row it
+added is present, a row it removed is absent, a field it set holds the value it assigned and differs
+from the base, a field it unset is absent, a parameter holds its value, and no later edit that is
+itself in effect overwrote it (mutation A sets `v = 1`, B sets `v = 2`, the world has `v = 2`: only B
+is named). A response or timing mutation is named while its response edit or timer is in the shown
+world. A mutation with no traceable edits is not named: nothing shows an effect.
+
+The path that produced the world the search found is kept apart, as provenance, under
+`minimization`: `searched_path` (family, target and description of each mutation),
+`provenance_only: true` (it is not a replay recipe: the shown world may be a minimization that no
+replay of that path reconstructs; replay and export use the shown world) and `mutation_attribution`:
+`SURVIVING_EDITS`, `UNDETERMINED` (the world differs from the base but no searched mutation has a
+surviving effect, for example because minimization removed the rows it edited and the world differs
+by an absence) or `NONE` (no mutation produced the world). With an empty `mutation_path` and a
+non-empty `world_diff` the headline describes the change that is left ("on a world that differs from
+the base in 1 removed (which mutation caused it is undetermined)"), never a mutation and never the
+baseline.
+
+`totals.by_family` counts each distinct family in `mutation_path` once per finding. A finding with
+two surviving families counts for both, a finding with none for none, so the values can add up to
+more than the number of findings. Before 0.9 only the last mutation's family was counted, so totals
+of reports from before 0.9 are not comparable.
 
 ### Frozen and live findings (0.6)
 

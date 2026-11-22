@@ -32,6 +32,7 @@ from isitright.core.replay import (
     replay,
     write_artifact,
 )
+from isitright.core.shown import check_artifact_world
 from isitright.packs.research.agents import STAND_INS, ResearchTask, ToolClient
 from isitright.packs.research.documents import COLLECTION
 from isitright.packs.research.oracle import judge
@@ -140,6 +141,9 @@ def write_outputs(
     for finding in report.findings:
         number = finding.finding_id.rsplit(":", 1)[1]
         artifact = artifacts[finding.finding_id]
+        check_artifact_world(
+            artifact.world, finding.world_fingerprint, "replay artifact", finding.finding_id
+        )
         path = out_dir / f"{number}.replay.json"
         digest = write_artifact(path, artifact)
         finding.replay.artifact = path.name

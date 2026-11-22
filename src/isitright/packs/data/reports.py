@@ -26,6 +26,7 @@ from isitright.core.replay import (
     replay,
     write_artifact,
 )
+from isitright.core.shown import check_artifact_world
 from isitright.packs.data.comparison import AnswerPolicy, DataComparator
 from isitright.packs.data.host import DataHost
 
@@ -60,6 +61,12 @@ def write_report(
             target.mkdir(parents=True, exist_ok=True)
             artifact = artifacts.get(finding.finding_id)
             if artifact is not None:
+                check_artifact_world(
+                    artifact.world,
+                    finding.world_fingerprint,
+                    "replay artifact",
+                    finding.finding_id,
+                )
                 write_artifact(target / "replay.json", artifact)
             for name, text in (finding.divergence.get("data_files") or {}).items():
                 path = contained_path(target, name, what="data file name")

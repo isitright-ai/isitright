@@ -38,14 +38,23 @@ class ComparisonOutcome:
 DifferenceKind = Literal["error", "row_count", "row_values"]
 
 
-def difference_kind(reference: QueryResult, candidate: QueryResult) -> DifferenceKind:
-    """The kind of difference between two results that do not match: the candidate errors where
-    the reference does not, the row counts differ, or the counts agree and the values do not.
+def difference_kind(reference: QueryResult, candidate: QueryResult) -> DifferenceKind | None:
+    """The kind of difference between two results that do not match, by this precedence:
 
-    Minimization keeps a smaller world only when its difference has the kind that was found, so a
-    world never drifts from one disagreement to another.
+    1. ``error``: the candidate errors and the reference does not;
+    2. ``row_count``: otherwise, the row counts differ (whatever the columns do);
+    3. ``row_values``: otherwise, the values or the columns differ.
+
+    ``None`` when the reference itself errors: whatever the candidate does, the reference cannot
+    establish what the answer is, so there is no trustworthy difference to classify (two queries
+    that both error, with different messages, are not a counterexample).
+
+    Minimization keeps a smaller world only when its difference has the kind that was found. That
+    is a coarse safeguard: two differences of one kind may still have different root causes.
     """
-    if is_error_result(candidate) and not is_error_result(reference):
+    if is_error_result(reference):
+        return None
+    if is_error_result(candidate):
         return "error"
     if len(reference.rows) != len(candidate.rows):
         return "row_count"

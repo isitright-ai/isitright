@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from isitright import __version__
-from isitright.core.constraints import ValidityStatus
+from isitright.core.constraints import ValidityStatus, ValidityTier
 from isitright.core.evidence import (
     AuditReport,
     CaseReport,
@@ -229,8 +229,10 @@ class WorldResult:
     adopted: WorldResult | None = None
     """The minimal path of ``minimization`` run as a world of its own: the evidence of the finding
     when the minimal world fails at least as strongly as this one (see `_confirm_minimal`)."""
-    not_adopted: str | None = None
-    """Why a minimal path was found but not shown, when it was not."""
+    not_adopted: dict[str, Any] | None = None
+    """Why a minimal path was found but not shown, when it was not: ``reason``, and, when the
+    minimal world was run, its fingerprint and counts (failures out of judged runs, errors). The
+    observations are kept; the searched world's significance is not carried over to them."""
 
 
 @dataclass
@@ -670,39 +672,66 @@ def _confirm_minimal(
         world = world.apply(mutation)
     validity = scenario.spec.validate_world(world.state, world.path)
     if validity.status is not ValidityStatus.VALID:
-        result.not_adopted = "the minimal path gives a world that is not valid"
+        result.not_adopted = {"reason": "the minimal path gives a world that is not valid"}
         return
     minimal = annotate(scenario, world, validity, f"{rw.id}.minimal", "minimal", len(world.path))
     if minimal.role is Role.UNJUDGEABLE:
-        result.not_adopted = f"the oracle cannot judge the minimal world: {minimal.role_basis}"
+        result.not_adopted = {
+            "reason": f"the oracle cannot judge the minimal world: {minimal.role_basis}"
+        }
         return
     minimal_rw = RunWorld(
         minimal.id,
         world,
         minimal.description,
         minimal.reference,
-        ValidityRecord(
-            status="VALID",
-            tiers=minimal.tiers,
-            unobservable=not minimal.observable,
-            notes=minimal.notes,
-        ),
+        _minimal_world_validity(world, minimal),
         generated=minimal,
     )
     tested = WorldResult(minimal_rw)
     extra.append(tested)
     _run_world(runner, RunTarget(minimal_rw, tested), base, comparison, config, k, sequential, True)
+    reason = None
     if not tested.outcomes:
-        result.not_adopted = "the run budget was spent before the minimal world was run"
+        reason = "the run budget was spent before the minimal world was run"
     elif not any(is_bad(o) for o in tested.outcomes):
-        result.not_adopted = "no run of the minimal world failed"
+        reason = "no run of the minimal world failed"
     elif (
         grade_of(result.sequential) is EvidenceGrade.RATE_INCREASE
         and grade_of(tested.sequential) is not EvidenceGrade.RATE_INCREASE
     ):
-        result.not_adopted = "no paired test decided a rate increase on the minimal world"
-    else:
+        reason = "no paired test decided a rate increase on the minimal world"
+    if reason is None:
         result.adopted = tested
+    else:
+        counts = count(tested.outcomes)
+        result.not_adopted = {
+            "reason": reason,
+            "world": world.fingerprint(),
+            "failures": sum(is_bad(o) for o in tested.outcomes),
+            "judged_runs": sum(is_judged(o) for o in tested.outcomes),
+            "errors": counts.errors,
+        }
+
+
+def _minimal_world_validity(world: World, generated: GeneratedWorld) -> ValidityRecord:
+    """What is established about a minimal world: the scenario's state validation and the
+    generation's tiers, and no more. Response and timing changes are not validated by any rule, so
+    a path that carries one does not claim ``DOMAIN_VALIDATED``."""
+    tiers = list(generated.tiers)
+    notes = list(generated.notes)
+    if any(m.target != "state" for m in world.path):
+        tiers = [t for t in tiers if t != ValidityTier.DOMAIN_VALIDATED.value]
+        notes.append(
+            "the minimal path has a response or timing change, which no rule validates: "
+            "DOMAIN_VALIDATED is not claimed for this world"
+        )
+    return ValidityRecord(
+        status="VALID",
+        tiers=tiers,
+        unobservable=not generated.observable,
+        notes=notes,
+    )
 
 
 def _ineligible_reason(rw: RunWorld) -> str:

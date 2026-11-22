@@ -24,6 +24,12 @@ def frozen(run, **config):
     return a, a.check_frozen(run)
 
 
+def origin_family(finding):
+    """The mutation that produced the world the search found: provenance, not attribution. The
+    mutation_path of a finding lists only mutations with a surviving effect in the world shown."""
+    return finding.minimization["searched_path"][0]["family"]
+
+
 def by_family(report):
     return {w.mutation_path[0].family: w for w in report.worlds if len(w.mutation_path) == 1}
 
@@ -32,9 +38,20 @@ def test_frozen_findings_are_the_objective_ones_and_scoped_to_the_recorded_run()
     _, run = recorded_careful()
     _, report = frozen(run)
     assert report.subject_kind == "FROZEN_ARTIFACT"
-    families = {f.mutation_path[0].family for f in report.findings}
+    families = {origin_family(f) for f in report.findings}
     # the cited document is removed or retracted: the recorded report rests on a source that is gone
     assert families == {"remove", "retract"}
+    # minimization drops the retracted document altogether, so the world shown differs from the base
+    # by an absence that no surviving mutation produced: the path is empty and says so
+    retract = next(f for f in report.findings if origin_family(f) == "retract")
+    assert retract.mutation_path == []
+    assert retract.minimization["mutation_attribution"] == "UNDETERMINED"
+    assert retract.minimization["provenance_only"] is True
+    assert "mutation caused it is undetermined" in retract.headline
+    assert "baseline" not in retract.headline
+    removed = next(f for f in report.findings if origin_family(f) == "remove")
+    assert [m.family for m in removed.mutation_path] == ["remove"]
+    assert removed.minimization["mutation_attribution"] == "SURVIVING_EDITS"
     for f in report.findings:
         assert f.mode == "frozen_trace"
         assert "not a statement about the agent" in f.divergence["scope"]
@@ -52,7 +69,7 @@ def test_frozen_replay_reports_what_the_agent_would_now_be_shown() -> None:
     worlds = by_family(report)
     assert worlds["supersede"].screening.screening_class == "STALE"
     assert worlds["plant"].screening.screening_class == "STALE"
-    assert "supersede" not in {f.mutation_path[0].family for f in report.findings}
+    assert "supersede" not in {origin_family(f) for f in report.findings}
     assert worlds["reorder"].screening.screening_class == "UNSCREENABLE"
     assert worlds["snippets"].screening.screening_class == "UNSCREENABLE"
     assert worlds["duplicate"].screening.screening_class == "UNSCREENABLE"  # only a run knows

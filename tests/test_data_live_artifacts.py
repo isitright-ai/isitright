@@ -127,21 +127,40 @@ def test_every_live_finding_names_a_replay_artifact_that_exists_and_replays(
     assert "It replays the recorded observation; the agent is not rerun." in markdown
 
 
-@pytest.mark.parametrize("agent", ["forgot_dropna", "answer_only"])
+@pytest.mark.parametrize(
+    ("agent", "max_trials", "grade"),
+    [
+        ("forgot_dropna", 3, "OBSERVED_FAILURE"),  # 3 pairs cannot decide a rate increase
+        ("answer_only", 3, "OBSERVED_FAILURE"),
+        ("forgot_dropna", 20, "RATE_INCREASE"),  # the default pair limit decides one
+    ],
+)
 def test_every_live_finding_is_built_from_the_world_its_replay_artifact_holds(
-    audited: Any, agent: str
+    audited: Any, agent: str, max_trials: int, grade: str
 ) -> None:
     """N5: the finding's world, and every part tied to it, is the world the artifact stores."""
     from isitright.core.shown import world_json_fingerprint
 
-    out, _ = audited(agent, 3)
+    out, _ = audited(agent, max_trials)
     findings = _report(out)["cases"][0]["findings"]
     assert findings
+    assert grade in {f["evidence_grade"] for f in findings}
     for finding in findings:
         stored = json.loads((out / finding["replay"]["artifact"]).read_text(encoding="utf-8"))
         assert finding["world_fingerprint"] == world_json_fingerprint(stored["world"])
-        assert set(finding["built_from"]) >= {"validity", "world_diff", "counts", "replay"}
+        assert set(finding["built_from"]) == {
+            "validity",
+            "world_diff",
+            "divergence",
+            "counts",
+            "replay",
+        }
         assert set(finding["built_from"].values()) == {finding["world_fingerprint"]}
+        if finding["evidence_grade"] == "RATE_INCREASE":
+            # the decision rests on pairs of runs of this world, which the artifact records
+            pairs = finding["stability"]["sequential"]["pairs"]
+            recorded = len(stored["inputs"]["runs"])
+            assert pairs >= 1 and recorded >= pairs
 
 
 def test_the_replay_verifies_the_evidence_it_claims_and_catches_a_change(audited: Any) -> None:

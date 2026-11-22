@@ -23,6 +23,7 @@ import pytest
 from pydantic import ValidationError
 
 from isitright.core.evidence import (
+    DivergenceStatus,
     FidelityRecord,
     Finding,
     OracleRecord,
@@ -33,11 +34,21 @@ from isitright.core.mutations import (
     AddEntity,
     Mutation,
     RemoveEntity,
+    ResponseEdit,
     SetField,
     SetParam,
+    Timer,
+    Trigger,
+    UnsetField,
     World,
 )
-from isitright.core.shown import built_from, surviving_path, world_json_fingerprint
+from isitright.core.shown import (
+    built_from,
+    change_phrase,
+    searched_path_record,
+    surviving_path,
+    world_json_fingerprint,
+)
 from isitright.core.stochastic import Observation, RateWithInterval
 from isitright.core.world import State
 
@@ -249,9 +260,9 @@ def test_a_research_finding_never_shows_a_world_that_did_not_reproduce() -> None
         SubjectRunner.run = original_run  # type: ignore[method-assign]
     assert case.findings, case.headline
     for finding in case.findings:
-        assert finding.divergence["shown_world_is_minimized"] is False or (
-            finding.divergence["reproduces_on_shown_world"] is True
-        ), "a finding was built on a minimized world where no run failed"
+        assert finding.divergence["reproduces_on_shown_world"] is True, (
+            "a finding was built on a world where no run failed"
+        )
 
 
 # -- SQL: a minimized world that stops reproducing is not shown ------------------------------
@@ -431,6 +442,7 @@ def test_a_data_finding_names_only_the_mutations_the_minimized_world_still_has(
 
 SHOWN = "a" * 16
 OTHER = "b" * 16
+BASE_PARTS = ("validity", "world_diff", "divergence")
 
 
 def _finding(**updates: Any) -> Finding:
@@ -447,9 +459,7 @@ def _finding(**updates: Any) -> Finding:
 
 
 def test_parts_built_from_the_world_a_finding_shows_are_accepted() -> None:
-    finding = _finding(
-        world_fingerprint=SHOWN, built_from=built_from(SHOWN, "validity", "world_diff")
-    )
+    finding = _finding(world_fingerprint=SHOWN, built_from=built_from(SHOWN, *BASE_PARTS))
     assert finding.world_fingerprint == SHOWN
 
 
@@ -459,8 +469,8 @@ def test_a_part_built_from_another_world_is_refused() -> None:
 
 
 def test_the_parts_a_finding_has_must_each_be_tied_to_its_world() -> None:
-    base = built_from(SHOWN, "validity", "world_diff")
-    with pytest.raises(ValidationError, match="validity, world_diff not tied"):
+    base = built_from(SHOWN, *BASE_PARTS)
+    with pytest.raises(ValidationError, match="validity, world_diff, divergence not tied"):
         _finding(world_fingerprint=SHOWN)
     with pytest.raises(ValidationError, match="replay not tied"):
         _finding(
@@ -489,7 +499,7 @@ def test_built_from_needs_the_fingerprint_it_is_compared_with() -> None:
 
 @pytest.mark.parametrize("key", ["reproduces", "reproduces_on_shown_world"])
 def test_a_finding_that_does_not_reproduce_on_its_world_is_refused(key: str) -> None:
-    parts = built_from(SHOWN, "validity", "world_diff", "divergence")
+    parts = built_from(SHOWN, *BASE_PARTS)
     with pytest.raises(ValidationError, match="does not reproduce on the world it shows"):
         _finding(world_fingerprint=SHOWN, built_from=parts, divergence={key: False})
     _finding(world_fingerprint=SHOWN, built_from=parts, divergence={key: True})
@@ -508,26 +518,106 @@ def _mutation(family: str, *edits: Any, target: str = "state") -> Mutation:
     return Mutation(family=family, target=target, description=family, edits=list(edits))  # type: ignore[arg-type]
 
 
+def _world(
+    rows: list[dict[str, Any]], *, response: Any = (), timers: Any = (), **params: Any
+) -> World:
+    return World(_state(rows, **params), tuple(response), tuple(timers))
+
+
+def _set(value: Any, *path: str, key: Any = 1) -> SetField:
+    return SetField(collection="t", key=key, path=list(path or ["v"]), value=value)
+
+
 def test_a_mutation_survives_while_one_of_its_edits_is_still_in_effect() -> None:
     base = _state([{"id": 1, "v": "a"}], limit=5)
     added = _mutation("duplicate", AddEntity(collection="t", entity={"id": 2, "v": "a"}))
-    edited = _mutation("boundary", SetField(collection="t", key=1, path=["v"], value="z"))
+    edited = _mutation("boundary", _set("z"))
     removed = _mutation("missing", RemoveEntity(collection="t", key=1))
     param = _mutation("limit", SetParam(name="limit", value=9))
-    response = _mutation("noise", target="response")
-    traceless = _mutation("traceless")
-    path = [added, edited, removed, param, response, traceless]
+    path = [added, edited, removed, param]
 
-    everything = _state([{"id": 1, "v": "z"}, {"id": 2, "v": "a"}], limit=9)
-    assert surviving_path(path, everything, base) == (added, edited, param, response, traceless)
-    # the added row was minimized away, the edited field and the parameter put back, and the row
-    # a mutation removed is present again: only what is not traced survives
-    shrunk = _state([{"id": 1, "v": "a"}], limit=5)
-    assert surviving_path(path, shrunk, base) == (response, traceless)
-    gone = _state([], limit=5)
-    assert surviving_path(path, gone, base) == (removed, response, traceless)
+    everything = _world([{"id": 1, "v": "z"}, {"id": 2, "v": "a"}], limit=9)
+    # the row is present again, so its removal is not in effect; the rest are
+    assert surviving_path(path, everything, base) == (added, edited, param)
+    # the added row minimized away, the field and the parameter put back, the removed row present
+    shrunk = _world([{"id": 1, "v": "a"}], limit=5)
+    assert surviving_path(path, shrunk, base) == ()
+    # the row a mutation removed is still absent: that removal is in effect
+    gone = _world([], limit=5)
+    assert surviving_path(path, gone, base) == (removed,)
     # with no base nothing can be compared: every mutation is kept
     assert surviving_path(path, shrunk, None) == tuple(path)
+
+
+def test_an_edit_that_a_later_edit_overwrote_does_not_survive() -> None:
+    """Base v = 0, mutation A sets 1, mutation B sets 2, shown v = 2: only B has an effect."""
+    base = _state([{"id": 1, "v": 0}])
+    a, b = _mutation("first", _set(1)), _mutation("second", _set(2))
+    shown = _world([{"id": 1, "v": 2}])
+    assert surviving_path([a, b], shown, base) == (b,)
+    # the later edit put the field back to its base value: neither has an effect
+    back = _mutation("third", _set(0))
+    assert surviving_path([a, back], _world([{"id": 1, "v": 0}]), base) == ()
+    # a later edit of a part of what an earlier edit set leaves the earlier one effective
+    base_nested = _state([{"id": 1, "v": {"x": 0, "y": 0}}])
+    whole = _mutation("whole", _set({"x": 1, "y": 1}))
+    part = _mutation("part", _set(2, "v", "x"))
+    shown_nested = _world([{"id": 1, "v": {"x": 2, "y": 1}}])
+    assert surviving_path([whole, part], shown_nested, base_nested) == (whole, part)
+
+
+def test_unset_and_nested_edits_are_attributed_by_what_they_leave_behind() -> None:
+    base = _state([{"id": 1, "v": {"x": 1}, "w": "keep"}])
+    unset_w = _mutation("drop_w", UnsetField(collection="t", key=1, path=["w"]))
+    set_x = _mutation("bump_x", _set(5, "v", "x"))
+    shown = _world([{"id": 1, "v": {"x": 5}}])
+    assert surviving_path([unset_w, set_x], shown, base) == (unset_w, set_x)
+    # `w` is back: the unset is not in effect, while the nested value still is
+    restored = _world([{"id": 1, "v": {"x": 5}, "w": "keep"}])
+    assert surviving_path([unset_w, set_x], restored, base) == (set_x,)
+    # a different value than the edit assigned is not that edit's effect
+    other = _world([{"id": 1, "v": {"x": 7}, "w": "keep"}])
+    assert surviving_path([set_x], other, base) == ()
+
+
+def test_an_added_row_that_was_removed_again_leaves_neither_mutation() -> None:
+    base = _state([{"id": 1, "v": "a"}])
+    add = _mutation("duplicate", AddEntity(collection="t", entity={"id": 2, "v": "a"}))
+    remove = _mutation("missing", RemoveEntity(collection="t", key=2))
+    shown = _world([{"id": 1, "v": "a"}])
+    assert surviving_path([add, remove], shown, base) == ()
+    # the added row is still there: only the addition survives
+    assert surviving_path([add], _world([{"id": 1, "v": "a"}, {"id": 2, "v": "a"}]), base) == (add,)
+
+
+def test_a_parameter_survives_only_with_the_value_it_was_given() -> None:
+    base = _state([], limit=5)
+    first = _mutation("a", SetParam(name="limit", value=7))
+    second = _mutation("b", SetParam(name="limit", value=9))
+    shown = _world([], limit=9)
+    assert surviving_path([first, second], shown, base) == (second,)
+    # a value that is neither of the assigned ones is not the effect of the edit
+    assert surviving_path([first], _world([], limit=9), base) == ()
+
+
+def test_response_and_timing_mutations_survive_with_the_world_that_still_holds_them() -> None:
+    base = _state([{"id": 1, "v": "a"}])
+    edit = ResponseEdit(tool="get", op="drop_field", field="v")
+    trigger = Trigger(tool="get", match={})
+    timer_edits = [_set("late")]
+    response = Mutation(family="noise", target="response", description="d", response=edit)
+    timing = Mutation(
+        family="late", target="timing", description="d", trigger=trigger, edits=timer_edits
+    )
+    holds = World(base, (edit,), (Timer(name="late_1", trigger=trigger, edits=timer_edits),))
+    assert surviving_path([response, timing], holds, base) == (response, timing)
+    assert surviving_path([response, timing], World(base), base) == ()
+
+
+def test_a_mutation_with_no_traceable_edit_is_not_claimed() -> None:
+    base = _state([{"id": 1, "v": "a"}])
+    traceless = _mutation("traceless")
+    assert surviving_path([traceless], _world([{"id": 1, "v": "b"}]), base) == ()
 
 
 def test_the_fingerprint_of_a_stored_world_is_the_fingerprint_of_the_world() -> None:
@@ -535,30 +625,47 @@ def test_the_fingerprint_of_a_stored_world_is_the_fingerprint_of_the_world() -> 
     assert world_json_fingerprint(world.to_json()) == world.fingerprint()
 
 
-def test_the_difference_kinds_are_error_row_count_and_row_values() -> None:
-    from isitright.packs.sql.comparison import difference_kind
+def _result(*values: int, columns: tuple[str, ...] = ("a",)) -> Any:
     from isitright.packs.sql.models import (
         CanonicalValue,
         CanonicalValueKind,
         QueryResult,
         ResultColumn,
     )
+
+    def cell(v: int) -> Any:
+        return CanonicalValue(kind=CanonicalValueKind.INTEGER, value=v, engine_type="INTEGER")
+
+    return QueryResult(
+        columns=[ResultColumn(name=c) for c in columns],
+        rows=[[cell(v)] * len(columns) for v in values],
+    )
+
+
+def test_the_difference_kinds_follow_a_stated_precedence() -> None:
+    from isitright.packs.sql.comparison import difference_kind
     from isitright.packs.sql.results import error_result
 
-    def result(*values: int) -> QueryResult:
-        return QueryResult(
-            columns=[ResultColumn(name="a")],
-            rows=[
-                [CanonicalValue(kind=CanonicalValueKind.INTEGER, value=v, engine_type="INTEGER")]
-                for v in values
-            ],
-        )
+    # 1. the candidate errors where the reference does not, whatever else differs
+    assert difference_kind(_result(1), error_result("boom")) == "error"
+    assert difference_kind(_result(1, 2, 3), error_result("boom")) == "error"
+    # 2. otherwise the row counts differ, whatever the columns do
+    assert difference_kind(_result(1, 2), _result(1)) == "row_count"
+    assert difference_kind(_result(1, 2), _result(1, columns=("a", "b"))) == "row_count"
+    # 3. otherwise the values or the columns differ
+    assert difference_kind(_result(1), _result(2)) == "row_values"
+    assert difference_kind(_result(1), _result(1, columns=("a", "b"))) == "row_values"
+    assert difference_kind(_result(1), _result(1, columns=("b",))) == "row_values"
 
-    assert difference_kind(result(1), error_result("boom")) == "error"
-    assert difference_kind(result(1, 2), result(1)) == "row_count"
-    assert difference_kind(result(1), result(2)) == "row_values"
-    # an error on both sides is not the candidate erroring where the reference does not
-    assert difference_kind(error_result("a"), error_result("b")) == "row_values"
+
+def test_a_reference_that_errors_gives_no_difference_kind() -> None:
+    """With the reference erroring, nothing says what the answer is. Two queries that both error,
+    with different messages, are not a counterexample either."""
+    from isitright.packs.sql.comparison import difference_kind
+    from isitright.packs.sql.results import error_result
+
+    assert difference_kind(error_result("a"), _result(1)) is None
+    assert difference_kind(error_result("a"), error_result("b")) is None
 
 
 # -- each pack: the finding's world is the world its artifacts hold ---------------------------
@@ -648,10 +755,19 @@ def test_a_minimal_world_that_cannot_be_run_leaves_the_finding_on_the_searched_w
     )
     real = mcp_audit._run_world
 
-    def run_world(*args: Any) -> None:
-        if len(args) > 7 and args[7]:  # the minimal world: the budget is gone
+    def run_world(
+        runner: Any,
+        target: Any,
+        base: Any,
+        comparison: Any,
+        config: Any,
+        k: int,
+        sequential: bool,
+        after_search: bool = False,
+    ) -> None:
+        if after_search:  # the minimal world: the budget is gone
             return
-        real(*args)
+        real(runner, target, base, comparison, config, k, sequential, after_search)
 
     monkeypatch.setattr(mcp_audit, "_run_world", run_world)
     monkeypatch.setenv("SHOP_AGENT_MODE", "careless")
@@ -673,9 +789,8 @@ def test_a_minimal_world_that_cannot_be_run_leaves_the_finding_on_the_searched_w
     (finding,) = report.cases[0].findings
     assert finding.world_id == composed.id and len(finding.mutation_path) == 2
     assert finding.minimization["adopted"] is False
-    assert (
-        "budget was spent before the minimal world was run" in finding.minimization["not_adopted"]
-    )
+    not_adopted = finding.minimization["not_adopted"]
+    assert "budget was spent before the minimal world was run" in not_adopted["reason"]
     (case,) = export_eval_cases(SHOP_REF, report, out, include_observed=True)
     assert world_json_fingerprint(case.payload["world"]) == finding.world_fingerprint
     assert len(World.from_json(case.payload["world"]).path) == 2
@@ -817,10 +932,257 @@ def test_a_frozen_research_finding_is_built_from_the_world_its_artifact_holds() 
         assert set(finding.built_from.values()) == {finding.world_fingerprint}
 
 
-def test_when_no_mutation_survives_the_whole_path_is_kept() -> None:
-    """Minimization may remove the rows a mutation edited, so the world differs from the base by
-    absence only. The change cannot be attributed to one mutation; an empty path would hide it."""
-    base = _state([{"id": 1, "v": "a"}])
-    edited = _mutation("retract", SetField(collection="t", key=1, path=["v"], value="z"))
-    other = _mutation("boundary", SetField(collection="t", key=1, path=["w"], value="q"))
-    assert surviving_path([edited, other], _state([]), base) == (edited, other)
+def test_the_headline_says_what_is_left_when_no_mutation_survives() -> None:
+    searched = [_mutation("retract"), _mutation("boundary")]
+    diff = {"added": [], "removed": [{"collection": "t"}], "changed": []}
+    # a surviving mutation is named, each family once
+    assert change_phrase(searched[:1] + searched[:1], searched, diff) == "after a retract mutation"
+    assert change_phrase(searched, searched, diff) == "after a retract + boundary mutation"
+    # nothing survives: the change that is left, and that attribution is undetermined; never a
+    # mutation and never "baseline"
+    text = change_phrase([], searched, diff)
+    assert text == (
+        "on a world that differs from the base in 1 removed "
+        "(which mutation caused it is undetermined)"
+    )
+    # no mutation at all: the world is the base world
+    assert change_phrase([], [], {}) == "on the base world"
+
+
+def test_the_searched_path_is_kept_as_provenance_and_attribution_says_what_it_can() -> None:
+    searched = [_mutation("retract"), _mutation("boundary")]
+    survivors = searched[1:]
+    none_left = searched_path_record(searched, [])
+    assert none_left["mutation_attribution"] == "UNDETERMINED" and none_left["provenance_only"]
+    assert [m["family"] for m in none_left["searched_path"]] == ["retract", "boundary"]
+    assert searched_path_record(searched, survivors)["mutation_attribution"] == "SURVIVING_EDITS"
+    assert searched_path_record([], [])["mutation_attribution"] == "NONE"
+
+
+def test_family_totals_count_each_surviving_family_once_per_finding() -> None:
+    from isitright.core.evidence import MutationRecord, totals_of
+
+    from .factories import make_case
+
+    def record(family: str) -> MutationRecord:
+        return MutationRecord(family=family, target="state", description=family)
+
+    case = make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND)
+    first = case.findings[0].model_copy(
+        update={"mutation_path": [record("a"), record("b"), record("a")]}
+    )
+    second = case.findings[0].model_copy(update={"mutation_path": [record("a")]})
+    third = case.findings[0].model_copy(update={"mutation_path": []})
+    counted = case.model_copy(update={"findings": [first, second, third]})
+    # three findings, four counts: a finding with two families counts for both, none counts twice,
+    # and a finding with no surviving mutation counts for none
+    assert totals_of([counted]).by_family == {"a": 2, "b": 1}
+
+
+# -- SQL: the fallback must reproduce the kind that was found ---------------------------------
+
+
+def test_the_fallback_to_the_found_world_must_reproduce_the_kind_that_was_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The found world differs in its row count. When it is rerun the engine now makes the
+    candidate fail instead: a disagreement, but not the one that was found, so no finding."""
+    from isitright.packs.sql import check, hosts
+    from isitright.packs.sql.results import error_result
+
+    database = tmp_path / "ids.sqlite"
+    connection = sqlite3.connect(database)
+    try:
+        connection.executescript(
+            "CREATE TABLE t(id INTEGER PRIMARY KEY, v INTEGER); INSERT INTO t VALUES (1, 5);"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    real = hosts.SqliteHost.run_pair
+    seen: dict[Any, int] = {}
+
+    def run_pair(
+        self: Any, state: Any, reference_sql: str, candidate_sql: str, **kwargs: Any
+    ) -> Any:
+        left, right = real(self, state, reference_sql, candidate_sql, **kwargs)
+        key = tuple((table.name, table.rows) for table in state.tables)
+        seen[key] = seen.get(key, 0) + 1
+        return (left, error_result("changed")) if seen[key] >= 2 else (left, right)
+
+    monkeypatch.setattr(hosts.SqliteHost, "run_pair", run_pair)
+    report = check(
+        database=database, reference_sql="SELECT v FROM t", candidate_sql="SELECT DISTINCT v FROM t"
+    )
+    assert report.findings == []
+    assert report.divergence_status is DivergenceStatus.INCONCLUSIVE
+    assert [e["code"] for e in report.errors] == ["NOT_REPRODUCED"]
+
+
+# -- schema: 0.9 reports need the identity of every finding, older reports load -------------------
+
+
+def _report_json(schema_version: str, **finding_updates: Any) -> dict[str, Any]:
+    """A valid stamped report as JSON, with the version and the finding's fields changed in the
+    data (a model would refuse some of these combinations at construction)."""
+    from .factories import make_audit, make_case
+
+    data = make_audit(make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND)).model_dump(mode="json")
+    data["schema_version"] = schema_version
+    data["cases"][0]["findings"][0].update(finding_updates)
+    return data
+
+
+def test_a_0_9_report_refuses_a_finding_that_names_no_world() -> None:
+    from isitright.core.evidence import AuditReport
+
+    stamped = _report_json("0.9")
+    assert AuditReport.model_validate(stamped).cases[0].findings[0].world_fingerprint
+    for missing in (None, ""):
+        data = _report_json("0.9", world_fingerprint=missing, built_from={})
+        with pytest.raises(ValidationError, match="needs the `world_fingerprint`"):
+            AuditReport.model_validate(data)
+
+
+def test_a_0_9_report_refuses_a_finding_whose_stamps_name_another_world() -> None:
+    from isitright.core.evidence import AuditReport
+
+    data = _report_json("0.9")
+    data["cases"][0]["findings"][0]["built_from"]["world_diff"] = "0" * 16
+    with pytest.raises(ValidationError, match="world_diff built from another world"):
+        AuditReport.model_validate(data)
+    data = _report_json("0.9")
+    del data["cases"][0]["findings"][0]["built_from"]["divergence"]
+    with pytest.raises(ValidationError, match="divergence not tied to the world it shows"):
+        AuditReport.model_validate(data)
+
+
+@pytest.mark.parametrize("schema_version", ["0.4", "0.5", "0.6", "0.8"])
+def test_a_report_from_before_0_9_still_loads_without_fingerprints(schema_version: str) -> None:
+    """The findings of older reports name no world and may carry the old divergence fields."""
+    from isitright.core.evidence import AuditReport
+
+    data = _report_json(
+        schema_version,
+        world_fingerprint=None,
+        built_from={},
+        divergence={"reproduces": False, "difference": "ordered row 0 differs"},
+    )
+    report = AuditReport.model_validate(data)
+    assert report.cases[0].findings[0].world_fingerprint is None
+
+
+def test_the_committed_0_8_research_report_still_loads() -> None:
+    from isitright.core.evidence import AuditReport
+
+    root = Path(__file__).parent / "fixtures" / "reports" / "research-0.8.0"
+    reports = sorted(root.rglob("report.json"))
+    assert reports
+    for path in reports:
+        assert AuditReport.model_validate_json(path.read_text(encoding="utf-8")).schema_version
+
+
+def test_a_rate_increase_must_rest_on_runs_of_the_world_it_shows() -> None:
+    """A decided paired test has as many pairs as the world has judged runs, at least."""
+    from isitright.core.evidence import Finding
+
+    from .test_finding_grades import _rate_case
+
+    finding = _rate_case().findings[0]
+    data = finding.model_dump(mode="json")
+    data["observation"]["world"]["judged"] = 3  # the test decided on 12 pairs
+    with pytest.raises(ValidationError, match="fewer judged runs than the test has pairs"):
+        Finding.model_validate(data)
+
+
+# -- agents: a minimal world claims no more validation than the rules give -----------------------
+
+
+def test_a_minimal_world_with_a_response_or_timing_change_does_not_claim_domain_validation() -> (
+    None
+):
+    from types import SimpleNamespace
+
+    from isitright.packs.mcp.audit import _minimal_world_validity
+
+    generated = SimpleNamespace(
+        tiers=["STRUCTURAL", "DOMAIN_VALIDATED", "OBSERVABLE"], notes=["n"], observable=True
+    )
+    state_only = World(_state([]), path=(_mutation("boundary", _set("x")),))
+    with_response = World(
+        _state([]),
+        path=(
+            _mutation("boundary", _set("x")),
+            Mutation(family="noise", target="response", description="d"),
+        ),
+    )
+    with_timer = World(
+        _state([]), path=(Mutation(family="late", target="timing", description="d"),)
+    )
+    kept = _minimal_world_validity(state_only, generated)  # type: ignore[arg-type]
+    assert kept.tiers == ["STRUCTURAL", "DOMAIN_VALIDATED", "OBSERVABLE"] and kept.notes == ["n"]
+    for world in (with_response, with_timer):
+        weaker = _minimal_world_validity(world, generated)  # type: ignore[arg-type]
+        assert weaker.tiers == ["STRUCTURAL", "OBSERVABLE"]
+        assert weaker.status == "VALID"
+        assert "no rule validates" in weaker.notes[-1]
+
+
+# -- an artifact must hold the world its finding shows ------------------------------------------
+
+
+def test_an_artifact_whose_world_is_not_the_findings_world_is_refused() -> None:
+    from isitright.core.shown import check_artifact_world
+
+    world = World(_state([{"id": 1, "v": "a"}]))
+    other = World(_state([{"id": 1, "v": "b"}]))
+    check_artifact_world(world.to_json(), world.fingerprint(), "replay artifact", "c:1")
+    check_artifact_world(other.to_json(), None, "replay artifact", "c:1")  # a 0.8 finding: none
+    with pytest.raises(ValueError, match="in the replay artifact is not the world of finding c:1"):
+        check_artifact_world(other.to_json(), world.fingerprint(), "replay artifact", "c:1")
+
+
+def test_the_data_writer_refuses_a_replay_artifact_of_another_world(tmp_path: Path) -> None:
+    pytest.importorskip("pandas")
+    from isitright.packs.data.audit import AuditConfig, DataAudit
+    from isitright.packs.data.reports import build_report, write_report
+    from isitright.packs.data.task import load_task
+    from tests.data_factories import DROPNA_FORGOTTEN, make_task, program
+
+    task = load_task(make_task(tmp_path / "task"))
+    with DataAudit(task, AuditConfig(attempts=80, trust_code=True, reuse=20)) as audit:
+        case = audit.check_frozen(program(DROPNA_FORGOTTEN, "dropna_forgotten"))
+        finding = case.findings[0]
+        artifacts = dict(audit.artifacts)
+        report = build_report([case], 0.0, "case")
+        write_report(report, tmp_path / "ok", artifacts)  # the artifact holds the shown world
+        swapped = artifacts[finding.finding_id].model_copy(
+            update={"world": World(audit.prepared.base).to_json()}
+        )
+        with pytest.raises(ValueError, match="is not the world of finding"):
+            write_report(report, tmp_path / "bad", {finding.finding_id: swapped})
+
+
+def test_an_agents_replay_refuses_a_recorded_world_that_is_not_the_one_the_run_used(
+    minimized_shop: tuple[Any, Path, str],
+) -> None:
+    import shutil
+
+    from isitright.packs.mcp.model import load_scenario
+    from isitright.packs.mcp.replay import replay_run
+
+    report, out, _ = minimized_shop
+    runs = report.cases[0].extensions["mcp"]["runs"]
+    scenario = load_scenario(SHOP_REF)
+    run = next(r for r in runs if r["world_id"].endswith(".minimal"))
+    assert replay_run(scenario, run, out).reproduced
+    # put the baseline's world.json where the minimal world's run recorded its own
+    baseline = next(r for r in runs if r["world_id"] == "baseline")
+    kept = (out / run["run_dir"] / "world.json").read_bytes()
+    shutil.copyfile(out / baseline["run_dir"] / "world.json", out / run["run_dir"] / "world.json")
+    try:
+        outcome = replay_run(scenario, run, out)
+    finally:
+        (out / run["run_dir"] / "world.json").write_bytes(kept)
+    assert not outcome.reproduced
+    assert "not the world the run was launched with" in outcome.detail

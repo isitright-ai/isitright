@@ -13,7 +13,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from isitright.core.sequential import Decision
-from isitright.core.shown import EVIDENCE_PARTS
+from isitright.core.shown import EVIDENCE_PARTS, families_of
 from isitright.core.stochastic import EvidenceGrade as EvidenceGrade
 from isitright.core.stochastic import Multiplicity, Observation, Stability
 
@@ -248,7 +248,7 @@ class Finding(Closed):
     def one_world(self) -> Self:
         """The diff, validity, counts, reproduction, replay artifact and export are of one world."""
         shown = self.world_fingerprint
-        if shown is None:
+        if not shown:
             if self.built_from:
                 raise ValueError("`built_from` needs the `world_fingerprint` it is compared with")
             return self
@@ -261,7 +261,7 @@ class Finding(Closed):
                 f"finding {self.finding_id}: {', '.join(other)} built from another world than "
                 f"the one it shows ({shown})"
             )
-        required = ["validity", "world_diff"]
+        required = ["validity", "world_diff", "divergence"]
         if self.observation is not None or self.stability is not None:
             required.append("counts")
         if self.replay.artifact:
@@ -294,6 +294,11 @@ class Finding(Closed):
                 raise ValueError("a rate increase needs a sequential decision of RATE_INCREASE")
             if claim is None:
                 raise ValueError("a rate increase needs the rate claim of its sequential test")
+            if self.observation is not None and self.observation.world.judged < sequential.pairs:
+                raise ValueError(
+                    "a rate increase rests on pairs of runs of the world shown, which has fewer "
+                    "judged runs than the test has pairs"
+                )
             if (
                 claim.test != sequential.test
                 or claim.paired_runs != sequential.pairs
@@ -393,6 +398,9 @@ class Totals(Closed):
     by_divergence_status: dict[str, int] = Field(default_factory=dict)
     by_validity: dict[str, int] = Field(default_factory=dict)
     by_family: dict[str, int] = Field(default_factory=dict)
+    """Findings per mutation family that has a surviving effect in the world shown (0.9). A finding
+    counts once for each distinct family it still shows, so the values can add up to more than the
+    number of findings. Before 0.9 only the last mutation's family was counted."""
 
 
 class AuditReport(Closed):
@@ -406,6 +414,22 @@ class AuditReport(Closed):
     totals: Totals
     elapsed_seconds: float = Field(ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def findings_name_their_world(self) -> Self:
+        """From schema 0.9 every finding names the one world it shows. A finding without a
+        fingerprint is refused in a 0.9 report; reports written as 0.8 or earlier hold none and
+        load as they always did."""
+        if self.schema_version != "0.9":
+            return self
+        for case in self.cases:
+            for finding in case.findings:
+                if not finding.world_fingerprint:
+                    raise ValueError(
+                        f"finding {finding.finding_id}: a 0.9 report needs the "
+                        "`world_fingerprint` of the world each finding shows"
+                    )
+        return self
 
     def ranked(self) -> list[CaseReport]:
         return rank_cases(self.cases)
@@ -472,8 +496,7 @@ def totals_of(cases: list[CaseReport]) -> Totals:
             label = "STRUCTURAL"
         by_validity[label] = by_validity.get(label, 0) + 1
         for finding in case.findings:
-            if finding.mutation_path:
-                family = finding.mutation_path[-1].family
+            for family in families_of(finding.mutation_path):  # each family once per finding
                 by_family[family] = by_family.get(family, 0) + 1
     return Totals(
         cases=len(cases),

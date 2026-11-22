@@ -34,7 +34,13 @@ from isitright.core.minimize import changed_atoms, minimize_world
 from isitright.core.mutations import Candidate, Mutation, World
 from isitright.core.replay import ReplayArtifact
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
-from isitright.core.shown import built_from, surviving_path, world_json_fingerprint
+from isitright.core.shown import (
+    built_from,
+    change_phrase,
+    searched_path_record,
+    surviving_path,
+    world_json_fingerprint,
+)
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import Budget
 from isitright.core.subjects import SubjectKind
@@ -505,7 +511,8 @@ class DataAudit:
         artifact = self.replay_artifact(program, case_id, shown, detail)
         self.artifacts[f"{case_id}:{number}"] = artifact
         fingerprint = shown.fingerprint()
-        kept_path = _records(surviving_path(world.path, shown.state, p.base))
+        kept = surviving_path(world.path, shown, p.base)
+        world_diff = diff_states(p.base, shown.state)
         return Finding(
             finding_id=f"{case_id}:{number}",
             world_id=fingerprint,
@@ -519,8 +526,8 @@ class DataAudit:
                     limits=GOLD_LIMITS,
                 )
             ],
-            world_diff=diff_states(p.base, shown.state),
-            mutation_path=kept_path,
+            world_diff=world_diff,
+            mutation_path=_records(kept),
             divergence={
                 "scope": "this program on this world; not a statement about the agent",
                 "reproduces": verdict is Verdict.DISAGREE,
@@ -544,16 +551,14 @@ class DataAudit:
                 if is_minimized
                 else changed_atoms(shown.state, p.base),
                 "shown": "minimized" if is_minimized else "unminimized",
+                **searched_path_record(world.path, kept),
             },
             world_fingerprint=fingerprint,
             built_from={
                 **built_from(fingerprint, "validity", "world_diff", "divergence"),
                 "replay": world_json_fingerprint(artifact.world),
             },
-            headline=(
-                f"Program and reference diverge after a "
-                f"{kept_path[-1].family if kept_path else 'baseline'} mutation"
-            ),
+            headline=f"Program and reference diverge {change_phrase(kept, world.path, world_diff)}",
         )
 
     def fidelity(self, pair: Pair) -> FidelityRecord:

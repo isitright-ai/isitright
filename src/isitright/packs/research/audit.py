@@ -41,7 +41,14 @@ from isitright.core.oracles import Outcome, Role, controls_status
 from isitright.core.replay import ReplayArtifact
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
 from isitright.core.sequential import PairedSprt, RateSprtConfig, SprtConfig
-from isitright.core.shown import built_from, surviving_path, world_json_fingerprint
+from isitright.core.shown import (
+    built_from,
+    change_phrase,
+    families_of,
+    searched_path_record,
+    surviving_path,
+    world_json_fingerprint,
+)
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import (
     Budget,
@@ -749,7 +756,8 @@ class ResearchAudit:
         )
         fingerprint = shown_world.fingerprint()
         stored = world_json_fingerprint(artifact.world)  # replay and export derive from it
-        path = surviving_path(shown_world.path, shown_world.state, self.state)
+        kept = surviving_path(shown_world.path, shown_world, self.state)
+        world_diff = diff_states(self.state, shown_world.state)
         return Finding(
             finding_id=f"{case_id}:{number}",
             world_id=fingerprint,
@@ -766,8 +774,8 @@ class ResearchAudit:
             observation=observation_of(shown.outcomes, shown.paired_baseline)
             if subject.stochastic
             else None,
-            world_diff=diff_states(self.state, shown_world.state),
-            mutation_path=_records(path),
+            world_diff=world_diff,
+            mutation_path=_records(kept),
             divergence={
                 "scope": "this subject on this world",
                 "subject": subject.label.model_dump(mode="json"),
@@ -794,7 +802,7 @@ class ResearchAudit:
             fidelity=FidelityRecord(found_on="SIMULATED", engine="frozen BM25 (isitright)"),
             replay=ReplayRecord(artifact=f"{number}.replay.json"),
             export=f"{number}.eval-case.json",
-            minimization=minimization,
+            minimization={**minimization, **searched_path_record(world.path, kept)},
             mode="live_agent",
             world_fingerprint=fingerprint,
             built_from={
@@ -808,7 +816,7 @@ class ResearchAudit:
                 "replay": stored,
                 "export": stored,
             },
-            headline=_finding_headline(worst, path),
+            headline=_finding_headline(worst, change_phrase(kept, world.path, world_diff)),
         )
 
     def _minimize(
@@ -1086,14 +1094,15 @@ class ResearchAudit:
         ]
         fingerprint = final.fingerprint()
         stored = world_json_fingerprint(self.artifacts[f"{case_id}:{number}"].world)
-        path = surviving_path(world.path, final.state, self.state)
+        kept = surviving_path(world.path, final, self.state)
+        world_diff = diff_states(self.state, final.state)
         return Finding(
             finding_id=f"{case_id}:{number}",
             world_id=fingerprint,
             validity=validity_record(self.spec.validate_world(final.state, world.path)),
             oracles=_oracle_records(shown),
-            world_diff=diff_states(self.state, final.state),
-            mutation_path=_records(path),
+            world_diff=world_diff,
+            mutation_path=_records(kept),
             divergence={
                 "scope": "this recorded report on this world; not a statement about the agent "
                 "(the report is not regenerated)",
@@ -1125,6 +1134,7 @@ class ResearchAudit:
                 "documents_after": minimized.atoms_after
                 if final is not world
                 else minimized.atoms_before,
+                **searched_path_record(world.path, kept),
             },
             mode="frozen_trace",
             world_fingerprint=fingerprint,
@@ -1133,7 +1143,7 @@ class ResearchAudit:
                 "replay": stored,
                 "export": stored,
             },
-            headline=_finding_headline(shown, path),
+            headline=_finding_headline(shown, change_phrase(kept, world.path, world_diff)),
         )
 
     # -- reports ---------------------------------------------------------------------------------
@@ -1548,12 +1558,12 @@ def _expected(verdict: Judged | None) -> dict[str, Any]:
     }
 
 
-def _finding_headline(verdict: Judged | None, path: Sequence[Mutation]) -> str:
-    family = path[-1].family if path else "baseline"
+def _finding_headline(verdict: Judged | None, phrase: str) -> str:
+    """``phrase`` says what changed: see `isitright.core.shown.change_phrase`."""
     if verdict is None:
-        return f"The report and the expected behavior disagree after a {family} mutation"
+        return f"The report and the expected behavior disagree {phrase}"
     return (
-        f"The report and the expected behavior disagree after a {family} mutation "
+        f"The report and the expected behavior disagree {phrase} "
         f"({verdict.expectation.kind.value.lower()}, behavior {verdict.behavior.value.lower()})"
     )
 
@@ -1561,7 +1571,8 @@ def _finding_headline(verdict: Judged | None, path: Sequence[Mutation]) -> str:
 def _classify(finding: Finding) -> dict[str, str]:
     """A proposal for the owner, labeled as such. Attribution stays UNDETERMINED."""
     d = finding.divergence
-    family = finding.mutation_path[-1].family if finding.mutation_path else ""
+    families = families_of(finding.mutation_path)
+    family = families[-1] if families else ""
     citations = d.get("citations") or {}
     if citations.get("l0_failures"):
         return {"class": "likely agent defect", "why": "it cites a document that does not exist"}

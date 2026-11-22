@@ -13,6 +13,9 @@ from isitright.core.evidence import (
     ValidityRecord,
     totals_of,
 )
+from isitright.core.shown import built_from
+
+FINGERPRINT = "f" * 16
 
 
 def make_case(
@@ -33,6 +36,8 @@ def make_case(
                 validity=validity,
                 oracles=[oracle],
                 fidelity=fidelity,
+                world_fingerprint=FINGERPRINT,
+                built_from=built_from(FINGERPRINT, "validity", "world_diff", "divergence"),
                 headline="Evidence recorded for review",
             )
         ]

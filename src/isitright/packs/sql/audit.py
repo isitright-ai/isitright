@@ -45,7 +45,12 @@ from isitright.core.hints import Hints
 from isitright.core.minimize import changed_atoms, minimize_world
 from isitright.core.mutations import Candidate, World
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
-from isitright.core.shown import built_from, surviving_path
+from isitright.core.shown import (
+    built_from,
+    change_phrase,
+    searched_path_record,
+    surviving_path,
+)
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import Budget
 from isitright.core.subjects import SubjectKind
@@ -868,7 +873,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     search_result=result,
                     checked=list(found.validity.checked_rules),
                 )
-            family = _family_phrase(finding.mutation_path)
+            phrase = change_phrase(
+                finding.mutation_path,
+                finding.minimization.get("searched_path") or [],
+                finding.world_diff,
+            )
             return self._report(
                 case,
                 policy,
@@ -877,10 +886,10 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 status=DivergenceStatus.COUNTEREXAMPLE_FOUND,
                 validity=finding.validity,
                 headline=(
-                    f"Generated counterexample (candidate errors): the candidate errors after a "
-                    f"{family} mutation where the reference returns a result"
+                    f"Generated counterexample (candidate errors): the candidate errors "
+                    f"{phrase} where the reference returns a result"
                     if is_error_result(right)
-                    else f"Generated counterexample: queries diverge after a {family} mutation"
+                    else f"Generated counterexample: queries diverge {phrase}"
                 ),
                 original=original,
                 errors=errors,
@@ -1157,6 +1166,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         Everything in the finding is built from that world."""
         p = self.prepared
         found_kind = difference_kind(outputs[0], outputs[1])
+        if found_kind is None:  # the reference errors: nothing trustworthy to compare against
+            raise _NotReproduced(
+                "the reference query errors on the world the disagreement was found on, so the "
+                "two queries cannot be compared there"
+            )
 
         def reproduces(candidate: World) -> bool:
             try:
@@ -1186,7 +1200,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             why_unminimized = "the minimized world did not reproduce the disagreement when rerun"
             shown = world
             differs, left, right, difference = disagrees(shown.state)
-            if not differs:
+            if not (differs and difference_kind(left, right) == found_kind):
                 raise _NotReproduced(
                     "the disagreement did not reproduce when the world it was found on was rerun"
                 )
@@ -1220,6 +1234,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         validity_record = _validity_record(shown_validity)
         if self.dialect.warehouse:
             validity_record.notes.extend(self._duplicate_notes(shown, reproduces))
+        kept = surviving_path(world.path, shown, base)
         path = [
             MutationRecord(
                 family=m.family,
@@ -1228,8 +1243,9 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 hints=m.hints,
                 atoms=[list(a) for a in m.atoms],
             )
-            for m in surviving_path(world.path, shown.state, base)
+            for m in kept
         ]
+        world_diff = diff_states(base, shown.state) if base is not None else {}
         minimized_world: dict[str, Any] = {}
         if attached is not None:
             attached_rows, attached_script = self._world_artifacts(
@@ -1253,7 +1269,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             world_id=generator or "baseline",
             validity=validity_record,
             oracles=[_oracle_record(NOT_MET)],
-            world_diff=diff_states(base, shown.state) if base is not None else {},
+            world_diff=world_diff,
             mutation_path=path,
             divergence={
                 "reference_result": left.model_dump(mode="json"),
@@ -1283,6 +1299,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 else changed_atoms(shown.state, base),
                 "shown": "minimized" if is_minimized else "unminimized",
                 **({"reason": why_unminimized} if why_unminimized else {}),
+                **searched_path_record(world.path, kept),
                 **(
                     {"nested_elements_before": nested_before, "nested_elements_after": nested_after}
                     if trees
@@ -1296,7 +1313,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 if is_error_result(right)
                 else "Original-data mismatch: queries return different results"
                 if generator == "original_state"
-                else f"Queries diverge after a {_family_phrase(path)} mutation"
+                else f"Queries diverge {change_phrase(kept, world.path, world_diff)}"
             ),
         )
 
@@ -1574,11 +1591,6 @@ def _priority(case: CaseReport) -> int:
 
 MET: Literal["MET"] = "MET"
 NOT_MET: Literal["NOT_MET"] = "NOT_MET"
-
-
-def _family_phrase(path: list[MutationRecord]) -> str:
-    """The families of the mutations a finding still shows, for a headline."""
-    return " + ".join(dict.fromkeys(m.family for m in path)) or "baseline"
 
 
 def _oracle_record(outcome: Literal["MET", "NOT_MET"] | None) -> OracleRecord:

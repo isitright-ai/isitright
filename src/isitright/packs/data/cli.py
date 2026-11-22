@@ -23,6 +23,7 @@ from isitright.core.evidence import (
 )
 from isitright.core.paths import UnsafePathError, contained_path
 from isitright.core.replay import load_artifact
+from isitright.core.shown import check_artifact_world
 
 data_app = typer.Typer(
     help="Audit data-analysis agents: recorded programs (frozen) and agents (live)."
@@ -479,8 +480,19 @@ def replay_command(
     except UnsafePathError as error:
         typer.echo(f"Input error: {error}", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
+    stored = load_artifact(artifact)
+    try:
+        check_artifact_world(
+            stored.world,
+            findings[finding - 1].world_fingerprint,
+            "replay artifact",
+            findings[finding - 1].finding_id,
+        )
+    except ValueError as error:
+        typer.echo(f"Input error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
     result = load_and_replay(artifact, trust_code=True)
-    live = load_artifact(artifact).host.get("mode") == "live"
+    live = stored.host.get("mode") == "live"
     typer.echo(
         (
             "Reproduced the recorded observation."
