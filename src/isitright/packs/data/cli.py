@@ -341,9 +341,9 @@ def audit_command(
     fail_on: Annotated[
         LiveFailOn,
         typer.Option(
-            help="CI gate, off by default (none). rate-increase: exit 3 when a paired test "
+            help="CI gate, off by default (none). rate-increase: exit 3 only when a paired test "
             "decided a higher failure rate. observed-failure: also exit 3 on a failure observed "
-            "with no rate decision."
+            "with no rate decision (and on a counterexample that is not a rate statement)."
         ),
     ] = LiveFailOn.NONE,
     allow_failing_baseline: Annotated[

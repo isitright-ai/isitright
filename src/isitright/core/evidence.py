@@ -58,11 +58,11 @@ class LiveFailOn(StrEnum):
     DOMAIN_COUNTEREXAMPLE = "domain-counterexample"
     ANY_COUNTEREXAMPLE = "any-counterexample"
     RATE_INCREASE = "rate-increase"
-    """Only a finding whose paired test decided a higher failure rate. The same as
-    ``any-counterexample``, which no observed failure ever triggers."""
+    """Only a finding whose paired test decided a higher failure rate. A deterministic or ungraded
+    counterexample is not a rate increase and does not trigger it."""
     OBSERVED_FAILURE = "observed-failure"
     """Also a failure observed on a world that ran and was not found invalid, with no rate
-    decision."""
+    decision. Rate increases and ungraded counterexamples trigger it as well."""
 
 
 class ValidityRecord(Closed):
@@ -438,17 +438,33 @@ def totals_of(cases: list[CaseReport]) -> Totals:
 
 
 def policy_triggered(case: CaseReport, policy: FailOn | LiveFailOn) -> bool:
-    """CI policy. An emulated, natively unverified finding never fails CI by default."""
-    if policy.value == "none":
+    """CI policy. An emulated, natively unverified finding never fails CI by default.
+
+    Findings come in three kinds: a supported rate increase (``evidence_grade`` RATE_INCREASE), an
+    observed failure (OBSERVED_FAILURE), and a counterexample with no grade (a frozen program or
+    report, a deterministic subject, SQL), which is not a rate statement and is never one here.
+
+    * ``none``: never.
+    * ``rate-increase``: only a finding graded RATE_INCREASE.
+    * ``any-counterexample``: a rate increase or an ungraded counterexample.
+    * ``observed-failure``: also an observed failure.
+    * ``domain-counterexample``: a counterexample whose case is domain-validated.
+    """
+    name = policy.value
+    if name == "none":
         return False
+    grades = [f.evidence_grade for f in case.findings]
+    observed = any(g is EvidenceGrade.OBSERVED_FAILURE for g in grades)
     if case.divergence_status is DivergenceStatus.OBSERVED_FAILURE:
-        return policy.value == "observed-failure"
+        return name == "observed-failure" and observed
     if case.divergence_status is not DivergenceStatus.COUNTEREXAMPLE_FOUND:
         return False
     if case.execution_fidelity.found_on == "EMULATED" and not case.execution_fidelity.verified_on:
         return False
-    if policy.value in {"any-counterexample", "rate-increase", "observed-failure"}:
-        return True
+    if name == "rate-increase":
+        return any(g is EvidenceGrade.RATE_INCREASE for g in grades)
+    if name in {"any-counterexample", "observed-failure"}:
+        return True  # a counterexample case holds a rate increase or an ungraded counterexample
     return "DOMAIN_VALIDATED" in case.validity.tiers
 
 

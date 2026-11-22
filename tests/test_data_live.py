@@ -115,10 +115,12 @@ def test_a_run_budget_stops_the_live_runs_and_says_so(audit: DataAudit) -> None:
     case = run_live(audit, agent, program=recorded, config=CONFIG, budget=Budget(runs=4))
     assert agent.calls == 4
     assert any("runs budget exhausted" in (w.not_run_reason or "") for w in case.worlds)
-    assert case.divergence_status in {
-        DivergenceStatus.NOT_FOUND_WITHIN_BUDGET,
-        DivergenceStatus.COUNTEREXAMPLE_FOUND,
-    }
+    # Two baseline runs and four executions in all leave too few pairs to decide a rate increase,
+    # and a correct agent fails nowhere: nothing found, on mutated-world runs that were judged.
+    assert case.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    assert case.findings == []
+    mutated = [w for w in case.worlds if w.id != "baseline" and w.run_status == "RUN"]
+    assert sum(w.counts["met"] + w.counts["not_met"] for w in mutated) >= 1
     assert "not run" in case.headline
 
 

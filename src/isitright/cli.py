@@ -958,7 +958,15 @@ def agents_run_command(
         float | None, typer.Option(min=1, help="Stop after this much wall time.")
     ] = None,
     output_dir: Annotated[Path, typer.Option()] = Path("artifacts/agents-run"),
-    fail_on: Annotated[AgentsFailOn, typer.Option()] = AgentsFailOn.NONE,
+    fail_on: Annotated[
+        AgentsFailOn,
+        typer.Option(
+            help="CI gate, off by default (none). rate-increase (same as any-finding): exit 3 "
+            "only when a paired test decided a higher failure rate. invariant-violation: that, "
+            "for a finding that involves an invariant. observed-failure: also a failure "
+            "observed with no rate decision."
+        ),
+    ] = AgentsFailOn.NONE,
 ) -> None:
     """Run an agent on the baseline and on every valid world of a scenario."""
     from isitright.core.stochastic import Budget

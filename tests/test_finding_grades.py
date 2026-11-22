@@ -1157,4 +1157,77 @@ def test_omitting_fail_on_never_fails_the_build_for_research(tmp_path: Path) -> 
         *base_args(tmp_path / "b"), "--stand-in", "credulous", "--depth", "1",
         "--fail-on", "rate-increase",
     )  # fmt: skip
-    assert gated.exit_code == 3  # a deterministic subject's finding is a counterexample
+    # A deterministic subject's counterexample is not a rate increase: only the policies that name
+    # counterexamples, not the rate gate, trip on it.
+    assert gated.exit_code == 0, gated.output
+    anything = invoke(
+        *base_args(tmp_path / "c"), "--stand-in", "credulous", "--depth", "1",
+        "--fail-on", "any-counterexample",
+    )  # fmt: skip
+    assert anything.exit_code == 3, anything.output
+    strict = invoke(
+        *base_args(tmp_path / "d"), "--stand-in", "credulous", "--depth", "1",
+        "--fail-on", "observed-failure",
+    )  # fmt: skip
+    assert strict.exit_code == 3, strict.output
+
+
+def test_each_ci_policy_on_each_kind_of_evidence() -> None:
+    """Three kinds of finding (a decided rate increase, an observation, an ungraded counterexample
+    such as a deterministic or SQL one) against every policy, through `policy_triggered`."""
+    from isitright.core.evidence import DivergenceStatus, FailOn, LiveFailOn, policy_triggered
+
+    from .factories import make_case
+
+    ungraded = make_case("u", DivergenceStatus.COUNTEREXAMPLE_FOUND, ("STRUCTURAL",))
+    domain = make_case(
+        "d", DivergenceStatus.COUNTEREXAMPLE_FOUND, ("STRUCTURAL", "DOMAIN_VALIDATED")
+    )
+    assert ungraded.findings[0].evidence_grade is None
+    kinds = {"rate": _rate_case(), "observed": _observed_case(), "ungraded": ungraded}
+    expected = {  # policy -> (rate, observed, ungraded)
+        "none": (False, False, False),
+        "rate-increase": (True, False, False),
+        "any-counterexample": (True, False, True),
+        "observed-failure": (True, True, True),
+    }
+    for policy, (rate, observed, other) in expected.items():
+        got = tuple(policy_triggered(kinds[k], LiveFailOn(policy)) for k in kinds)
+        assert got == (rate, observed, other), policy
+    # the policies that SQL has keep their meaning
+    assert policy_triggered(ungraded, FailOn.ANY_COUNTEREXAMPLE) is True
+    assert policy_triggered(ungraded, FailOn.DOMAIN_COUNTEREXAMPLE) is False
+    assert policy_triggered(domain, FailOn.DOMAIN_COUNTEREXAMPLE) is True
+    assert policy_triggered(domain, FailOn.NONE) is False
+    # a case that found nothing never trips any policy
+    quiet = make_case("q", DivergenceStatus.NOT_FOUND_WITHIN_BUDGET, ())
+    assert not any(policy_triggered(quiet, LiveFailOn(p)) for p in expected)
+
+
+def test_an_emulated_unverified_counterexample_trips_no_policy() -> None:
+    from isitright.core.evidence import (
+        DivergenceStatus,
+        FidelityRecord,
+        LiveFailOn,
+        policy_triggered,
+    )
+
+    from .factories import make_case
+
+    emulated = make_case(
+        "e",
+        DivergenceStatus.COUNTEREXAMPLE_FOUND,
+        ("STRUCTURAL", "DOMAIN_VALIDATED"),
+        execution_fidelity=FidelityRecord(found_on="EMULATED", engine="duckdb 1"),
+    )
+    assert not any(policy_triggered(emulated, LiveFailOn(p)) for p in (
+        "rate-increase", "any-counterexample", "observed-failure", "domain-counterexample"
+    ))  # fmt: skip
+    verified = emulated.model_copy(
+        update={
+            "execution_fidelity": FidelityRecord(
+                found_on="EMULATED", verified_on="NATIVE_ISOLATED", engine="duckdb 1"
+            )
+        }
+    )
+    assert policy_triggered(verified, LiveFailOn("any-counterexample")) is True

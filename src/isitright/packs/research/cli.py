@@ -121,7 +121,16 @@ def check_command(
             "findings and those of deterministic subjects get one.",
         ),
     ] = False,
-    fail_on: Annotated[LiveFailOn, typer.Option()] = LiveFailOn.NONE,
+    fail_on: Annotated[
+        LiveFailOn,
+        typer.Option(
+            help="CI gate, off by default (none). rate-increase: exit 3 only for a finding of a "
+            "stochastic agent whose paired test decided a higher failure rate (a deterministic "
+            "subject's counterexample is not one). any-counterexample: also an ungraded "
+            "counterexample. observed-failure: also a failure observed with no rate decision. "
+            "domain-counterexample: a domain-validated counterexample."
+        ),
+    ] = LiveFailOn.NONE,
 ) -> None:
     """Audit a research agent on mutated corpora."""
     from isitright.core.hints import hints_from_json
