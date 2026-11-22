@@ -122,6 +122,10 @@ def test_minimization_keeps_the_kind_of_difference_it_started_from(tmp_path: Pat
     shown = report.findings[0].divergence["difference"]
     assert _kind(found) == "row_count"
     assert _kind(shown) == _kind(found), f"found: {found!r}; shown: {shown!r}"
+    # the kind-preserving minimizer still reaches a one-row world (the row that makes the candidate
+    # drop one); a world that merely fell back to the unminimized one would have two
+    minimization = report.findings[0].minimization
+    assert minimization["shown"] == "minimized" and minimization["rows_after"] == 1
 
 
 # -- E3: a minimized path and the evidence of the world it came from --------------------------
