@@ -19,6 +19,7 @@ pytest.importorskip("pandas")
 
 from isitright.core.evidence import AuditReport, DivergenceStatus, totals_of
 from isitright.core.mutations import World
+from isitright.core.stochastic import Budget
 from isitright.packs.data.adapters import AgentRun
 from isitright.packs.data.audit import AuditConfig, DataAudit
 from isitright.packs.data.live import LiveConfig, run_live
@@ -179,3 +180,83 @@ def test_a_report_names_a_replay_artifact_only_for_a_finding_that_has_one(
         assert (tmp_path / "all" / f["replay"]["artifact"]).is_file()
     numbers = [int(c.split("--finding ")[1].split()[0]) for c in commands]
     assert numbers == list(range(1, len(commands) + 1))
+
+
+# -- the three outcomes of the separate verification ---------------------------------------------
+
+
+class _ErrorsOnTheMinimizedWorld(_WrongOnlyOnTheMinimizedWorld):
+    """Right everywhere except that it crashes on the minimized counterexample."""
+
+    name = "errors-on-the-minimized-world"
+
+    def solve(self, question: str, directory: Path) -> AgentRun:
+        if (directory / "orders.csv").read_text(encoding="utf-8") == self.minimized_csv:
+            self.on_minimized += 1
+            return AgentRun(code="", answer=None, error="the agent crashed")
+        return self.inner.solve(question, directory)
+
+
+def _verified(audit: DataAudit, agent: Any, **kwargs: Any) -> Any:
+    finding, world = _frozen(audit)
+    return run_live(
+        audit, agent, program=program(DROPNA_FORGOTTEN, "baseline"), config=CONFIG,
+        frozen_finding=finding, frozen_world=world, **kwargs,
+    )  # fmt: skip
+
+
+def test_a_verification_with_judged_runs_and_no_failure_is_not_reproduced(
+    audit: DataAudit,
+) -> None:
+    case = _verified(audit, FixedProgramAgent(audit.host, CORRECT))
+    record = case.extensions["data"]["verification"]
+    assert record["status"] == "NOT_REPRODUCED"
+    assert (record["runs"], record["judged"], record["failures"], record["errors"]) == (3, 3, 0, 0)
+    assert (
+        case.findings == [] and case.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    )
+    assert "the answer did not differ in 3 judged runs" in case.headline
+
+
+def test_a_verification_in_which_every_run_errors_is_inconclusive_not_not_reproduced(
+    audit: DataAudit,
+) -> None:
+    _, world = _frozen(audit)
+    agent = _ErrorsOnTheMinimizedWorld(audit, audit.data_files(world.state)["orders.csv"])
+    case = _verified(audit, agent)
+    assert agent.on_minimized == CONFIG.verify_minimized_runs
+    record = case.extensions["data"]["verification"]
+    assert record["status"] == "INCONCLUSIVE" and record["grade"] is None
+    assert (record["runs"], record["judged"], record["failures"], record["errors"]) == (3, 0, 0, 3)
+    assert case.findings == []
+    assert "NOT_REPRODUCED" not in json.dumps(case.extensions["data"])
+    assert "no run was judged (3 of 3 runs ended in an error)" in case.headline
+    assert "did not differ in" not in case.headline
+    assert "neither reproduced nor ruled out" in case.headline
+    # the generated worlds were clean and judged: that part of the verdict is unchanged
+    assert case.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    assert case.multiplicity is not None and case.multiplicity.worlds_tested >= 1
+
+
+def test_a_verification_stopped_by_an_exhausted_budget_is_inconclusive(
+    audit: DataAudit,
+) -> None:
+    """The budget is exactly what baseline and search use: the verification gets no run."""
+    _, world = _frozen(audit)
+    csv = audit.data_files(world.state)["orders.csv"]
+    probe = _WrongOnlyOnTheMinimizedWorld(audit, csv)
+    _verified(audit, probe)
+    search_runs = probe.inner.calls
+    assert search_runs > 0 and probe.on_minimized == CONFIG.verify_minimized_runs
+    agent = _WrongOnlyOnTheMinimizedWorld(audit, csv)
+    case = _verified(audit, agent, budget=Budget(runs=search_runs))
+    assert agent.on_minimized == 0, "the verification made no run"
+    record = case.extensions["data"]["verification"]
+    assert record["status"] == "INCONCLUSIVE" and record["stopped_by"] == "runs"
+    assert (record["runs"], record["judged"], record["failures"]) == (0, 0, 0)
+    assert record["requested_runs"] == CONFIG.verify_minimized_runs
+    assert case.findings == []
+    assert "no run was judged (the runs budget was spent first)" in case.headline
+    assert "did not differ" not in case.headline and "NOT_REPRODUCED" not in json.dumps(
+        case.extensions["data"]
+    )

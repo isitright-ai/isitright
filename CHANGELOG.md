@@ -139,7 +139,11 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
     `OBSERVED_FAILURE`, then `INCONCLUSIVE` and `UNSUPPORTED`, then `NOT_FOUND_WITHIN_BUDGET`. Before,
     an observation, an inconclusive case and a counterexample with no assessed tier tied.
   - *Export without a trace.* `agents export` accepts a finding whose run called no tool (no
-    `trace.jsonl`) and writes an empty trace; a malformed trace or a missing world still fails.
+    `trace.jsonl`) and writes an empty trace. A missing trace for a run that recorded tool calls, a
+    malformed trace and a missing world still fail.
+  - *Verification outcomes.* The minimized-world verification is `OBSERVED_FAILURE` (a judged
+    failure), `NOT_REPRODUCED` (judged runs, no failure) or `INCONCLUSIVE` (no judged run: all runs
+    errored, or the budget was spent first). The headline says which.
   - *Wording.* The expected claims under no effect is a nominal upper bound (worlds tested x 0.05),
     not a measured rate or a family-wise guarantee.
   - *Not closed:* a research finding's grade is decided on the searched world while the minimized

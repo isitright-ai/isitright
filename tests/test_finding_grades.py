@@ -496,6 +496,34 @@ def test_export_leaves_observed_failures_out_unless_asked(
     assert not (run_dir / "trace.jsonl").exists(), "export fabricated no trace file"
 
 
+def test_export_refuses_a_missing_trace_when_tool_calls_were_recorded(
+    one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing trace file means "no tool call" only when the run recorded none."""
+    from typer.testing import CliRunner
+
+    from isitright.cli import app
+
+    _observed_only_report(tmp_path, one_world, monkeypatch)
+    report = tmp_path / "out0" / "report.json"
+    data = json.loads(report.read_text(encoding="utf-8"))
+    example = data["cases"][0]["findings"][0]["divergence"]["example_run_dir"]
+    run = next(r for r in data["cases"][0]["extensions"]["mcp"]["runs"] if r["run_dir"] == example)
+    assert run["tool_calls"] == 0 and not (report.parent / example / "trace.jsonl").exists()
+    args = ["agents", "export", str(report), "--output", str(tmp_path / "x.jsonl")]
+    args.append("--include-observed")
+    ok = CliRunner().invoke(app, args)  # no tool call, no file: an empty trace
+    assert ok.exit_code == 0, ok.output
+    # The same run, now recorded as having called three tools while its trace file is gone.
+    run["tool_calls"] = 3
+    report.write_text(json.dumps(data), encoding="utf-8")
+    (tmp_path / "x.jsonl").unlink()
+    refused = CliRunner().invoke(app, args)
+    assert refused.exit_code == 2, refused.output
+    assert "missing but the run recorded 3 tool call(s)" in refused.output
+    assert not (tmp_path / "x.jsonl").exists() or (tmp_path / "x.jsonl").read_text() == ""
+
+
 def test_export_still_refuses_a_missing_world_and_a_malformed_trace(
     one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

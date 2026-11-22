@@ -1356,6 +1356,13 @@ def export_eval_cases(
             for r in case.extensions["mcp"]["runs"]
             if r["run_dir"] == finding.divergence["example_run_dir"]
         )
+        trace_file = run_dir / "trace.jsonl"
+        if not trace_file.is_file() and int(run.get("tool_calls") or 0) > 0:
+            # No file is fine for a run that called no tool; not for one that recorded calls
+            raise ValueError(
+                f"the trace of {finding.divergence['example_run_dir']} is missing but the run "
+                f"recorded {run['tool_calls']} tool call(s): refusing to export it as empty"
+            )
         cases.append(
             EvalCase(
                 pack="mcp",

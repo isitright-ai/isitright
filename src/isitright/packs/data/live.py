@@ -351,6 +351,22 @@ def _check_baseline(base: WorldRuns, config: LiveConfig) -> None:
     )
 
 
+def _verification_text(record: dict[str, Any]) -> str:
+    """What the separate run on the minimized world showed, in the three outcomes it can have."""
+    if record["status"] == "OBSERVED_FAILURE":
+        return f"the answer differed in {record['failures']} of {record['judged']} judged runs"
+    if record["status"] == "NOT_REPRODUCED":
+        return f"the answer did not differ in {record['judged']} judged runs"
+    why = (
+        f"the {record['stopped_by']} budget was spent first"
+        if record["runs"] == 0 and record["stopped_by"]
+        else f"{record['errors']} of {record['runs']} runs ended in an error"
+        if record["runs"]
+        else "it was not run"
+    )
+    return f"no run was judged ({why}): the disagreement is neither reproduced nor ruled out"
+
+
 def _marker(outcome: RunOutcome) -> str:
     if outcome.error:
         return "E"
@@ -642,6 +658,16 @@ def _report(
                 )
             )
         verified = _counts(verification.outcomes)
+        verified_judged = sum(is_judged(o) for o in verification.outcomes)
+        # Three outcomes: a judged failure; judged runs and no failure; and nothing judged (all
+        # runs errored, or none was made), which says nothing either way.
+        verified_status = (
+            "OBSERVED_FAILURE"
+            if verified_bad
+            else "NOT_REPRODUCED"
+            if verified_judged
+            else "INCONCLUSIVE"
+        )
         verification_record = {
             "scope": "the minimized world of a frozen finding, run apart from the search; it is "
             "not one of the generated worlds and is not in `multiplicity`",
@@ -649,9 +675,13 @@ def _report(
             "frozen_finding": frozen_finding.finding_id if frozen_finding else None,
             "runs": verified["n"],
             "failures": verified_bad,
-            "judged": sum(is_judged(o) for o in verification.outcomes),
+            "requested_runs": config.verify_minimized_runs,
+            "judged": verified_judged,
             "errors": verified["errors"],
-            "status": "OBSERVED_FAILURE" if verified_bad else "NOT_REPRODUCED",
+            "stopped_by": budget.exhausted
+            if verified["n"] < config.verify_minimized_runs
+            else None,
+            "status": verified_status,
             "finding": verified_finding,
             "grade": "OBSERVED_FAILURE" if verified_bad else None,
         }
@@ -712,12 +742,8 @@ def _report(
             f"({len(not_run)} not run)"
         )
     if verification_record is not None:
-        summary += (
-            f"; separately, on the minimized frozen counterexample the answer differed in "
-            f"{verification_record['failures']} of {verification_record['judged']} judged runs"
-            if verification_record["failures"]
-            else "; separately, the minimized frozen counterexample was run "
-            f"{verification_record['runs']} times and the answer did not differ"
+        summary += "; separately, on the minimized frozen counterexample " + _verification_text(
+            verification_record
         )
     account = generation.accounting()
     search_record = SearchRecord(
