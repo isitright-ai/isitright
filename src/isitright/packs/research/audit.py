@@ -44,11 +44,16 @@ from isitright.core.sequential import PairedSprt, SprtConfig
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import (
     Budget,
+    EvidenceGrade,
     RunOutcome,
     SubjectRunner,
     count,
+    grade_of,
     is_bad,
-    stability,
+    is_judged,
+    multiplicity_of,
+    observation_of,
+    stability_counts_only,
     stability_sequential,
 )
 from isitright.core.subjects import Cost, SubjectKind
@@ -480,16 +485,19 @@ class ResearchAudit:
                 return Evaluation(Verdict.REJECTED, validity, reason="screened_out")
         placed = _Placed(world, wr)
         if subject.stochastic and self.config.sequential and k > 1:
-            paired = self._runner.run_paired(
+            staged = self._runner.run_staged(
                 placed,
                 self._baseline_target,
                 SprtConfig(
                     min_pairs=min(4, self.config.max_pairs), max_pairs=self.config.max_pairs
                 ),
+                k,
             )
-            wr.outcomes = paired.world_outcomes
-            wr.sequential = paired.test
-            wr.paired_baseline = paired.baseline_outcomes
+            wr.outcomes = [e.outcome for e in staged.screening]
+            if staged.paired is not None:
+                wr.outcomes += staged.paired.world_outcomes
+                wr.sequential = staged.paired.test
+                wr.paired_baseline = staged.paired.baseline_outcomes
         else:
             wr.outcomes = [e.outcome for e in self._runner.run_repeated(placed, k, "search")]
         if not wr.outcomes:
@@ -696,7 +704,11 @@ class ResearchAudit:
                 original.paired_baseline, original.outcomes, k, original.sequential
             )
             if original.sequential is not None
-            else stability(baseline_outcomes, original.outcomes, k)
+            else stability_counts_only(baseline_outcomes, original.outcomes, k)
+            if subject.stochastic
+            else None,
+            evidence_grade=grade_of(original.sequential) if subject.stochastic else None,
+            observation=observation_of(original.outcomes, original.paired_baseline)
             if subject.stochastic
             else None,
             world_diff=diff_states(self.state, final.state),
@@ -705,6 +717,7 @@ class ResearchAudit:
                 "scope": "this subject on this world",
                 "subject": subject.label.model_dump(mode="json"),
                 "reproduces_on_shown_world": reproduces,
+                "graded_on_world": original.world.fingerprint(),
                 "question": self.task.question,
                 "baseline_report": baseline.report.model_dump(mode="json"),
                 "world_report": run.report.model_dump(mode="json"),
@@ -1118,12 +1131,35 @@ class ResearchAudit:
             )
         )
         executed = result.executed
-        if findings:
+        graded = [f for f in findings if f.evidence_grade is not EvidenceGrade.OBSERVED_FAILURE]
+        base_world = self.base.fingerprint()
+        # the baseline's own runs are not a judged run of a mutated world
+        mutated = [wr for wr in results.values() if wr.world.fingerprint() != base_world]
+        nothing_judged = mode == "live" and not any(
+            is_judged(o) for wr in mutated for o in wr.outcomes
+        )
+        if graded:
             status = DivergenceStatus.COUNTEREXAMPLE_FOUND
-        elif executed == 0:
+        elif findings:
+            status = DivergenceStatus.OBSERVED_FAILURE
+        elif executed == 0 or nothing_judged:
             status = DivergenceStatus.INCONCLUSIVE
         else:
             status = DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+        multiplicity = (
+            multiplicity_of(
+                [
+                    (
+                        wr.outcomes,
+                        grade_of(wr.sequential) if any(is_bad(o) for o in wr.outcomes) else None,
+                    )
+                    for wr in mutated
+                ],
+                [*baseline_outcomes, *(o for wr in mutated for o in wr.paired_baseline)],
+            )
+            if mode == "live" and subject.stochastic
+            else None
+        )
         unobservable = sorted(
             wr.world.path[-1].description
             for wr in results.values()
@@ -1187,6 +1223,7 @@ class ResearchAudit:
             stability=None,
             search=record,
             findings=findings,
+            multiplicity=multiplicity,
             worlds=worlds,
             controls=ControlsRecord(status=status_c, detail=detail_c),  # type: ignore[arg-type]
             comparison_policy={

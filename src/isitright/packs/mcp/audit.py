@@ -23,6 +23,7 @@ from isitright.core.evidence import (
     ControlsRecord,
     DivergenceStatus,
     EvalCase,
+    EvidenceGrade,
     FidelityRecord,
     Finding,
     HintUse,
@@ -33,6 +34,7 @@ from isitright.core.evidence import (
     SearchRecord,
     ValidityRecord,
     WorldRecord,
+    describe_graded_findings,
     safe_detail,
     safe_name,
     totals_of,
@@ -50,8 +52,12 @@ from isitright.core.stochastic import (
     Stability,
     SubjectRunner,
     count,
+    grade_of,
     is_bad,
-    stability,
+    is_judged,
+    multiplicity_of,
+    observation_of,
+    stability_counts_only,
     stability_sequential,
 )
 from isitright.core.world import diff_states, sha256_text
@@ -658,13 +664,15 @@ def _run_world(
     k: int,
     sequential: bool,
 ) -> None:
-    """Run one world: k runs, or pairs with fresh baseline runs until the test decides."""
+    """Run one world: k runs. When the test is sequential and one of them failed, pairs with fresh
+    baseline runs follow until the test decides; a world that did not fail costs no baseline run."""
     if not sequential or all(o.error for o in base.result.outcomes):  # no baseline run to pair with
         runner.run_repeated(target, k, "search")
         return
-    paired = runner.run_paired(target, comparison, config)
-    target.result.sequential = paired.test
-    target.result.paired_baseline = paired.baseline_outcomes
+    staged = runner.run_staged(target, comparison, config, k)
+    if staged.paired is not None:
+        target.result.sequential = staged.paired.test
+        target.result.paired_baseline = staged.paired.baseline_outcomes
 
 
 def _oracle_records(scenario: McpScenario, example: WorldResult | None) -> list[OracleRecord]:
@@ -784,8 +792,10 @@ def build_report(
                 stability=(
                     stability_sequential(r.paired_baseline, outcomes, k, r.sequential)
                     if r.sequential is not None
-                    else stability(baseline_outcomes, outcomes, k)
+                    else stability_counts_only(baseline_outcomes, outcomes, k)
                 ),
+                evidence_grade=grade_of(r.sequential),
+                observation=observation_of(outcomes, r.paired_baseline),
                 world_diff=diff_states(scenario.base, rw.world.state),
                 mutation_path=(
                     _mutation_records(r.minimization.path)
@@ -814,14 +824,23 @@ def build_report(
         )
     world_records.extend(_not_run_records(context))
     completed = sum(1 for r in results for o in r.outcomes if not o.error)
+    judged_mutated = sum(is_judged(o) for r in runnable for o in r.outcomes)
+    rate_findings = [f for f in findings if f.evidence_grade is EvidenceGrade.RATE_INCREASE]
     status = (
         DivergenceStatus.UNSUPPORTED
         if not runnable and not any(n.world.runnable for n in context.not_run)
         else DivergenceStatus.COUNTEREXAMPLE_FOUND
+        if rate_findings
+        else DivergenceStatus.OBSERVED_FAILURE
         if findings
         else DivergenceStatus.INCONCLUSIVE
-        if completed == 0
+        if judged_mutated == 0
         else DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    )
+    grades = {f.world_id: f.evidence_grade for f in findings}
+    multiplicity = multiplicity_of(
+        [(r.outcomes, grades.get(r.world.id)) for r in runnable],
+        [*(baseline_outcomes or []), *(o for r in runnable for o in r.paired_baseline)],
     )
     pairs = [(r.world.role, [o.outcome for o in r.outcomes if o.outcome]) for r in results]
     controls_state, controls_detail = controls_status(
@@ -829,14 +848,27 @@ def build_report(
     )
     tiers_sets = [set(r.world.validity.tiers) for r in results if r.world.runnable]
     common = set.intersection(*tiers_sets) if tiers_sets else set()
-    validity = (
-        ValidityRecord(
+    unassessed = [
+        r.world.id
+        for r in results
+        if r.world.runnable and r.world.validity.status == "NOT_ASSESSED"
+    ]
+    if not tiers_sets:
+        validity = ValidityRecord(status="INVALID")
+    elif unassessed:
+        validity = ValidityRecord(
+            status="NOT_ASSESSED",
+            notes=[
+                f"{len(unassessed)} world(s) ran with no validator ({', '.join(unassessed[:5])}"
+                f"{', ...' if len(unassessed) > 5 else ''}): no validity tier is claimed for the "
+                "case; each world's own validity is in `worlds` and `findings`"
+            ],
+        )
+    else:
+        validity = ValidityRecord(
             status="VALID",
             tiers=[t for t in ("STRUCTURAL", "DOMAIN_VALIDATED") if t in common],
         )
-        if tiers_sets
-        else ValidityRecord(status="INVALID")
-    )
     runs = [run for r in results for run in r.runs] + context.extra_runs
     subjects = {
         json.dumps(run.get("subject"), sort_keys=True) for run in runs if run.get("subject")
@@ -847,6 +879,7 @@ def build_report(
         status,
         findings,
         controls_state,
+        completed,
         len(runs),
         len(runnable),
         _not_run_count(context),
@@ -864,6 +897,7 @@ def build_report(
         stability=_counts_only_stability(baseline_outcomes, runnable, k),
         search=search_record,
         findings=findings,
+        multiplicity=multiplicity,
         worlds=world_records,
         controls=ControlsRecord(
             status=controls_state,  # type: ignore[arg-type]
@@ -1151,6 +1185,7 @@ def _headline(
     status: DivergenceStatus,
     findings: list[Finding],
     controls: str,
+    completed: int,
     runs: int,
     worlds: int,
     not_run: int = 0,
@@ -1159,16 +1194,39 @@ def _headline(
     if status is DivergenceStatus.UNSUPPORTED:
         return "Unsupported: no world in the scenario is valid"
     if status is DivergenceStatus.INCONCLUSIVE:
-        return "Inconclusive: the agent command produced no completed run"
-    if status is DivergenceStatus.COUNTEREXAMPLE_FOUND:
+        if completed == 0:
+            return "Inconclusive: the agent command produced no completed run"
+        unrun = f"; {not_run} eligible worlds were not run" if not_run else ""
+        if stopped_by:
+            unrun += f" (the {stopped_by} budget ended the run)"
+        return (
+            "Inconclusive: no mutated world produced a judged run "
+            f"(the baseline runs do not count; {worlds} mutated worlds were run){unrun}"
+        )
+    if findings:
+        observed = [f for f in findings if f.evidence_grade is EvidenceGrade.OBSERVED_FAILURE]
+        strong = [f for f in findings if f.evidence_grade is not EvidenceGrade.OBSERVED_FAILURE]
         top = max(
-            findings,
+            strong or observed,
             key=lambda f: (
                 any(o.kind == "INVARIANT" for o in f.oracles),
                 f.divergence["runs_affected"],
             ),
         )
-        return safe_detail(top.headline)
+        text = safe_detail(top.headline)
+        if strong:
+            text = f"Rate increase decided: {text}"
+            if observed:
+                text += (
+                    f"; {len(observed)} more world(s) with observed disagreements, no rate decided"
+                )
+            return text
+        more = (
+            f"; {len(observed) - 1} more world(s) with observed disagreements"
+            if observed[1:]
+            else ""
+        )
+        return f"Observed disagreement, no paired test decided a higher rate: {text}{more}"
     tail = {
         "DISCRIMINATING": "; control worlds behaved as expected",
         "NOT_APPLICABLE": "; no control world completed, so this is weak evidence",
@@ -1257,7 +1315,8 @@ def write_report(report: AuditReport, output_dir: Path) -> None:
     if case.findings:
         lines += ["", "## Findings", ""]
         lines += [
-            f"- {f.world_id}: {f.headline}. Example: {f.divergence['example_run_dir']}."
+            f"- {f.world_id} ({f.evidence_grade.value if f.evidence_grade else 'ungraded'}): "
+            f"{f.headline}. Example: {f.divergence['example_run_dir']}."
             + (
                 f" Test: {f.stability.sequential.decision.value} after "
                 f"{f.stability.sequential.pairs} pairs."
@@ -1266,6 +1325,7 @@ def write_report(report: AuditReport, output_dir: Path) -> None:
             )
             for f in case.findings
         ]
+    lines += describe_graded_findings(case)
     lines += [
         "",
         "A finding is evidence for review, not a verdict on the agent or the scenario.",
@@ -1274,11 +1334,19 @@ def write_report(report: AuditReport, output_dir: Path) -> None:
     (output_dir / "report.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def export_eval_cases(scenario_ref: str, report: AuditReport, output_dir: Path) -> list[EvalCase]:
-    """Each finding as a new eval case: the world, the task, the recorded trace and the verdict."""
+def export_eval_cases(
+    scenario_ref: str, report: AuditReport, output_dir: Path, *, include_observed: bool = False
+) -> list[EvalCase]:
+    """Each finding as a new eval case: the world, the task, the recorded trace and the verdict.
+
+    A finding graded ``OBSERVED_FAILURE`` is left out unless ``include_observed``: no paired test
+    decided that its world raises the failure rate, so it is not yet a case to hold an agent to.
+    """
     case = report.cases[0]
     cases: list[EvalCase] = []
     for finding in case.findings:
+        if finding.evidence_grade is EvidenceGrade.OBSERVED_FAILURE and not include_observed:
+            continue
         run_dir = contained_path(
             output_dir, str(finding.divergence["example_run_dir"]), what="run directory"
         )
@@ -1288,6 +1356,13 @@ def export_eval_cases(scenario_ref: str, report: AuditReport, output_dir: Path) 
             for r in case.extensions["mcp"]["runs"]
             if r["run_dir"] == finding.divergence["example_run_dir"]
         )
+        trace_file = run_dir / "trace.jsonl"
+        if not trace_file.is_file() and int(run.get("tool_calls") or 0) > 0:
+            # No file is fine for a run that called no tool; not for one that recorded calls
+            raise ValueError(
+                f"the trace of {finding.divergence['example_run_dir']} is missing but the run "
+                f"recorded {run['tool_calls']} tool call(s): refusing to export it as empty"
+            )
         cases.append(
             EvalCase(
                 pack="mcp",
@@ -1298,12 +1373,8 @@ def export_eval_cases(scenario_ref: str, report: AuditReport, output_dir: Path) 
                     "fixed_id": run.get("fixed_id"),
                     "task": case.task,
                     "world": world,
-                    "trace": [
-                        json.loads(line)
-                        for line in (run_dir / "trace.jsonl")
-                        .read_text(encoding="utf-8")
-                        .splitlines()
-                    ],
+                    # a run that called no tool left no trace file: an empty trace, as when it ran
+                    "trace": list(read_trace(run_dir / "trace.jsonl")),
                 },
                 expectation={
                     "disagreement": {

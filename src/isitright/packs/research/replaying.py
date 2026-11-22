@@ -18,7 +18,9 @@ from isitright.core.evidence import (
     AuditReport,
     CaseReport,
     EvalCase,
+    EvidenceGrade,
     Totals,
+    describe_graded_findings,
     totals_of,
 )
 from isitright.core.mutations import World
@@ -125,9 +127,14 @@ def write_outputs(
     artifacts: dict[str, ReplayArtifact],
     exports: dict[str, dict[str, Any]],
     cannot_judge: list[dict[str, Any]] | None = None,
+    *,
+    include_observed: bool = False,
 ) -> list[Path]:
     """Write the report, a replay artifact and an eval case per finding, findings-cases.md, and
-    (when any run could not be judged) cannot-judge.jsonl with every such run's full answer."""
+    (when any run could not be judged) cannot-judge.jsonl with every such run's full answer.
+
+    A finding graded ``OBSERVED_FAILURE`` gets its replay artifact but no eval case unless
+    ``include_observed``: no paired test decided that its world raises the failure rate."""
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for finding in report.findings:
@@ -140,12 +147,17 @@ def write_outputs(
         finding.replay.command = (
             f"isitright research replay {replay_placeholder(out_dir, path.name)}"
         )
+        written.append(path)
+        if finding.evidence_grade is EvidenceGrade.OBSERVED_FAILURE and not include_observed:
+            finding.export = None  # held back; `research export --include-observed` writes it
+            continue
         export = EvalCase.model_validate(exports[finding.finding_id])
         export_path = out_dir / f"{number}.eval-case.json"
         export_path.write_text(
             json.dumps(export.model_dump(mode="json"), indent=2, sort_keys=True) + "\n", "utf-8"
         )
-        written.extend([path, export_path])
+        finding.export = export_path.name
+        written.append(export_path)
     audit = AuditReport(
         schema_version=SCHEMA_VERSION,
         pack="research",
@@ -216,6 +228,7 @@ def cases_markdown(report: CaseReport) -> str:
             f"Shown world is minimized: {d['shown_world_is_minimized']}; "
             f"reproduces on it: {d['reproduces_on_shown_world']}",
             f"Scope: {d['scope']}",
+            f"Evidence grade: {finding.evidence_grade.value if finding.evidence_grade else 'none'}",
         ]
         if finding.finding_id in classes:
             c = classes[finding.finding_id]
@@ -226,6 +239,7 @@ def cases_markdown(report: CaseReport) -> str:
         lines.append("")
     if not report.findings:
         lines.append("No findings.")
+    lines += describe_graded_findings(report)
     skipped = ext.get("cannot_judge") or {}
     if skipped.get("runs"):
         lines += [

@@ -51,7 +51,8 @@ def test_the_live_agent_is_run_on_screened_worlds_and_its_own_runs_are_the_evide
         ).model_dump_json()
     )
     assert case.subject_kind == "AGENT"
-    assert case.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND
+    # 3 paired runs at most cannot decide a rate increase: the failure is an observation
+    assert case.divergence_status is DivergenceStatus.OBSERVED_FAILURE
     live = [f for f in case.findings if f.world_id != "minimized"]
     assert live and all(f.mode == "live_agent" and f.live is not None for f in live)
     assert all(f.live.agent_runs_only and f.live.not_met > 0 for f in live)
@@ -114,10 +115,12 @@ def test_a_run_budget_stops_the_live_runs_and_says_so(audit: DataAudit) -> None:
     case = run_live(audit, agent, program=recorded, config=CONFIG, budget=Budget(runs=4))
     assert agent.calls == 4
     assert any("runs budget exhausted" in (w.not_run_reason or "") for w in case.worlds)
-    assert case.divergence_status in {
-        DivergenceStatus.NOT_FOUND_WITHIN_BUDGET,
-        DivergenceStatus.COUNTEREXAMPLE_FOUND,
-    }
+    # Two baseline runs and four executions in all leave too few pairs to decide a rate increase,
+    # and a correct agent fails nowhere: nothing found, on mutated-world runs that were judged.
+    assert case.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
+    assert case.findings == []
+    mutated = [w for w in case.worlds if w.id != "baseline" and w.run_status == "RUN"]
+    assert sum(w.counts["met"] + w.counts["not_met"] for w in mutated) >= 1
     assert "not run" in case.headline
 
 
@@ -135,7 +138,13 @@ def test_an_agent_that_returns_no_code_is_counted_as_an_error_run(audit: DataAud
     case = run_live(
         audit,
         BrokenAgent(),
-        config=LiveConfig(baseline_runs=1, max_trials=1, attempts=15, max_worlds=2),
+        config=LiveConfig(
+            baseline_runs=1,
+            max_trials=1,
+            attempts=15,
+            max_worlds=2,
+            allow_failing_baseline=True,  # the baseline run errors: that is what is counted
+        ),
     )
     assert case.inputs["baseline_runs"]["errors"] == 1
     assert not case.findings

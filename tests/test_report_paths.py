@@ -280,7 +280,9 @@ def test_agents_export_refuses_a_run_directory_outside_the_report_directory(
     finding["divergence"]["example_run_dir"] = spelled
     _save(report, data)
     output = tmp_path / "cases.jsonl"
-    result = runner.invoke(app, ["agents", "export", str(report), "--output", str(output)])
+    result = runner.invoke(
+        app, ["agents", "export", str(report), "--output", str(output), "--include-observed"]
+    )
     assert result.exit_code == 2, result.output
     assert "unsafe run directory" in result.output
     assert not output.exists()

@@ -12,7 +12,9 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from isitright.core.stochastic import Stability
+from isitright.core.sequential import Decision
+from isitright.core.stochastic import EvidenceGrade as EvidenceGrade
+from isitright.core.stochastic import Multiplicity, Observation, Stability
 
 SCHEMA_VERSION: Literal["0.9"] = "0.9"
 _BANNED = re.compile(r"\b(pass|passed|fail|failed|failure|correct|incorrect|wrong)\b", re.I)
@@ -24,6 +26,10 @@ class Closed(BaseModel):
 
 class DivergenceStatus(StrEnum):
     COUNTEREXAMPLE_FOUND = "COUNTEREXAMPLE_FOUND"
+    OBSERVED_FAILURE = "OBSERVED_FAILURE"
+    """Live agents only: a judged run failed on a mutated world that ran and was not found invalid
+    (the validity of each world is stated apart: it may be NOT_ASSESSED), and no paired test decided
+    a higher failure rate. Weaker than COUNTEREXAMPLE_FOUND, and stronger than finding nothing."""
     NOT_FOUND_WITHIN_BUDGET = "NOT_FOUND_WITHIN_BUDGET"
     INCONCLUSIVE = "INCONCLUSIVE"
     UNSUPPORTED = "UNSUPPORTED"
@@ -43,6 +49,20 @@ class FailOn(StrEnum):
     NONE = "none"
     DOMAIN_COUNTEREXAMPLE = "domain-counterexample"
     ANY_COUNTEREXAMPLE = "any-counterexample"
+
+
+class LiveFailOn(StrEnum):
+    """`FailOn` for the commands that run a live agent (research): two more policies."""
+
+    NONE = "none"
+    DOMAIN_COUNTEREXAMPLE = "domain-counterexample"
+    ANY_COUNTEREXAMPLE = "any-counterexample"
+    RATE_INCREASE = "rate-increase"
+    """Only a finding whose paired test decided a higher failure rate. A deterministic or ungraded
+    counterexample is not a rate increase and does not trigger it."""
+    OBSERVED_FAILURE = "observed-failure"
+    """Also a failure observed on a world that ran and was not found invalid, with no rate
+    decision. Rate increases and ungraded counterexamples trigger it as well."""
 
 
 class ValidityRecord(Closed):
@@ -193,6 +213,16 @@ class Finding(Closed):
     replay: ReplayRecord = Field(default_factory=ReplayRecord)
     export: str | None = None
     minimization: dict[str, Any] = Field(default_factory=dict)
+    evidence_grade: EvidenceGrade | None = None
+    """Added in 0.9 for the findings of live stochastic agents: ``RATE_INCREASE`` (a paired
+    sequential test decided a higher failure rate) or ``OBSERVED_FAILURE`` (a judged run failed on a
+    world that was not found invalid, nothing more). Neither says the world was validated: that is
+    the finding's own ``validity`` (``NOT_ASSESSED`` for a fixed world without a validator).
+    ``None``: the finding is not a rate statement (a frozen program or report, a deterministic
+    subject, SQL)."""
+    observation: Observation | None = None
+    """Added in 0.9: failures / judged runs on the shown world (and on the baseline runs made for
+    its pairs), errors and unjudged runs beside them, with Wilson intervals."""
     mode: Literal["frozen_program", "frozen_trace", "live_agent"] | None = None
     """Added in 0.6. ``frozen_program``: a recorded program on a world. ``frozen_trace`` (0.8): a
     recorded run replayed, its report not regenerated. ``live_agent``: the agent's own runs.
@@ -204,6 +234,37 @@ class Finding(Closed):
     @classmethod
     def headline_avoids_verdicts(cls, value: str) -> str:
         return _check_headline(value)
+
+    @model_validator(mode="after")
+    def grade_matches_its_evidence(self) -> Self:
+        """A finding cannot claim a higher grade than the runs behind it support."""
+        grade = self.evidence_grade
+        if grade is None:
+            return self  # frozen, deterministic, SQL and legacy findings carry no grade
+        sequential = self.stability.sequential if self.stability else None
+        claim = self.stability.rate_claim if self.stability else None
+        if grade is EvidenceGrade.RATE_INCREASE:
+            if sequential is None or sequential.decision is not Decision.RATE_INCREASE:
+                raise ValueError("a rate increase needs a sequential decision of RATE_INCREASE")
+            if claim is None:
+                raise ValueError("a rate increase needs the rate claim of its sequential test")
+            if (
+                claim.test != sequential.test
+                or claim.paired_runs != sequential.pairs
+                or claim.discordant_world_only != sequential.discordant_world_only
+                or claim.discordant_baseline_only != sequential.discordant_baseline_only
+                or claim.p_value != sequential.p_value
+                or claim.alpha != sequential.alpha
+            ):
+                raise ValueError("the rate claim and the sequential record disagree")
+            return self
+        if sequential is not None and sequential.decision is Decision.RATE_INCREASE:
+            raise ValueError("an observed failure cannot carry a decided rate increase")
+        if claim is not None:
+            raise ValueError("an observed failure carries no rate claim")
+        if self.observation is None or self.observation.world.failures < 1:
+            raise ValueError("an observed failure needs at least one judged failure recorded")
+        return self
 
 
 class WorldRecord(Closed):
@@ -241,6 +302,8 @@ class CaseReport(Closed):
     findings: list[Finding] = Field(default_factory=list)
     worlds: list[WorldRecord] = Field(default_factory=list)
     controls: ControlsRecord | None = None
+    multiplicity: Multiplicity | None = None
+    """Added in 0.9, live agents: how many worlds were tested and what that means for the claims."""
     comparison_policy: dict[str, Any] = Field(default_factory=dict)
     inputs: dict[str, Any] = Field(default_factory=dict)
     original_state: dict[str, Any] = Field(default_factory=dict)
@@ -260,8 +323,15 @@ class CaseReport(Closed):
 
     @model_validator(mode="after")
     def status_matches_findings(self) -> Self:
-        if (self.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND) != bool(self.findings):
+        strong = [
+            f for f in self.findings if f.evidence_grade is not EvidenceGrade.OBSERVED_FAILURE
+        ]
+        if (self.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND) != bool(strong):
             raise ValueError("counterexample status and findings must agree")
+        if (self.divergence_status is DivergenceStatus.OBSERVED_FAILURE) != (
+            bool(self.findings) and not strong
+        ):
+            raise ValueError("observed-failure status holds exactly when every finding is one")
         if self.divergence_status is DivergenceStatus.UNSUPPORTED and self.search.executed:
             raise ValueError("an unsupported case has no executed worlds")
         engine = (self.execution_fidelity.engine or "").split(" ")[0]
@@ -319,18 +389,22 @@ def _check_headline(value: str) -> str:
 
 
 def evidence_strength(case: CaseReport) -> int:
-    """0 is strongest: domain-validated counterexamples, then structural-only, then the rest."""
-    if case.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND:
+    """0 is strongest. Domain-validated counterexamples, structurally validated ones, other
+    counterexamples (an unassessed validity included), observed failures, inconclusive and
+    unsupported cases, then cases where nothing was found. Equal strengths keep their order."""
+    status = case.divergence_status
+    if status is DivergenceStatus.COUNTEREXAMPLE_FOUND:
         tiers = set(case.validity.tiers)
         if "DOMAIN_VALIDATED" in tiers:
             return 0
         if "STRUCTURAL" in tiers:
             return 1
-    if case.divergence_status in {DivergenceStatus.INCONCLUSIVE, DivergenceStatus.UNSUPPORTED}:
         return 2
-    if case.divergence_status is DivergenceStatus.NOT_FOUND_WITHIN_BUDGET:
+    if status is DivergenceStatus.OBSERVED_FAILURE:
         return 3
-    return 2
+    if status in {DivergenceStatus.INCONCLUSIVE, DivergenceStatus.UNSUPPORTED}:
+        return 4
+    return 5
 
 
 def rank_cases(cases: list[CaseReport]) -> list[CaseReport]:
@@ -363,20 +437,45 @@ def totals_of(cases: list[CaseReport]) -> Totals:
     )
 
 
-def policy_triggered(case: CaseReport, policy: FailOn) -> bool:
-    """CI policy. An emulated, natively unverified finding never fails CI by default."""
-    if policy is FailOn.NONE or case.divergence_status is not DivergenceStatus.COUNTEREXAMPLE_FOUND:
+def policy_triggered(case: CaseReport, policy: FailOn | LiveFailOn) -> bool:
+    """CI policy. An emulated, natively unverified finding never fails CI by default.
+
+    Findings come in three kinds: a supported rate increase (``evidence_grade`` RATE_INCREASE), an
+    observed failure (OBSERVED_FAILURE), and a counterexample with no grade (a frozen program or
+    report, a deterministic subject, SQL), which is not a rate statement and is never one here.
+
+    * ``none``: never.
+    * ``rate-increase``: only a finding graded RATE_INCREASE.
+    * ``any-counterexample``: a rate increase or an ungraded counterexample.
+    * ``observed-failure``: also an observed failure.
+    * ``domain-counterexample``: a counterexample whose case is domain-validated.
+    """
+    name = policy.value
+    if name == "none":
+        return False
+    grades = [f.evidence_grade for f in case.findings]
+    observed = any(g is EvidenceGrade.OBSERVED_FAILURE for g in grades)
+    if case.divergence_status is DivergenceStatus.OBSERVED_FAILURE:
+        return name == "observed-failure" and observed
+    if case.divergence_status is not DivergenceStatus.COUNTEREXAMPLE_FOUND:
         return False
     if case.execution_fidelity.found_on == "EMULATED" and not case.execution_fidelity.verified_on:
         return False
-    if policy is FailOn.ANY_COUNTEREXAMPLE:
-        return True
+    if name == "rate-increase":
+        return any(g is EvidenceGrade.RATE_INCREASE for g in grades)
+    if name in {"any-counterexample", "observed-failure"}:
+        return True  # a counterexample case holds a rate increase or an ungraded counterexample
     return "DOMAIN_VALIDATED" in case.validity.tiers
 
 
 def headline_for(case_status: DivergenceStatus, summary: str) -> str:
     """Prefix a pack's evidence summary with the status; the summary must avoid verdict words."""
-    return _check_headline(f"{case_status.value.replace('_', ' ').capitalize()}: {summary}")
+    label = (
+        "Observed disagreement"
+        if case_status is DivergenceStatus.OBSERVED_FAILURE
+        else case_status.value.replace("_", " ").capitalize()
+    )
+    return _check_headline(f"{label}: {summary}")
 
 
 class EvalCase(Closed):
@@ -387,3 +486,105 @@ class EvalCase(Closed):
     source_finding: str
     payload: dict[str, Any]
     expectation: dict[str, Any]
+
+
+def _percent(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.0%}"
+
+
+def _rate_text(rate: Any) -> str:
+    """``3 of 5 judged runs (60%, 95% Wilson interval 23% to 88%), 1 errored, 0 not judged``."""
+    text = f"{rate.failures} of {rate.judged} judged runs"
+    if rate.judged:
+        text += (
+            f" ({_percent(rate.rate)}, 95% Wilson interval "
+            f"{_percent(rate.interval_low)} to {_percent(rate.interval_high)})"
+        )
+    return f"{text}; {rate.errors} errored, {rate.unjudged} not judged"
+
+
+def _validity_text(validity: ValidityRecord) -> str:
+    """What was established about the world: tiers reached, or that nothing was assessed."""
+    if validity.status == "NOT_ASSESSED":
+        return (
+            "NOT_ASSESSED (no validation was run on this world; it ran because nothing marked "
+            "it invalid, and no validity tier is claimed)"
+        )
+    if validity.status == "VALID":
+        return f"VALID ({', '.join(validity.tiers) or 'no tier reached'})"
+    return validity.status
+
+
+def describe_graded_findings(case: CaseReport) -> list[str]:
+    """Markdown lines for the findings of a live-agent case, one section per grade.
+
+    Observed failures are shown whenever they exist, with counts, whatever the paired test said. A
+    rate increase is shown apart and is the only grade that supports a claim about the failure
+    rate. Findings without a grade (frozen programs, SQL, deterministic subjects) are not listed.
+    """
+    by_grade = {
+        grade: [f for f in case.findings if f.evidence_grade is grade] for grade in EvidenceGrade
+    }
+    lines: list[str] = []
+
+    def entry(finding: Finding) -> str:
+        text = f"- {finding.world_id}"
+        if finding.observation is not None:
+            text += f": {_rate_text(finding.observation.world)}"
+            baseline = finding.observation.baseline
+            if baseline is not None:
+                text += f". Baseline runs made for its pairs: {_rate_text(baseline)}"
+        if finding.mutation_path:
+            text += ". World change: " + "; ".join(m.description for m in finding.mutation_path)
+        sequential = finding.stability.sequential if finding.stability else None
+        if sequential is not None:
+            text += f". Paired test: {sequential.decision.value} after {sequential.pairs} pairs"
+        graded_on = finding.divergence.get("graded_on_world")
+        if graded_on and graded_on != finding.world_id:
+            text += (
+                f". The grade and the counts above describe the world the search ran "
+                f"({graded_on}); "
+                f"the world shown ({finding.world_id}) is its minimization and was not itself "
+                "tested by the paired test (ledger E4: open until N5)"
+            )
+        text += f". World validity: {_validity_text(finding.validity)}"
+        if finding.replay.command:
+            text += f". Replay: `{finding.replay.command}`"
+        return text + "."
+
+    if by_grade[EvidenceGrade.RATE_INCREASE]:
+        lines += ["", "## Rate increases", ""]
+        lines.append(
+            "A paired sequential test decided that the world fails more often than the baseline. "
+            "This is the only grade that supports a claim about the failure rate. The claim is "
+            "about the world as run: whether the world satisfies structural or domain "
+            "requirements is the separate validity stated for each world."
+        )
+        lines += [entry(f) for f in by_grade[EvidenceGrade.RATE_INCREASE]]
+    if by_grade[EvidenceGrade.OBSERVED_FAILURE]:
+        lines += ["", "## Observed failures", ""]
+        lines.append(
+            "A judged run failed on a mutated world that ran and was not found invalid. This is "
+            "actionable evidence: the world and a replay are below. Each entry states how far the "
+            "world was validated (a world marked NOT_ASSESSED was not). It is not a statement "
+            "that the mutation raises the agent's failure probability, because no paired test "
+            "decided that. Intervals are descriptive."
+        )
+        lines += [entry(f) for f in by_grade[EvidenceGrade.OBSERVED_FAILURE]]
+    if case.multiplicity is not None:
+        m = case.multiplicity
+        lines += [
+            "",
+            "## Worlds tested",
+            "",
+            f"{m.worlds_tested} worlds had a judged run: {m.worlds_with_observed_failure} with an "
+            f"observed failure, {m.worlds_with_rate_increase} with a rate increase decided. "
+            f"{m.note}",
+        ]
+        if m.expected_worlds_with_observed_failure_under_no_effect is not None:
+            lines.append(
+                f"If every world failed at the baseline's observed rate, about "
+                f"{m.expected_worlds_with_observed_failure_under_no_effect:.1f} worlds would show "
+                "an observed failure by chance."
+            )
+    return lines

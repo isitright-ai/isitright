@@ -37,9 +37,10 @@ The `headline` is one line derived from them. It never says "pass", "fail", "cor
 
 | Status | What it means | What to do |
 |---|---|---|
-| `COUNTEREXAMPLE_FOUND` | On a valid changed world, the subject and the oracle disagree | Read the finding. Check validity and [fidelity](validity-and-fidelity.md#execution-fidelity), then decide which side is wrong |
+| `COUNTEREXAMPLE_FOUND` | On a valid changed world, the subject and the oracle disagree. For a live agent: a paired test decided that the world fails more often than the baseline (grade `RATE_INCREASE`), conditional on the world as run; the world's validity is a separate field and may be `NOT_ASSESSED` | Read the finding. Check validity and [fidelity](validity-and-fidelity.md#execution-fidelity), then decide which side is wrong |
+| `OBSERVED_FAILURE` | Live agents only. On a changed world that ran and was not found invalid, a judged run failed, and no paired test decided that the world fails more often than the baseline | Open the finding and replay it. It is actionable, and it is not a statement that the mutation raises the failure probability. The report shows failures out of judged runs with an interval, and how many worlds were tested |
 | `NOT_FOUND_WITHIN_BUDGET` | None of the worlds tried produced a disagreement | Look at how many worlds ran and which families were skipped. This is not a claim of correctness or equivalence |
-| `INCONCLUSIVE` | The comparison could not decide. Typical causes: result order is ambiguous, no agent run completed, a result was nondeterministic | Read the reason in the report and fix the cause |
+| `INCONCLUSIVE` | The comparison could not decide. Typical causes: result order is ambiguous, no agent run completed or no mutated world produced a judged run (baseline runs do not count), a result was nondeterministic | Read the reason in the report and fix the cause |
 | `UNSUPPORTED` | The input is outside what isitright handles, for example an unsupported SQL construct | Rewrite the input or accept that it is not covered. It is rejected, never weakened |
 
 ### `validity`: could that world exist?

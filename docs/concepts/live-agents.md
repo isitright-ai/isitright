@@ -16,6 +16,22 @@ isitright makes two kinds of statement and never turns the first into the second
 A reproducible violation is useful evidence about one run. It does not show that the world made
 failure likelier. The agent may fail the original world too.
 
+Since 0.9.0 a finding carries one of the two as its `evidence_grade`, and the report keeps them apart
+in status, export and CI:
+
+| `evidence_grade` | Case status | Exported by default | Trips CI under |
+|---|---|---|---|
+| `RATE_INCREASE`: a paired sequential test decided the world fails more often than the baseline | `COUNTEREXAMPLE_FOUND` | yes | `any-finding`, `rate-increase`, `observed-failure` |
+| `OBSERVED_FAILURE`: a judged run failed on a mutated world that ran and was not found invalid; no test decided a higher rate | `OBSERVED_FAILURE` (when no finding has the other grade) | no, on request (`--include-observed`) | `observed-failure` only |
+
+An observed failure is never hidden. It is in the headline, in an "Observed failures" section of
+`report.md` and in the console summary, with failures out of judged runs (errored and unjudged runs
+beside them, not in the denominator), a 95% Wilson interval, and a replay path. A rate printed with
+an interval is descriptive: the interval does not allow for the number of worlds tested. The report
+states that number, that the per-world decisions are not corrected for it, and how many rate-increase
+a nominal upper bound on the false rate-increase claims it expects if no mutation had any effect (worlds tested x 0.05; not a measured rate). A case in which no mutated world produced a
+judged run is `INCONCLUSIVE`; the baseline runs do not count.
+
 ## Baseline first
 
 Before any perturbed world, the baseline world runs `--trials` times (`--baseline-trials` sets a
@@ -57,8 +73,10 @@ with the reason. That is not evidence of correctness.
 
 ## Sequential testing per world
 
-Each world runs in pairs with the baseline until a sequential probability ratio test on discordant
-pairs decides. A pair is one run of the world and one *fresh* run of the baseline, made for that
+A world is first run `--trials` times. If none of those runs failed, the world is done: nothing
+was found and no baseline run was spent. If one failed, the world goes on in pairs with the baseline
+until a sequential probability ratio test on discordant pairs decides. The first runs only choose
+which worlds get the test; they take no part in it, so the choice does not bias it. A pair is one run of the world and one *fresh* run of the baseline, made for that
 pair: no baseline outcome is reused, cycled or assumed. This is the same in the agents, data and
 research packs, and one loop in the core makes the runs (`SubjectRunner` in
 `isitright.core.stochastic`): it checks the budget before every call, derives a distinct seed for
@@ -71,12 +89,12 @@ one included.
   time with the research and agents minimum of 4 pairs and about 91% with the data minimum of 3
   (`--baseline-runs`); it is about 85% at 16 pairs and about 40% at 10. These are simulations of
   the test, repeated through each pack's audit path in the test suite.
-- **Cost:** a pair is two runs, so a world that goes the full 20 pairs costs 40 runs, plus the
-  baseline runs made before the search (`--trials`, `--baseline-runs`, research `--runs`). Before
-  0.9.0 the research and data packs paired a world only with the baseline runs they had (about
-  4 and 3), so a world cost about as many runs as the baseline had; the agents pack reused its
-  baseline runs for the first pairs. A world with no failure stops after the minimum number of
-  pairs (agents `--trials`, data `--baseline-runs`, research 4), so 8 runs in research by default.
+- **Cost:** a pair is two runs, so a world that failed and goes the full 20 pairs costs 40 runs on top
+  of its first runs (agents `--trials`, default 4; data `--baseline-runs`, default 3; research
+  `--runs`, default 4), plus the baseline runs made before the search. A world with no failure costs
+  only its first runs: 4 in the agents and research defaults, 3 in the data default. Before 0.9.0
+  the research and data packs paired a world only with the baseline runs they had (about 4 and 3);
+  the agents pack reused its baseline runs for the first pairs.
 - **Left out of a pair:** a run that errored or could not be judged forms no pair. The report counts
   them (`excluded_errored`, `excluded_unjudged` in the sequential record), with the world runs and
   baseline runs that were made. The world run is made first, and the baseline run only when the
@@ -102,11 +120,12 @@ one included.
 - Decisions: `RATE_INCREASE` (a rate claim), `NO_INCREASE_AT_EFFECT` (evidence against an increase of
   that size only), `UNDECIDED`, and `NO_DISCORDANCE` (after `--trials` pairs, nothing went against the
   world: counts only, no claim).
-- There is no correction across worlds. A rate claim is per world, and the case-level `stability`
-  is counts only.
+- There is no correction across worlds. A rate claim is per world; the report's `multiplicity`
+  record says how many worlds were tested and gives the nominal upper bound (worlds tested x 0.05) on the false rate-increase claims expected under no effect; the decisions are not corrected across worlds and the audit has no family-wise guarantee. The
+  case-level `stability` is counts only.
 
-`--no-sequential` runs `--trials` per world with counts only, and a rate claim then needs an exact
-McNemar test on at least 8 paired runs.
+`--no-sequential` runs `--trials` per world with counts only. There are no pairs, so no finding can
+be graded `RATE_INCREASE`: every finding is an observed failure.
 
 ## Minimization through noise
 

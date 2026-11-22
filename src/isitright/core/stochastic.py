@@ -12,6 +12,7 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Generic, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,6 +43,137 @@ class Counts(BaseModel):
     cannot_judge: int = Field(ge=0)
     violated: int = Field(ge=0)
     errors: int = Field(ge=0)
+
+
+class EvidenceGrade(StrEnum):
+    """What a live-agent finding supports. The two grades are never merged."""
+
+    RATE_INCREASE = "RATE_INCREASE"
+    """A paired sequential test decided that the world fails more often than the baseline."""
+    OBSERVED_FAILURE = "OBSERVED_FAILURE"
+    """A judged run failed on a world that ran and was not found invalid. Actionable and
+    replayable; it says nothing about a higher failure rate, because no test decided one, and it
+    does not say the world was validated (see the world's own validity)."""
+
+
+WILSON_Z = 1.959964
+"""The 97.5th percentile of the normal distribution: a two-sided 95% interval."""
+
+
+def wilson_interval(failures: int, runs: int) -> tuple[float, float] | None:
+    """The 95% Wilson score interval of a failure rate, or None when there are no runs.
+
+    Descriptive only: it treats the runs as independent draws with one failure probability and
+    makes no allowance for the many worlds an audit looks at.
+    """
+    if runs <= 0:
+        return None
+    z2 = WILSON_Z**2
+    p = failures / runs
+    centre = (p + z2 / (2 * runs)) / (1 + z2 / runs)
+    half = WILSON_Z * math.sqrt(p * (1 - p) / runs + z2 / (4 * runs**2)) / (1 + z2 / runs)
+    return max(0.0, centre - half), min(1.0, centre + half)
+
+
+class RateWithInterval(BaseModel):
+    """failures / judged runs, with errors and unjudged runs beside them and a Wilson interval."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    failures: int = Field(ge=0)
+    judged: int = Field(ge=0)
+    errors: int = Field(ge=0)
+    unjudged: int = Field(ge=0)
+    rate: float | None = None
+    interval_low: float | None = None
+    interval_high: float | None = None
+    interval: str = "95% Wilson score interval, descriptive"
+
+
+def rate_with_interval(outcomes: list[RunOutcome]) -> RateWithInterval:
+    """Counts of one set of runs. Errored and unjudged runs are not in the denominator."""
+    errors = sum(o.error for o in outcomes)
+    judged = [o for o in outcomes if is_judged(o)]
+    failures = sum(is_bad(o) for o in judged)
+    interval = wilson_interval(failures, len(judged))
+    return RateWithInterval(
+        failures=failures,
+        judged=len(judged),
+        errors=errors,
+        unjudged=len(outcomes) - errors - len(judged),
+        rate=failures / len(judged) if judged else None,
+        interval_low=interval[0] if interval else None,
+        interval_high=interval[1] if interval else None,
+    )
+
+
+class Observation(BaseModel):
+    """What was seen on one world, apart from the label that summarizes it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    world: RateWithInterval
+    baseline: RateWithInterval | None = None
+    """The fresh baseline runs made for this world's pairs, or None when none were made."""
+    note: str = (
+        "counts of judged runs on this world; an observation, not a statement that the mutation "
+        "raises the agent's failure probability"
+    )
+
+
+class Multiplicity(BaseModel):
+    """What an audit that looks at many worlds must say about its per-world decisions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    worlds_tested: int = Field(ge=0)
+    worlds_with_observed_failure: int = Field(ge=0)
+    worlds_with_rate_increase: int = Field(ge=0)
+    alpha: float
+    decisions_corrected: bool = False
+    expected_rate_increase_claims_under_no_effect: float
+    """``worlds_tested * alpha``: a nominal upper bound on the expected number of false
+    rate-increase claims if no mutation had any effect. It is not a measured rate and not a
+    family-wise guarantee: each world's test is not corrected for the number of worlds."""
+    expected_worlds_with_observed_failure_under_no_effect: float | None = None
+    """If every world fails at the baseline's observed rate: the expected number of worlds in which
+    at least one judged run fails. None when no baseline run was judged."""
+    note: str
+
+
+def multiplicity_of(
+    results: list[tuple[list[RunOutcome], EvidenceGrade | None]],
+    baseline: list[RunOutcome],
+    alpha: float = ALPHA,
+) -> Multiplicity:
+    """The multiplicity statement for the worlds that were tested (those with a judged run).
+
+    ``results`` holds each world's outcomes and its grade (None when it had no failure).
+    """
+    tested = [(o, g) for o, g in results if any(is_judged(x) for x in o)]
+    base = rate_with_interval(baseline)
+    expected_observed: float | None = None
+    if base.judged and base.rate is not None:
+        expected_observed = round(
+            sum(1 - (1 - base.rate) ** sum(is_judged(x) for x in o) for o, _ in tested), 3
+        )
+    n = len(tested)
+    return Multiplicity(
+        worlds_tested=n,
+        worlds_with_observed_failure=sum(any(is_bad(x) for x in o) for o, _ in tested),
+        worlds_with_rate_increase=sum(g is EvidenceGrade.RATE_INCREASE for _, g in tested),
+        alpha=alpha,
+        expected_rate_increase_claims_under_no_effect=round(n * alpha, 3),
+        expected_worlds_with_observed_failure_under_no_effect=expected_observed,
+        note=(
+            f"{n} worlds were tested. Each world's paired test is not corrected for the number of "
+            "worlds, and the audit as a whole has no family-wise error guarantee. If no mutation "
+            f"had any effect, the expected number of false rate-increase claims is at most "
+            f"{n * alpha:.2f} (worlds tested x the nominal level {alpha}: a nominal upper bound, "
+            "not a measured rate), and observed failures would still appear in some worlds "
+            "wherever the agent fails at random. Intervals are descriptive."
+        ),
+    )
 
 
 class RateClaim(BaseModel):
@@ -158,6 +290,37 @@ def stability(baseline: list[RunOutcome] | None, world: list[RunOutcome], k: int
         rate_claim=claim,
         note=note,
     )
+
+
+def grade_of(test: PairedSprt | None) -> EvidenceGrade:
+    """The grade of a finding: a rate increase only when the sequential test decided one."""
+    if test is not None and test.decision is Decision.RATE_INCREASE:
+        return EvidenceGrade.RATE_INCREASE
+    return EvidenceGrade.OBSERVED_FAILURE
+
+
+def observation_of(
+    world: list[RunOutcome], baseline: list[RunOutcome] | None = None
+) -> Observation:
+    return Observation(
+        world=rate_with_interval(world),
+        baseline=rate_with_interval(baseline) if baseline else None,
+    )
+
+
+def stability_counts_only(
+    baseline: list[RunOutcome] | None, world: list[RunOutcome], k: int
+) -> Stability:
+    """Stability for a world with no sequential test: counts, and never a rate claim.
+
+    The runs of a world and the baseline runs made before the search are not pairs, so a
+    comparison by run index would make a claim no paired test made.
+    """
+    value = stability(baseline, world, k)
+    note = "no sequential test was run on this world: counts only, no rate claim"
+    if value.note.startswith("the baseline itself is flaky"):
+        note = "the baseline itself is flaky, which weakens any finding. " + note
+    return value.model_copy(update={"rate_claim": None, "note": note})
 
 
 def stability_sequential(
@@ -332,6 +495,23 @@ MAX_FAILED_PAIRINGS_IN_A_ROW = 2
 """Consecutive failed attempts to form a pair after which `run_paired` gives a world up."""
 
 
+@dataclass
+class StagedRuns(Generic[R]):
+    """A world's runs in two stages: ``k`` runs, then paired runs when one of them failed."""
+
+    screening: list[Executed[R]]
+    paired: PairedRuns[R] | None = None
+    """None when no screening run failed: no pair was spent on the world."""
+
+    @property
+    def test(self) -> PairedSprt | None:
+        return self.paired.test if self.paired else None
+
+    @property
+    def baseline_outcomes(self) -> list[RunOutcome]:
+        return self.paired.baseline_outcomes if self.paired else []
+
+
 class SubjectRunner(Generic[T, R]):
     """The only place an audit executes a subject.
 
@@ -388,6 +568,20 @@ class SubjectRunner(Generic[T, R]):
                 break
             done.append(executed)
         return done
+
+    def run_staged(
+        self, world: T, baseline: T, config: SprtConfig, k: int, tag: str = "search"
+    ) -> StagedRuns[R]:
+        """``k`` runs of a world; fresh pairs with the baseline only if one of them failed.
+
+        A world that never failed has no failure to test, so no baseline run is spent on it. The
+        pairs are new runs: the screening runs choose which worlds are tested and take no part in
+        the test, so choosing on a failure does not bias it.
+        """
+        screening = self.run_repeated(world, k, tag)
+        if not any(is_bad(e.outcome) for e in screening):
+            return StagedRuns(screening)
+        return StagedRuns(screening, self.run_paired(world, baseline, config, tag))
 
     def run_paired(
         self,

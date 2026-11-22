@@ -479,8 +479,9 @@ def test_an_invariant_violation_is_the_headline(booking: McpScenario) -> None:
         violations={"original": "no_cancel_without_basis"},
     )
     case = _report(booking, results)
-    assert case.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND
+    assert case.divergence_status is DivergenceStatus.OBSERVED_FAILURE  # no paired test was run
     assert case.headline == (
+        "Observed disagreement, no paired test decided a higher rate: "
         "Invariant 'no_cancel_without_basis' violated in 1 of 1 runs on world original "
         "(attribution not assessed)"
     )
@@ -497,8 +498,10 @@ def test_a_control_that_is_never_reached_does_not_discriminate(booking: McpScena
         _results(booking, {"*": MET, "booked_23h_59m": NOT_MET, "flight_cancelled": NOT_MET}),
     )
     assert case.controls is not None and case.controls.status == "NOT_DISCRIMINATING"
-    assert case.divergence_status is DivergenceStatus.COUNTEREXAMPLE_FOUND
-    assert case.headline.startswith("Expected behavior not reached")
+    assert case.divergence_status is DivergenceStatus.OBSERVED_FAILURE  # no paired test was run
+    assert case.headline.startswith(
+        "Observed disagreement, no paired test decided a higher rate: Expected behavior not reached"
+    )
 
 
 def test_no_completed_run_is_inconclusive_and_no_valid_world_is_unsupported(

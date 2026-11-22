@@ -20,6 +20,7 @@
       "findings": [
         {
           "divergence": {},
+          "evidence_grade": null,
           "export": null,
           "fidelity": {
             "engine": "sqlite 3",
@@ -33,6 +34,7 @@
           "minimization": {},
           "mode": null,
           "mutation_path": [],
+          "observation": null,
           "oracles": [
             {
               "description": "",
@@ -64,6 +66,7 @@
       ],
       "headline": "Evidence recorded for review",
       "inputs": {},
+      "multiplicity": null,
       "oracles": [
         {
           "description": "",
@@ -128,6 +131,7 @@
       "findings": [],
       "headline": "Evidence recorded for review",
       "inputs": {},
+      "multiplicity": null,
       "oracles": [
         {
           "description": "",
@@ -189,6 +193,7 @@
       "findings": [],
       "headline": "Evidence recorded for review",
       "inputs": {},
+      "multiplicity": null,
       "oracles": [
         {
           "description": "",
