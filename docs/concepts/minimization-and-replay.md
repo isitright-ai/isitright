@@ -38,7 +38,9 @@ not change what the evidence is about.
   finding only if it fails and, when the searched world's paired test decided a rate increase, its own
   paired test decided one too. Otherwise the finding stays on the searched world and the minimization
   record says why the minimal path is not shown.
-- The mutations named in a finding are the ones whose changes the shown world still has.
+- The mutations named in a finding are the ones whose changes the shown world still has. If none
+  does (minimization removed the rows they edited, so the world differs from the base by absence
+  only), the whole path that produced the world found is named, because an empty path would hide the change.
 
 Each finding records the fingerprint of the world it shows and, for each part, the fingerprint of the
 world that part was built from; the report model refuses a finding where they differ. See

@@ -811,3 +811,12 @@ def test_a_frozen_research_finding_is_built_from_the_world_its_artifact_holds() 
             "export",
         }
         assert set(finding.built_from.values()) == {finding.world_fingerprint}
+
+
+def test_when_no_mutation_survives_the_whole_path_is_kept() -> None:
+    """Minimization may remove the rows a mutation edited, so the world differs from the base by
+    absence only. The change cannot be attributed to one mutation; an empty path would hide it."""
+    base = _state([{"id": 1, "v": "a"}])
+    edited = _mutation("retract", SetField(collection="t", key=1, path=["v"], value="z"))
+    other = _mutation("boundary", SetField(collection="t", key=1, path=["w"], value="q"))
+    assert surviving_path([edited, other], _state([]), base) == (edited, other)

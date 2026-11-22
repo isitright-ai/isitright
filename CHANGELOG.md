@@ -196,7 +196,8 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   findings were already built from one world and now record its fingerprint.
 - **Mutation paths.** A finding's `mutation_path` lists the mutations whose changes are in the world
   shown (SQL, frozen data, deterministic research). Before, it listed every mutation of the world the
-  search found, including ones minimization had removed.
+  search found, including ones minimization had removed. If none of them has its changes left (the
+  rows were minimized away), the whole path is listed.
 - **Core.** `SubjectRunner.run_staged` takes `after_search`, and `isitright.core.shown` holds the
   helpers (`built_from`, `surviving_path`, `world_json_fingerprint`).
 

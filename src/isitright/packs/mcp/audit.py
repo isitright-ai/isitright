@@ -870,7 +870,8 @@ def build_report(
                 description=scenario.oracle.description,
             )
         )
-        stored = example_run["world_fingerprint"]  # the world the example run was launched with
+        # the world the example run was launched with (a hand-built record may not say)
+        stored = example_run.get("world_fingerprint", fingerprint)
         findings.append(
             Finding(
                 finding_id=f"{scenario.id}:{shown_rw.id}",

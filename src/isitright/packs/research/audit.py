@@ -629,6 +629,7 @@ class ResearchAudit:
                     fact,
                     minimize,
                     budget,
+                    k,
                 )
             )
         return out
@@ -670,6 +671,7 @@ class ResearchAudit:
         fact: dict[str, Any] | None,
         minimize: bool,
         budget: Budget,
+        k_runs: int,
     ) -> Finding:
         """One finding, about one world: the world the search ran with its own evidence, or its
         minimization when the minimized world was run in its own right and shows at least the
@@ -687,7 +689,7 @@ class ResearchAudit:
         shown_world, shown = world, original
         if final.fingerprint() != world.fingerprint():
             tested = WorldResult(final, self.spec.validate_world(final.state, final.path))
-            self._confirm(subject, _Placed(final, tested), max(1, len(original.runs)))
+            self._confirm(subject, _Placed(final, tested), k_runs)
             failures = sum(is_bad(o) for o in tested.outcomes)
             reason = None
             if not tested.runs:
@@ -702,6 +704,7 @@ class ResearchAudit:
                 reason = "no paired test decided a rate increase on the minimized world"
             if reason is None:
                 shown_world, shown = final, tested
+                minimization = {**minimization, "adopted": True}
             else:
                 minimization = {
                     **minimization,

@@ -48,15 +48,18 @@ def surviving_path(
     state mutation survives when one of its edits is still in effect: a row it added is present, a
     row it removed is absent, a field it set still differs from ``base``, a parameter it set still
     differs. A response or timing mutation travels with the world and always survives, as does a
-    mutation with no edits: nothing can be traced, so it is not dropped.
+    mutation with no edits: nothing can be traced, so it is not dropped. When no mutation survives
+    (minimization removed the rows they edited, so the world differs from ``base`` by absence only)
+    the whole path is returned: it cannot be attributed, and an empty path would hide the change.
     """
     if base is None:
         return tuple(path)
-    return tuple(
+    kept = tuple(
         m
         for m in path
         if m.target != "state" or not m.edits or any(_in_effect(e, shown, base) for e in m.edits)
     )
+    return kept or tuple(path)
 
 
 _ABSENT = object()
