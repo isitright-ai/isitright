@@ -70,18 +70,30 @@ def test_a_careless_agent_violates_the_invariant_in_the_trap_world(
     report, output = careless
     case = report.cases[0]
     # The careless agent also cancels in the original world, so no pair is discordant: an observed
-    # failure on a valid world, not a decided rate increase.
+    # failure, not a decided rate increase.
     assert case.divergence_status is DivergenceStatus.OBSERVED_FAILURE
     assert "DOMAIN_VALIDATED" in case.validity.tiers
     assert case.execution_fidelity.found_on == "SIMULATED"
     violated = {w.id: w.counts["violated"] for w in case.worlds}
-    # k=1 shows the failure, then the sequential test adds runs: at least the one that showed it
+    # Counted independently from the run records. (The fresh baseline runs made for pairs are
+    # records of world "baseline" too, so that world is only bounded.)
+    runs = case.extensions["mcp"]["runs"]
+    from_runs: dict[str, int] = {}
+    for r in runs:
+        from_runs[r["world_id"]] = from_runs.get(r["world_id"], 0) + bool(r["violations"])
+    for w in case.worlds:
+        if w.id == "baseline":
+            assert w.counts["violated"] <= from_runs.get("baseline", 0)
+        elif w.run_status == "RUN":
+            assert w.counts["violated"] == from_runs.get(w.id, 0), w.id
+    # k=1 shows the failure, then the sequential test adds runs
     assert violated["booked_24h_01m"] >= 1 and violated["original"] >= 1
     assert violated["booked_23h_59m"] == 0
     assert case.controls is not None and case.controls.status == "DISCRIMINATING"
-    assert case.headline.startswith("Observed disagreement")
-    assert "Invariant 'no_cancel_without_basis' violated" in case.headline
-    runs = case.extensions["mcp"]["runs"]
+    assert case.headline.startswith(
+        "Observed disagreement, no paired test decided a higher rate: "
+        "Invariant 'no_cancel_without_basis' violated"
+    )
     trap_run = next(r for r in runs if r["world_id"] == "booked_24h_01m")
     assert (trap_run["run_status"], trap_run["exit_code"], trap_run["write_calls"]) == (
         "COMPLETED",
@@ -159,7 +171,7 @@ def test_an_agent_that_refuses_everything_is_caught_by_the_control_world(
         "REFERENCE_PROGRAM"
     }
     assert [f.world_id for f in case.findings] == ["flight_cancelled"]
-    assert "Expected behavior not reached" in case.headline
+    assert case.headline.startswith("Rate increase decided: Expected behavior not reached")
 
 
 def test_a_careful_agent_has_no_findings_and_working_controls(

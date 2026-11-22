@@ -11,8 +11,8 @@ never fails.
 | SQL | `--fail-on any-counterexample` | Any `COUNTEREXAMPLE_FOUND` |
 | Agents | `--fail-on invariant-violation` | A finding graded `RATE_INCREASE` involves an invariant violation |
 | Agents | `--fail-on any-finding` | A finding graded `RATE_INCREASE` (the same as `rate-increase`) |
-| Agents, research | `--fail-on rate-increase` | A paired test decided a higher failure rate: status `COUNTEREXAMPLE_FOUND` (research also accepts `any-counterexample`, which means the same for a live agent) |
-| Agents, research | `--fail-on observed-failure` | Also a failure observed on a valid world with no rate decision: status `OBSERVED_FAILURE` |
+| Agents, research, data (live) | `--fail-on rate-increase` | A paired test decided a higher failure rate: status `COUNTEREXAMPLE_FOUND` (research also accepts `any-counterexample`, which means the same for a live agent) |
+| Agents, research, data (live) | `--fail-on observed-failure` | Also a failure observed on a world that ran and was not found invalid, with no rate decision: status `OBSERVED_FAILURE` |
 | Both | `--fail-on none` (default) | Never |
 
 An **emulated** SQL finding that no native run verified never fails CI. A finding that PostgreSQL
@@ -22,13 +22,23 @@ emulated findings never fail.
 
 ### Live-agent gates
 
+**The default is `--fail-on none`.** Completing an audit never fails CI just because it found evidence.
+A rate-based gate is something you choose.
+
 A live-agent finding has one of two grades. `RATE_INCREASE`: a paired sequential test decided that the world
-fails more often than the baseline. `OBSERVED_FAILURE`: a judged run failed on a valid mutated world and no
-test decided a higher rate. Both are shown in the report. The gate keeps them apart: every `--fail-on` policy
-that existed before 0.9 (`any-finding`, `invariant-violation`, `any-counterexample`) fails only on a rate
-increase, so one failed run of an agent that fails at random does not break a build. `--fail-on
-observed-failure` fails on any finding, an observation included; use it for an agent that must not fail on
-a valid world at all, such as a fixed regression set. The data pack's live audit has no `--fail-on` yet.
+fails more often than the baseline. `OBSERVED_FAILURE`: a judged run failed on a mutated world that ran and was
+not found invalid, and no test decided a higher rate. Both are shown in the report. The gates keep them apart:
+
+| Choose | When | Fails (exit 3) on |
+|---|---|---|
+| `--fail-on rate-increase` (recommended for generated-world CI) | You want a build to fail only on a supported change in the failure rate | A decided `RATE_INCREASE`. One failed run of an agent that fails at random does not break the build |
+| `--fail-on observed-failure` (stricter) | Zero tolerance, or a fixed regression set that must never fail | Any finding, an observation included |
+| `--fail-on any-finding`, `--fail-on invariant-violation` (agents), `--fail-on any-counterexample` (research) | As before 0.9 | Only a rate increase (an observation never trips them); `invariant-violation` narrows it to findings that involve an invariant |
+| `--fail-on none` (default) | | Never |
+
+`agents run`, `research check` and `data audit` take these options. A world marked `NOT_ASSESSED` was not
+validated (a fixed world without a validator): a gate on it rests on the world as run, and the report says so.
+The shared vocabulary across all four packs, with aliases, is N10.
 
 ## Exit codes
 

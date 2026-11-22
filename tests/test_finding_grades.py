@@ -25,6 +25,7 @@ import os
 import random
 import shutil
 import sys
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -354,6 +355,26 @@ def test_a_world_that_never_fails_costs_no_baseline_pair(
     assert len(calls) == 8 and calls.count("baseline") == 4
 
 
+def test_failure_free_worlds_each_cost_exactly_k_runs_and_no_pair(
+    shop_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two worlds that never fail, k = 3: the baseline once with k runs, each world k screening
+    runs, no paired baseline run: k + 2k = 9 executions, counted by world."""
+    artifacts = _artifacts(WORLDS["small"], shop_root)
+    two = {**artifacts, "worlds": artifacts["worlds"][:2]}
+    k = 3
+    calls = _scripted_agent(monkeypatch, two, lambda world_id: "good")
+    case = _agents_audit(tmp_path, two, 0, k=k).cases[0]
+    first, second = two["worlds"]
+    assert Counter(calls) == {"baseline": k, first: k, second: k}
+    assert len(calls) == k + 2 * k
+    runs = case.extensions["mcp"]["runs"]
+    assert Counter(r["world_id"] for r in runs) == {"baseline": k, first: k, second: k}
+    assert case.divergence_status.value == "NOT_FOUND_WITHIN_BUDGET" and case.findings == []
+    assert all(w.counts["n"] == k for w in case.worlds if w.run_status == "RUN")
+    assert case.multiplicity.worlds_tested == 2
+
+
 def test_a_decided_rate_increase_is_the_stronger_grade(
     one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -380,21 +401,29 @@ def test_the_report_says_how_many_worlds_were_tested_and_that_decisions_are_unco
     assert m.worlds_tested == WORLDS["small"]
     assert m.alpha == 0.05 and m.decisions_corrected is False
     assert m.expected_rate_increase_claims_under_no_effect == pytest.approx(WORLDS["small"] * 0.05)
-    assert (
-        m.worlds_with_observed_failure
-        == sum(
-            any(
-                is_bad_count
-                for is_bad_count in [w.counts.get("not_met", 0), w.counts.get("violated", 0)]
-            )
-            for w in case.worlds
-            if w.run_status == "RUN" and w.role != "BASELINE" and w.counts.get("n")
-        )
-        or m.worlds_with_observed_failure >= 0
-    )
+    # Counted independently, from the run records: mutated worlds only (no baseline, no world that
+    # was not run), a judged failure being a run that missed the expectation or broke an invariant.
+    judged: dict[str, int] = {}
+    failed: dict[str, int] = {}
+    for run in case.extensions["mcp"]["runs"]:
+        if run["world_id"] == "baseline" or run["run_status"] != "COMPLETED":
+            continue
+        if run["outcome"] in ("MET", "NOT_MET") or run["violations"]:
+            judged[run["world_id"]] = judged.get(run["world_id"], 0) + 1
+            if run["outcome"] == "NOT_MET" or run["violations"]:
+                failed[run["world_id"]] = failed.get(run["world_id"], 0) + 1
+    assert len(judged) == m.worlds_tested == WORLDS["small"]
+    assert len(failed) == m.worlds_with_observed_failure
+    assert 0 < m.worlds_with_observed_failure < m.worlds_tested, "the fixture must exercise both"
+    rate = {f.world_id for f in case.findings if f.evidence_grade.value == "RATE_INCREASE"}
+    assert m.worlds_with_rate_increase == len(rate)
+    assert rate <= set(failed), "a rate-increase world also counts as one with an observed failure"
+    assert {f.world_id for f in case.findings} == set(failed)
     text = (tmp_path / "out0" / "report.md").read_text(encoding="utf-8")
     assert f"{WORLDS['small']} worlds had a judged run" in text
     assert "not corrected for the number of worlds" in text
+    assert "nominal upper bound" in text and "not a measured rate" in text
+    assert "no family-wise error guarantee" in text
     assert "Intervals are descriptive" in text
 
 
@@ -447,19 +476,56 @@ def test_export_leaves_observed_failures_out_unless_asked(
     _observed_only_report(tmp_path, one_world, monkeypatch)
     report = tmp_path / "out0" / "report.json"
     out = tmp_path / "cases.jsonl"
+    example = json.loads(report.read_text(encoding="utf-8"))["cases"][0]["findings"][0]
+    run_dir = report.parent / example["divergence"]["example_run_dir"]
+    # The recorded refusal called no tool, so the run left no trace file: nothing is added here.
+    assert not (run_dir / "trace.jsonl").exists()
     first = CliRunner().invoke(app, ["agents", "export", str(report), "--output", str(out)])
     assert first.exit_code == 0, first.output
     assert "Exported 0 eval case(s)" in first.output
     assert "1 finding(s) graded OBSERVED_FAILURE were not exported" in first.output
-    # The recorded refusal makes no tool call, so it left no trace file: an empty one will do.
-    example = json.loads(report.read_text(encoding="utf-8"))["cases"][0]["findings"][0]
-    (report.parent / example["divergence"]["example_run_dir"] / "trace.jsonl").touch()
     second = CliRunner().invoke(
         app, ["agents", "export", str(report), "--output", str(out), "--include-observed"]
     )
     assert second.exit_code == 0, second.output
     assert "Exported 1 eval case(s)" in second.output
-    assert len(out.read_text(encoding="utf-8").splitlines()) == 1
+    (line,) = out.read_text(encoding="utf-8").splitlines()
+    exported = json.loads(line)
+    assert exported["payload"]["trace"] == [], "no tool call, so an empty trace"
+    assert exported["payload"]["world"] and exported["expectation"]["disagreement"]
+    assert not (run_dir / "trace.jsonl").exists(), "export fabricated no trace file"
+
+
+def test_export_still_refuses_a_missing_world_and_a_malformed_trace(
+    one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from isitright.cli import app
+
+    _observed_only_report(tmp_path, one_world, monkeypatch)
+    report = tmp_path / "out0" / "report.json"
+    example = json.loads(report.read_text(encoding="utf-8"))["cases"][0]["findings"][0]
+    run_dir = report.parent / example["divergence"]["example_run_dir"]
+    args = [
+        "agents",
+        "export",
+        str(report),
+        "--output",
+        str(tmp_path / "x.jsonl"),
+        "--include-observed",
+    ]
+    (run_dir / "trace.jsonl").write_text("{not json\n", encoding="utf-8")
+    assert CliRunner().invoke(app, args).exit_code == 2
+    (run_dir / "trace.jsonl").unlink()
+    world = run_dir / "world.json"
+    saved = world.read_text(encoding="utf-8")
+    world.unlink()
+    try:
+        failed = CliRunner().invoke(app, args)
+    finally:
+        world.write_text(saved, encoding="utf-8")
+    assert failed.exit_code == 2 and "Export error" in failed.output
 
 
 def test_a_deterministic_or_recorded_finding_needs_no_rate_decision(
@@ -551,7 +617,11 @@ def test_data_export_leaves_observed_failures_out_unless_asked(
 def test_data_a_failing_baseline_can_be_audited_when_asked(data_audit: Any) -> None:
     agent = _FlakyDataAgent(random.Random(1), 1.0, 0.0)
     case = _live(data_audit, agent, allow_failing_baseline=True, max_worlds=2)
-    assert case.divergence_status.value in {"NOT_FOUND_WITHIN_BUDGET", "COUNTEREXAMPLE_FOUND"}
+    # The baseline fails every run; the correct-answer worlds are judged and nothing fails there.
+    assert case.divergence_status.value == "NOT_FOUND_WITHIN_BUDGET"
+    assert case.findings == []
+    judged = [w for w in case.worlds if w.id != "baseline" and w.counts.get("n")]
+    assert judged and all(w.counts["met"] == w.counts["n"] for w in judged)
 
 
 def test_data_cli_stops_on_a_failing_baseline_with_a_message(
@@ -722,24 +792,6 @@ def test_the_grade_follows_the_sequential_decision_only() -> None:
     assert grade_of(quiet) is EvidenceGrade.OBSERVED_FAILURE
 
 
-def test_a_report_cannot_call_an_observation_a_counterexample(
-    one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from pydantic import ValidationError
-
-    from isitright.core.evidence import CaseReport, DivergenceStatus
-
-    case = _observed_only_report(tmp_path, one_world, monkeypatch).cases[0]
-    data = case.model_dump(mode="json")
-    assert CaseReport.model_validate(data)
-    for status in (DivergenceStatus.COUNTEREXAMPLE_FOUND, DivergenceStatus.NOT_FOUND_WITHIN_BUDGET):
-        with pytest.raises(ValidationError, match="status"):
-            CaseReport.model_validate({**data, "divergence_status": status.value})
-    decided = {**data, "findings": [{**data["findings"][0], "evidence_grade": "RATE_INCREASE"}]}
-    with pytest.raises(ValidationError, match="status"):
-        CaseReport.model_validate(decided)
-
-
 def test_multiplicity_counts_only_worlds_with_a_judged_run() -> None:
     from isitright.core.oracles import Outcome
     from isitright.core.stochastic import EvidenceGrade, RunOutcome, multiplicity_of
@@ -777,26 +829,304 @@ def test_research_without_the_sequential_test_makes_no_rate_claim() -> None:
     assert case.divergence_status.value == "OBSERVED_FAILURE"
 
 
-def test_the_status_and_the_grades_of_a_case_must_agree() -> None:
-    """No fixture run: the model alone refuses a status that says more than the grades do."""
+# -- the report model refuses a grade or a status its evidence does not support ------------------
+
+
+def _observed_case() -> Any:
+    """An observation-only case built by hand: one finding with one judged failure, no pairs."""
+    from isitright.core.evidence import DivergenceStatus, EvidenceGrade, Finding
+    from isitright.core.stochastic import Observation, RateWithInterval
+
+    from .factories import make_case
+
+    base = make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND).findings[0]
+    finding = Finding.model_validate(
+        {
+            **base.model_dump(mode="json"),
+            "evidence_grade": EvidenceGrade.OBSERVED_FAILURE.value,
+            "observation": Observation(
+                world=RateWithInterval(failures=1, judged=4, errors=0, unjudged=0, rate=0.25)
+            ).model_dump(mode="json"),
+        }
+    )
+    return make_case("c", DivergenceStatus.OBSERVED_FAILURE, findings=[finding])
+
+
+def _rate_case() -> Any:
+    """A case whose one finding rests on a decided paired test (30 world-only discordant pairs)."""
+    from isitright.core.evidence import DivergenceStatus, EvidenceGrade, Finding
+    from isitright.core.oracles import Outcome
+    from isitright.core.sequential import PairedSprt, SprtConfig
+    from isitright.core.stochastic import (
+        RunOutcome,
+        observation_of,
+        stability_sequential,
+    )
+
+    from .factories import make_case
+
+    bad, ok = RunOutcome(Outcome.NOT_MET), RunOutcome(Outcome.MET)
+    test = PairedSprt(SprtConfig(min_pairs=4, max_pairs=20))
+    for _ in range(12):
+        test.add(False, True)
+    assert test.decision.value == "RATE_INCREASE"
+    stability = stability_sequential([ok] * 7, [bad] * 7, 4, test)
+    base = make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND).findings[0]
+    finding = Finding.model_validate(
+        {
+            **base.model_dump(mode="json"),
+            "evidence_grade": EvidenceGrade.RATE_INCREASE.value,
+            "stability": stability.model_dump(mode="json"),
+            "observation": observation_of([bad] * 7, [ok] * 7).model_dump(mode="json"),
+        }
+    )
+    return make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND, findings=[finding])
+
+
+def _tamper(case: Any, **changes: Any) -> dict[str, Any]:
+    data = case.model_dump(mode="json")
+    finding_changes = changes.pop("finding", {})
+    data.update(changes)
+    data["findings"] = [{**data["findings"][0], **finding_changes}]
+    return data  # type: ignore[no-any-return]
+
+
+def test_the_two_honest_cases_validate_and_round_trip() -> None:
+    from isitright.core.evidence import CaseReport
+
+    for case in (_observed_case(), _rate_case()):
+        assert CaseReport.model_validate(case.model_dump(mode="json")) == case
+
+
+def test_an_observation_cannot_be_serialized_as_a_counterexample_or_as_nothing() -> None:
     from pydantic import ValidationError
 
+    from isitright.core.evidence import CaseReport
+
+    case = _observed_case()
+    for wrong in ("COUNTEREXAMPLE_FOUND", "NOT_FOUND_WITHIN_BUDGET", "INCONCLUSIVE"):
+        with pytest.raises(ValidationError, match="status"):
+            CaseReport.model_validate(_tamper(case, divergence_status=wrong))
+    with pytest.raises(ValidationError, match="status"):  # a counterexample cannot be OBSERVED
+        CaseReport.model_validate(_tamper(_rate_case(), divergence_status="OBSERVED_FAILURE"))
+
+
+def test_a_higher_grade_and_status_cannot_be_claimed_over_unchanged_evidence() -> None:
+    """Tamper the grade and the case status together; the sequential evidence still says no."""
+    from pydantic import ValidationError
+
+    from isitright.core.evidence import CaseReport
+
+    tampered = _tamper(
+        _observed_case(),
+        divergence_status="COUNTEREXAMPLE_FOUND",
+        finding={"evidence_grade": "RATE_INCREASE"},
+    )
+    with pytest.raises(ValidationError, match="sequential decision of RATE_INCREASE"):
+        CaseReport.model_validate(tampered)
+
+
+def test_a_rate_increase_needs_its_decision_its_claim_and_their_agreement() -> None:
+    from pydantic import ValidationError
+
+    from isitright.core.evidence import CaseReport
+
+    case = _rate_case()
+    data = case.model_dump(mode="json")
+    stability = data["findings"][0]["stability"]
+    undecided = {**stability, "sequential": {**stability["sequential"], "decision": "UNDECIDED"}}
+    with pytest.raises(ValidationError, match="sequential decision of RATE_INCREASE"):
+        CaseReport.model_validate(_tamper(case, finding={"stability": undecided}))
+    with pytest.raises(ValidationError, match="sequential decision of RATE_INCREASE"):
+        CaseReport.model_validate(
+            _tamper(case, finding={"stability": {**stability, "sequential": None}})
+        )
+    with pytest.raises(ValidationError, match="needs the rate claim"):
+        CaseReport.model_validate(
+            _tamper(case, finding={"stability": {**stability, "rate_claim": None}})
+        )
+    claim = {**stability["rate_claim"], "paired_runs": stability["rate_claim"]["paired_runs"] + 1}
+    with pytest.raises(ValidationError, match="disagree"):
+        CaseReport.model_validate(
+            _tamper(case, finding={"stability": {**stability, "rate_claim": claim}})
+        )
+
+
+def test_an_observed_failure_cannot_carry_a_decision_a_claim_or_no_failure() -> None:
+    from pydantic import ValidationError
+
+    from isitright.core.evidence import CaseReport
+
+    # a decided test with the observed grade (and a status that follows the grade)
+    decided = _tamper(
+        _rate_case(),
+        divergence_status="OBSERVED_FAILURE",
+        finding={"evidence_grade": "OBSERVED_FAILURE"},
+    )
+    with pytest.raises(ValidationError, match="cannot carry a decided rate increase"):
+        CaseReport.model_validate(decided)
+    case = _observed_case()
+    data = case.model_dump(mode="json")
+    zero = {
+        **data["findings"][0]["observation"],
+        "world": {**data["findings"][0]["observation"]["world"], "failures": 0},
+    }
+    with pytest.raises(ValidationError, match="at least one judged failure"):
+        CaseReport.model_validate(_tamper(case, finding={"observation": zero}))
+    with pytest.raises(ValidationError, match="at least one judged failure"):
+        CaseReport.model_validate(_tamper(case, finding={"observation": None}))
+
+
+def test_ungraded_findings_need_no_sequential_evidence() -> None:
     from isitright.core.evidence import CaseReport, DivergenceStatus
 
     from .factories import make_case
 
-    strong = make_case("c", DivergenceStatus.COUNTEREXAMPLE_FOUND).model_dump(mode="json")
-    assert CaseReport.model_validate(strong)  # a finding with no grade is not an observation
-    observed = {
-        **strong,
-        "findings": [{**strong["findings"][0], "evidence_grade": "OBSERVED_FAILURE"}],
-    }
-    with pytest.raises(ValidationError, match="status"):
-        CaseReport.model_validate(observed)  # an observation is not a counterexample
-    assert CaseReport.model_validate({**observed, "divergence_status": "OBSERVED_FAILURE"})
-    with pytest.raises(ValidationError, match="status"):
-        CaseReport.model_validate({**strong, "divergence_status": "OBSERVED_FAILURE"})
-    with pytest.raises(ValidationError, match="status"):
-        CaseReport.model_validate(
-            {**strong, "divergence_status": "OBSERVED_FAILURE", "findings": []}
-        )
+    sql = make_case("legacy", DivergenceStatus.COUNTEREXAMPLE_FOUND)
+    assert sql.findings[0].evidence_grade is None and sql.findings[0].stability is None
+    assert CaseReport.model_validate(sql.model_dump(mode="json"))
+
+
+def test_a_tampered_real_report_is_refused(
+    one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same, on a report an audit wrote."""
+    from pydantic import ValidationError
+
+    from isitright.core.evidence import AuditReport
+
+    _observed_only_report(tmp_path, one_world, monkeypatch)
+    data = json.loads((tmp_path / "out0" / "report.json").read_text(encoding="utf-8"))
+    assert AuditReport.model_validate(data)
+    case = data["cases"][0]
+    case["divergence_status"] = "COUNTEREXAMPLE_FOUND"
+    case["findings"][0]["evidence_grade"] = "RATE_INCREASE"
+    with pytest.raises(ValidationError, match="sequential decision of RATE_INCREASE"):
+        AuditReport.model_validate(data)
+
+
+def test_cases_rank_domain_structural_other_counterexample_observed_inconclusive_nothing() -> None:
+    from isitright.core.evidence import DivergenceStatus, rank_cases
+
+    from .factories import make_case
+
+    def named(case: Any, case_id: str) -> Any:
+        return case.model_copy(update={"case_id": case_id})
+
+    cx = DivergenceStatus.COUNTEREXAMPLE_FOUND
+    cases = [
+        make_case("nothing-1", DivergenceStatus.NOT_FOUND_WITHIN_BUDGET, ()),
+        named(_observed_case(), "observed-1"),
+        make_case("inconclusive-1", DivergenceStatus.INCONCLUSIVE, ()),
+        make_case("unassessed-1", cx, ()),  # a counterexample with NOT_ASSESSED validity
+        make_case("structural-1", cx, ("STRUCTURAL",)),
+        make_case("domain-1", cx, ("STRUCTURAL", "DOMAIN_VALIDATED")),
+        named(_observed_case(), "observed-2"),
+        make_case("unsupported-1", DivergenceStatus.UNSUPPORTED, ()),
+        named(_rate_case(), "rate-unassessed-2"),  # a decided rate increase, tier STRUCTURAL
+        make_case("unassessed-2", cx, ()),
+        make_case("domain-2", cx, ("STRUCTURAL", "DOMAIN_VALIDATED")),
+        make_case("nothing-2", DivergenceStatus.NOT_FOUND_WITHIN_BUDGET, ()),
+        make_case("structural-2", cx, ("STRUCTURAL",)),
+        make_case("inconclusive-2", DivergenceStatus.INCONCLUSIVE, ()),
+    ]
+    assert cases[3].validity.status == "NOT_ASSESSED"
+    ranked = [c.case_id for c in rank_cases(cases)]
+    assert ranked == [
+        "domain-1", "domain-2",  # 1. domain-validated counterexamples
+        "structural-1", "rate-unassessed-2", "structural-2",  # 2. structural (a stable order)
+        "unassessed-1", "unassessed-2",  # 3. other counterexamples, no tier assessed
+        "observed-1", "observed-2",  # 4. observed failures
+        "inconclusive-1", "unsupported-1", "inconclusive-2",  # 5. inconclusive and unsupported
+        "nothing-1", "nothing-2",  # 6. nothing found
+    ]  # fmt: skip
+    assert _rate_case().validity.tiers == ["STRUCTURAL"]
+
+
+def test_a_finding_shown_on_a_minimized_world_says_where_its_grade_was_decided() -> None:
+    """Research grades the world the search ran; the finding may show its minimization (N5)."""
+    from isitright.core.evidence import describe_graded_findings
+
+    case = _observed_case()
+    finding = case.findings[0]
+    same = case.model_copy(
+        update={
+            "findings": [
+                finding.model_copy(update={"divergence": {"graded_on_world": finding.world_id}})
+            ]
+        }
+    )
+    assert "describe the world the search ran" not in "\n".join(describe_graded_findings(same))
+    moved = case.model_copy(
+        update={
+            "findings": [
+                finding.model_copy(update={"divergence": {"graded_on_world": "searched-world"}})
+            ]
+        }
+    )
+    text = "\n".join(describe_graded_findings(moved))
+    assert "describe the world the search ran (searched-world)" in text
+    assert "was not itself tested by the paired test" in text and "until N5" in text
+
+
+def test_research_records_the_world_its_grade_was_decided_on() -> None:
+    _, case = _research(frozenset({2}))
+    for finding in case.findings:
+        assert finding.divergence["graded_on_world"]
+
+
+# -- the opt-in CI default (owner decision: `--fail-on` stays `none`) ----------------------------
+
+
+def test_the_default_gate_is_none_on_every_live_command() -> None:
+    import inspect
+
+    from isitright.cli import AgentsFailOn, agents_run_command
+    from isitright.core.evidence import LiveFailOn
+    from isitright.packs.data.cli import audit_command as data_audit
+    from isitright.packs.research.cli import check_command as research_check
+
+    assert inspect.signature(agents_run_command).parameters["fail_on"].default is AgentsFailOn.NONE
+    assert inspect.signature(research_check).parameters["fail_on"].default is LiveFailOn.NONE
+    assert inspect.signature(data_audit).parameters["fail_on"].default is LiveFailOn.NONE
+
+
+def test_omitting_fail_on_never_fails_the_build_even_on_a_decided_rate_increase(
+    one_world: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from isitright.cli import app
+
+    def invoke(decide: Decide, name: str, *policy: str) -> Any:
+        _scripted_agent(monkeypatch, one_world, decide)
+        return CliRunner().invoke(
+            app,
+            [
+                "agents", "run", "--scenario", SHOP_REF, "--agent-command", "fake", "--trust-code",
+                "--world", one_world["worlds"][0], "--attempts", "2000",
+                "--output-dir", str(tmp_path / name), *policy,
+            ],
+        )  # fmt: skip
+
+    observed = invoke(_fails_once(), "o")
+    assert observed.exit_code == 0 and "Status: OBSERVED_FAILURE" in observed.output
+    decided = invoke(_always_bad_in_worlds, "d")
+    assert decided.exit_code == 0 and "Status: COUNTEREXAMPLE_FOUND" in decided.output
+    # The recommended opt-in gate trips only on the decided one; the stricter one on both.
+    assert invoke(_fails_once(), "o2", "--fail-on", "rate-increase").exit_code == 0
+    assert invoke(_always_bad_in_worlds, "d2", "--fail-on", "rate-increase").exit_code == 3
+    assert invoke(_fails_once(), "o3", "--fail-on", "observed-failure").exit_code == 3
+
+
+def test_omitting_fail_on_never_fails_the_build_for_research(tmp_path: Path) -> None:
+    from .test_research_cli import base_args, invoke
+
+    found = invoke(*base_args(tmp_path / "a"), "--stand-in", "credulous", "--depth", "1")
+    assert found.exit_code == 0, found.output
+    assert "Counterexample found" in found.output
+    gated = invoke(
+        *base_args(tmp_path / "b"), "--stand-in", "credulous", "--depth", "1",
+        "--fail-on", "rate-increase",
+    )  # fmt: skip
+    assert gated.exit_code == 3  # a deterministic subject's finding is a counterexample

@@ -35,7 +35,7 @@ review 1, finding C1).
 | E1 | Warehouse `VERIFIED` can refer to the unminimized world | High | `packs/sql/audit.py` | R3 H3 | open (N5) |
 | E2 | The SQL minimizer accepts any disagreement and keeps the first label | Medium | `packs/sql/audit.py` | R1 H5, R2 M6 | open (N5) |
 | E3 | MCP joins a minimized path to the original world's evidence | High | `packs/mcp/audit.py` | R1 H2 | open (N5) |
-| E4 | Research minimization repeats one seed and keeps findings that do not reproduce | High | `packs/research/audit.py` | R1 H2, R2 H4 | partly fixed in N1 (the seed: every call has its own); the kept non-reproducing finding stays open (N5) |
+| E4 | Research minimization repeats one seed and keeps findings that do not reproduce | High | `packs/research/audit.py` | R1 H2, R2 H4 | partly fixed in N1 (the seed: every call has its own); the kept non-reproducing finding stays open (N5). **0.9.0 release blocker, not closed by N2** (see "0.9.0 release blockers") |
 | E5 | Research baseline, minimization and confirmation run outside the budget | High | `packs/research/audit.py` | R1 H3, R2 H4, R3 H1 | fixed in 0.8.1 (H3, `d98598b`); N1 moves the check into the run loop |
 | E6 | MCP minimization never checks the money or time budget | Medium | `packs/mcp/audit.py` | R1 H3 | fixed in 0.8.1 (H3, `d98598b`); N1 moves the check into the run loop |
 | E7 | Live-data reports name replay files that are never written | High | `packs/data/live.py`, `packs/data/cli.py` | R1 H4 | open (N6) |
@@ -95,3 +95,9 @@ Branch `feature/0.9.0-n2-finding-grades`; the commits are those on the branch be
 | T6 | Rates print with 95% Wilson intervals (`observation`); the report states the worlds tested, that per-world decisions are uncorrected, and the claims expected by chance (`multiplicity`) | `::test_the_wilson_interval_matches_known_values`, `::test_the_report_says_how_many_worlds_were_tested_and_that_decisions_are_uncorrected` (new fields: they could not pass on `b778978`) | `fb9f724` and earlier |
 | T7 | Data live stops on a baseline run that did not meet the expectation, unless `--allow-failing-baseline` | `::test_data_a_baseline_that_does_not_meet_the_expectation_stops_the_audit` (on `b778978`: the audit went on) | `fb9f724` and earlier |
 | T8 | No judged run on any mutated world is `INCONCLUSIVE` (agents, data live, research live); baseline runs do not count | `::test_an_agent_that_errors_on_every_mutated_world_gives_inconclusive` (on `b778978`: `NOT_FOUND_WITHIN_BUDGET`), `::test_data_an_agent_that_errors_on_every_mutated_world_gives_inconclusive`, `::test_research_an_agent_that_errors_in_every_world_is_inconclusive` | `fb9f724` and earlier |
+
+## 0.9.0 release blockers
+
+| ID | Blocker | Owner of the fix | State |
+| --- | --- | --- | --- |
+| E4 / E3 (research) | A research finding's statistical decision (grade, counts, sequential record) is computed on the original tested world, while the reported finding shows the minimized world. N5 must attach a rate-increase claim to the world the paired evidence supports, and keep minimization from silently transferring significance to a different world. | N5 | open. N2 only states the limit: the report says the grade and counts describe the searched world (`divergence.graded_on_world`), and the shown world "was not itself tested by the paired test". Not marked resolved. |

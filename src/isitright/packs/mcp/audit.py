@@ -848,14 +848,27 @@ def build_report(
     )
     tiers_sets = [set(r.world.validity.tiers) for r in results if r.world.runnable]
     common = set.intersection(*tiers_sets) if tiers_sets else set()
-    validity = (
-        ValidityRecord(
+    unassessed = [
+        r.world.id
+        for r in results
+        if r.world.runnable and r.world.validity.status == "NOT_ASSESSED"
+    ]
+    if not tiers_sets:
+        validity = ValidityRecord(status="INVALID")
+    elif unassessed:
+        validity = ValidityRecord(
+            status="NOT_ASSESSED",
+            notes=[
+                f"{len(unassessed)} world(s) ran with no validator ({', '.join(unassessed[:5])}"
+                f"{', ...' if len(unassessed) > 5 else ''}): no validity tier is claimed for the "
+                "case; each world's own validity is in `worlds` and `findings`"
+            ],
+        )
+    else:
+        validity = ValidityRecord(
             status="VALID",
             tiers=[t for t in ("STRUCTURAL", "DOMAIN_VALIDATED") if t in common],
         )
-        if tiers_sets
-        else ValidityRecord(status="INVALID")
-    )
     runs = [run for r in results for run in r.runs] + context.extra_runs
     subjects = {
         json.dumps(run.get("subject"), sort_keys=True) for run in runs if run.get("subject")
@@ -1353,12 +1366,8 @@ def export_eval_cases(
                     "fixed_id": run.get("fixed_id"),
                     "task": case.task,
                     "world": world,
-                    "trace": [
-                        json.loads(line)
-                        for line in (run_dir / "trace.jsonl")
-                        .read_text(encoding="utf-8")
-                        .splitlines()
-                    ],
+                    # a run that called no tool left no trace file: an empty trace, as when it ran
+                    "trace": list(read_trace(run_dir / "trace.jsonl")),
                 },
                 expectation={
                     "disagreement": {

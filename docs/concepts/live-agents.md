@@ -22,14 +22,14 @@ in status, export and CI:
 | `evidence_grade` | Case status | Exported by default | Trips CI under |
 |---|---|---|---|
 | `RATE_INCREASE`: a paired sequential test decided the world fails more often than the baseline | `COUNTEREXAMPLE_FOUND` | yes | `any-finding`, `rate-increase`, `observed-failure` |
-| `OBSERVED_FAILURE`: a judged run failed on a valid mutated world; no test decided a higher rate | `OBSERVED_FAILURE` (when no finding has the other grade) | no, on request (`--include-observed`) | `observed-failure` only |
+| `OBSERVED_FAILURE`: a judged run failed on a mutated world that ran and was not found invalid; no test decided a higher rate | `OBSERVED_FAILURE` (when no finding has the other grade) | no, on request (`--include-observed`) | `observed-failure` only |
 
 An observed failure is never hidden. It is in the headline, in an "Observed failures" section of
 `report.md` and in the console summary, with failures out of judged runs (errored and unjudged runs
 beside them, not in the denominator), a 95% Wilson interval, and a replay path. A rate printed with
 an interval is descriptive: the interval does not allow for the number of worlds tested. The report
 states that number, that the per-world decisions are not corrected for it, and how many rate-increase
-claims it expects by chance if no mutation had any effect. A case in which no mutated world produced a
+a nominal upper bound on the false rate-increase claims it expects if no mutation had any effect (worlds tested x 0.05; not a measured rate). A case in which no mutated world produced a
 judged run is `INCONCLUSIVE`; the baseline runs do not count.
 
 ## Baseline first
@@ -121,7 +121,7 @@ one included.
   that size only), `UNDECIDED`, and `NO_DISCORDANCE` (after `--trials` pairs, nothing went against the
   world: counts only, no claim).
 - There is no correction across worlds. A rate claim is per world; the report's `multiplicity`
-  record says how many worlds were tested and how many claims chance alone would give. The
+  record says how many worlds were tested and gives the nominal upper bound (worlds tested x 0.05) on the false rate-increase claims expected under no effect; the decisions are not corrected across worlds and the audit has no family-wise guarantee. The
   case-level `stability` is counts only.
 
 `--no-sequential` runs `--trials` per world with counts only. There are no pairs, so no finding can

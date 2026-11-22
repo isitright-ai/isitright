@@ -151,14 +151,14 @@ result. See [Data analysis agents](../data.md#long-audits-resume-and-the-run-cac
 `--agent module:callable --output DIR --trust-code [--programs FILE] [--pass-env NAME ...]
 [--baseline-runs N] [--max-trials N] [--max-worlds N] [--ranking diverse|screening|coverage|random]
 [--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]
-[--allow-failing-baseline]`. Live
+[--allow-failing-baseline] [--fail-on none|rate-increase|observed-failure]`. Live
 audit: the agent is run on ranked worlds, each run paired with a fresh baseline run (`--max-trials`
 pairs per world, default 20), in a separate process that sees only the variables named by
-`--pass-env`. A world is first run `--baseline-runs` times and goes on to the pairs only if one of those runs failed. The audit stops with a message (exit code 2) unless every baseline run met the expectation; `--allow-failing-baseline` audits anyway.
+`--pass-env`. A world is first run `--baseline-runs` times and goes on to the pairs only if one of those runs failed. The audit stops with a message (exit code 2) unless every baseline run met the expectation; `--allow-failing-baseline` audits anyway. `--fail-on` is `none` by default; `rate-increase` exits 3 on a decided rate increase, `observed-failure` also on an observation. Each live finding gets a replay artifact (`findings/<id>/replay.json`) and the dataset beside it.
 
 ## `isitright data replay REPORT`
 
-`--trust-code [--finding N]`. Rerun a finding from its concrete minimized world.
+`--trust-code [--finding N]`. Rerun a finding from its concrete minimized world. For a finding of a live audit the artifact is a recorded observation: the replay checks the reference answer on the recorded world, the recorded comparison of each agent answer with it, and runs any code the agent returned on the world. It says so and does not run the agent again.
 
 ## `isitright data export REPORT --output DIR [--include-observed]`
 

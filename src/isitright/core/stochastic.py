@@ -51,8 +51,9 @@ class EvidenceGrade(StrEnum):
     RATE_INCREASE = "RATE_INCREASE"
     """A paired sequential test decided that the world fails more often than the baseline."""
     OBSERVED_FAILURE = "OBSERVED_FAILURE"
-    """A judged run on a valid world failed. Actionable and replayable; it says nothing about a
-    higher failure rate, because no test decided one."""
+    """A judged run failed on a world that ran and was not found invalid. Actionable and
+    replayable; it says nothing about a higher failure rate, because no test decided one, and it
+    does not say the world was validated (see the world's own validity)."""
 
 
 WILSON_Z = 1.959964
@@ -131,8 +132,9 @@ class Multiplicity(BaseModel):
     alpha: float
     decisions_corrected: bool = False
     expected_rate_increase_claims_under_no_effect: float
-    """At most ``worlds_tested * alpha``: the nominal level of each per-world sequential test. The
-    test's actual error rate is lower (about 1% in the simulations of the test suite)."""
+    """``worlds_tested * alpha``: a nominal upper bound on the expected number of false
+    rate-increase claims if no mutation had any effect. It is not a measured rate and not a
+    family-wise guarantee: each world's test is not corrected for the number of worlds."""
     expected_worlds_with_observed_failure_under_no_effect: float | None = None
     """If every world fails at the baseline's observed rate: the expected number of worlds in which
     at least one judged run fails. None when no baseline run was judged."""
@@ -164,10 +166,12 @@ def multiplicity_of(
         expected_rate_increase_claims_under_no_effect=round(n * alpha, 3),
         expected_worlds_with_observed_failure_under_no_effect=expected_observed,
         note=(
-            f"{n} worlds were tested. The per-world decisions are not corrected for the number of "
-            f"worlds: if no mutation had any effect, up to {n * alpha:.2f} rate-increase claims "
-            "would be expected by chance at the nominal level, and observed failures would appear "
-            "in some worlds wherever the agent fails at random. Intervals are descriptive."
+            f"{n} worlds were tested. Each world's paired test is not corrected for the number of "
+            "worlds, and the audit as a whole has no family-wise error guarantee. If no mutation "
+            f"had any effect, the expected number of false rate-increase claims is at most "
+            f"{n * alpha:.2f} (worlds tested x the nominal level {alpha}: a nominal upper bound, "
+            "not a measured rate), and observed failures would still appear in some worlds "
+            "wherever the agent fails at random. Intervals are descriptive."
         ),
     )
 

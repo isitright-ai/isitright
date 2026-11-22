@@ -102,3 +102,55 @@ class PricedAgent(CsvAgent):
 def priced_agent(usd_per_million_tokens: list[float] | None = None) -> PricedAgent:
     prices = usd_per_million_tokens or [3.0, 0.0]
     return PricedAgent((prices[0], prices[1]))
+
+
+class ForgotDropnaAgent:
+    """Writes the program with the classic mistake (missing amounts count as zero), runs it the way
+    a code tool would, and answers with its output. Right on the original data, wrong where a
+    north amount is blank."""
+
+    name = "forgot-dropna"
+    model = "none"
+
+    def solve(self, question: str, directory: Path) -> AgentRun:
+        import contextlib
+        import io
+        import os
+
+        from tests.data_factories import DROPNA_FORGOTTEN
+
+        buffer, here = io.StringIO(), os.getcwd()
+        os.chdir(directory)
+        try:
+            with contextlib.redirect_stdout(buffer):
+                exec(DROPNA_FORGOTTEN, {})
+        finally:
+            os.chdir(here)
+        return AgentRun(
+            code=DROPNA_FORGOTTEN, answer=buffer.getvalue().strip(), input_tokens=5, output_tokens=5
+        )
+
+
+def forgot_dropna() -> ForgotDropnaAgent:
+    return ForgotDropnaAgent()
+
+
+class AnswerOnlyBlankIsZeroAgent:
+    """Returns an answer and no code, counting a blank amount as zero."""
+
+    name = "answer-only-blank-is-zero"
+    model = "none"
+
+    def solve(self, question: str, directory: Path) -> AgentRun:
+        import csv
+
+        with (directory / "orders.csv").open(encoding="utf-8", newline="") as handle:
+            values = [
+                float(r["amount"] or 0) for r in csv.DictReader(handle) if r["region"] == "north"
+            ]
+        mean = sum(values) / len(values) if values else float("nan")
+        return AgentRun(code="", answer=f"@north_mean[{mean:.2f}]", input_tokens=5, output_tokens=5)
+
+
+def answer_only() -> AnswerOnlyBlankIsZeroAgent:
+    return AnswerOnlyBlankIsZeroAgent()

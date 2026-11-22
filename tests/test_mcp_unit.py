@@ -499,7 +499,9 @@ def test_a_control_that_is_never_reached_does_not_discriminate(booking: McpScena
     )
     assert case.controls is not None and case.controls.status == "NOT_DISCRIMINATING"
     assert case.divergence_status is DivergenceStatus.OBSERVED_FAILURE  # no paired test was run
-    assert "Expected behavior not reached" in case.headline
+    assert case.headline.startswith(
+        "Observed disagreement, no paired test decided a higher rate: Expected behavior not reached"
+    )
 
 
 def test_no_completed_run_is_inconclusive_and_no_valid_world_is_unsupported(

@@ -717,6 +717,7 @@ class ResearchAudit:
                 "scope": "this subject on this world",
                 "subject": subject.label.model_dump(mode="json"),
                 "reproduces_on_shown_world": reproduces,
+                "graded_on_world": original.world.fingerprint(),
                 "question": self.task.question,
                 "baseline_report": baseline.report.model_dump(mode="json"),
                 "world_report": run.report.model_dump(mode="json"),

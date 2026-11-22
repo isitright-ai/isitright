@@ -68,6 +68,8 @@ def write_report(
     number = 0
     for case in report.cases:
         for finding in case.findings:
+            if finding.finding_id not in artifacts:
+                continue  # no artifact was written: name none and no command to run it
             number += 1
             finding.replay.artifact = f"{finding_dir(finding)}/replay.json"
             finding.replay.command = (
@@ -101,14 +103,31 @@ def markdown(report: AuditReport) -> str:
     for case in report.cases:
         lines += ["", f"## {case.case_id}", "", case.headline]
         for finding in case.findings:
-            lines += [
-                "",
-                f"- {finding.headline}. Difference: {finding.divergence.get('difference')}.",
-                f"  Gold answer: {finding.divergence.get('gold_answer')!r}; "
-                f"program answer: {finding.divergence.get('program_answer')!r}.",
-                f"  Replay: `{finding.replay.command}` (replace the part in angle brackets with "
-                "the location of the report file).",
-            ]
+            if finding.mode == "live_agent":
+                answers = [r["answer"] for r in finding.divergence.get("agent_runs", [])]
+                lines += [
+                    "",
+                    f"- {finding.headline}.",
+                    f"  Gold answer: {finding.divergence.get('gold_answer')!r}; "
+                    f"agent answers: {answers!r}.",
+                ]
+            else:
+                lines += [
+                    "",
+                    f"- {finding.headline}. Difference: {finding.divergence.get('difference')}.",
+                    f"  Gold answer: {finding.divergence.get('gold_answer')!r}; "
+                    f"program answer: {finding.divergence.get('program_answer')!r}.",
+                ]
+            if finding.replay.command:
+                lines.append(
+                    f"  Replay: `{finding.replay.command}` (replace the part in angle brackets "
+                    "with the location of the report file)."
+                    + (
+                        " It replays the recorded observation; the agent is not rerun."
+                        if finding.mode == "live_agent"
+                        else ""
+                    )
+                )
         lines += describe_graded_findings(case)
         for error in case.errors:
             lines.append(f"- {error['code']}: {error['message']}")
@@ -125,6 +144,8 @@ def replay_artifact(
     world = World.from_json(artifact.world)
     host = DataHost(schema, trust_code=trust_code, timeout_seconds=timeout_seconds)
     comparator = DataComparator(_policy(artifact.inputs.get("policy", {}), artifact))
+    if artifact.host.get("mode") == "live":
+        return _replay_live(artifact, world, host, comparator)
 
     def rerun(_: ReplayArtifact) -> dict[str, Any]:
         gold = host.run(artifact.inputs["gold_code"], world.state)
@@ -144,6 +165,54 @@ def replay_artifact(
         }
 
     return replay(artifact, rerun)
+
+
+LIVE_REPLAY_NOTE = (
+    "This replays a recorded observation. The agent was not rerun: its answers are the recorded "
+    "ones. Checked: the reference answer on the recorded world, the recorded comparison of each "
+    "answer with it, and (for a run that returned code) what that code gives on the world."
+)
+
+
+def _replay_live(
+    artifact: ReplayArtifact, world: World, host: DataHost, comparator: DataComparator
+) -> ReplayResult:
+    """Verify the recorded evidence of a live finding. No agent runs."""
+    runs = artifact.inputs.get("runs", [])
+
+    def rerun(_: ReplayArtifact) -> dict[str, Any]:
+        gold = host.run(artifact.inputs["gold_code"], world.state)
+        gold_answer = gold.answer()[0] if gold.status == "ok" else None
+        outcomes: list[str | None] = []
+        code_answers: list[Any] = []
+        for record in runs:
+            if record["outcome"] == "ERROR" or gold.status != "ok":
+                outcomes.append(record["outcome"])
+            else:
+                compared = comparator.compare(gold_answer, record["answer"])
+                outcomes.append(
+                    "CANNOT_JUDGE"
+                    if compared.inconclusive
+                    else ("MET" if compared.matches else "NOT_MET")
+                )
+            if record.get("code") is None:
+                code_answers.append(None)
+            else:
+                ran = host.run(record["code"], world.state)
+                code_answers.append(_json_safe(ran.answer()[0]) if ran.status == "ok" else None)
+        return {
+            "gold_answer": _json_safe(gold_answer),
+            "recorded_outcomes": outcomes,
+            "code_answers": code_answers,
+        }
+
+    result = replay(artifact, rerun)
+    result.details.insert(0, LIVE_REPLAY_NOTE)
+    return result
+
+
+def _json_safe(value: Any) -> Any:
+    return json.loads(json.dumps(value, default=str))
 
 
 def _policy(described: dict[str, Any], artifact: ReplayArtifact) -> AnswerPolicy:
@@ -181,12 +250,26 @@ def export_eval_cases(
             (target / "gold.py").write_text(
                 str(finding.divergence.get("gold_program", "")), encoding="utf-8"
             )
-            expectation = {
+            live = finding.mode == "live_agent"
+            expectation: dict[str, Any] = {
                 "expected_answer": finding.divergence.get("gold_answer"),
                 "comparison_policy": case.comparison_policy,
                 "observed_program_answer": finding.divergence.get("program_answer"),
                 "scope": "the finding's program on this dataset; not a statement about an agent",
             }
+            if live:
+                expectation.pop("observed_program_answer")
+                expectation["scope"] = (
+                    "the agent's own recorded runs on this dataset; the agent is not rerun by "
+                    "this case"
+                )
+                expectation["evidence_grade"] = (
+                    finding.evidence_grade.value if finding.evidence_grade else None
+                )
+                expectation["recorded_observation"] = {
+                    "agent": (finding.divergence.get("agent") or {}),
+                    "runs": finding.divergence.get("agent_runs", []),
+                }
             (target / "question.txt").write_text(case.task or "", encoding="utf-8")
             (target / "expected.json").write_text(
                 json.dumps(expectation, indent=2, sort_keys=True, default=str) + "\n",

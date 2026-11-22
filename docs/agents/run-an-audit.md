@@ -51,7 +51,7 @@ with the run count and elapsed time.
 | [`NOT_FOUND_WITHIN_BUDGET`](../concepts/evidence.md#divergence_status), `Controls: DISCRIMINATING` | No finding in the worlds run, and the agent acted where acting was right | Check how many worlds ran versus `NOT_RUN`. Raise the budget if the run stopped early |
 | `NOT_FOUND_WITHIN_BUDGET`, `Controls: NOT_DISCRIMINATING` | No violations, but the agent never acted in a control world | The agent may refuse everything. This is not a clean result |
 | `COUNTEREXAMPLE_FOUND` | A paired sequential test decided that a world fails more often than the baseline (grade `RATE_INCREASE`) | Open the finding; run `agents replay`; review before blaming the agent |
-| `OBSERVED_FAILURE` | A judged run failed on a valid mutated world, and no paired test decided a higher failure rate (grade `OBSERVED_FAILURE`) | Open the finding and replay it. It is evidence to inspect, not a claim about the failure rate. With `--no-sequential` every finding is of this kind |
+| `OBSERVED_FAILURE` | A judged run failed on a mutated world that ran and was not found invalid, and no paired test decided a higher failure rate (grade `OBSERVED_FAILURE`). How far the world was validated is stated for each world: a fixed world with no validator is `NOT_ASSESSED` | Open the finding and replay it. It is evidence to inspect, not a claim about the failure rate. With `--no-sequential` every finding is of this kind |
 | `INCONCLUSIVE` | Nothing usable. "The agent command produced no completed run", or "no mutated world produced a judged run" (every run of every mutated world errored or could not be judged; baseline runs do not count) | Read `agent.log` in a run directory |
 
 The report's `worlds` list shows every world run and the best-ranked worlds not run. A stopped
@@ -59,13 +59,15 @@ stratum reads "no finding in n of m worlds". Neither is evidence of correctness.
 
 ## What is in a finding
 
+A fixed world with no validator runs and is graded, and its `validity` stays `NOT_ASSESSED` (no tier is claimed, in the world's entry, the finding, the case and `report.md`); a world whose validator reports problems is `INVALID` and is not run. Read a grade on a `NOT_ASSESSED` world as conditional on that world as run.
+
 For each finding: its evidence grade, the world and its role, which invariants or expectations failed, the [oracle](../concepts/oracles-and-roles.md)'s
 outcome, [validity tiers](../concepts/validity-and-fidelity.md#validity-tiers), the world diff, the mutation path with the hints that led to it, run
 counts against the baseline and the sequential test's record. `example_run_dir` points at a run
 directory with the full trace. `observation` holds failures out of judged runs on the world, with errored and
 unjudged runs beside them and a 95% Wilson interval (descriptive: it ignores the number of worlds), and the same
 for the baseline runs made for the world's pairs. The report also says how many worlds were tested, that the
-per-world decisions are not corrected for that number, and the number of rate-increase claims expected by chance
+per-world decisions are not corrected for that number (there is no family-wise guarantee), and a nominal upper bound on the number of false rate-increase claims expected
 if no mutation had any effect (at most worlds tested times 0.05; the test's real rate is lower). The console summary,
 `report.md` (headline and an "Observed failures" section, shown whatever the paired test said) and `report.json`
 carry the same. See [Evidence](../concepts/evidence.md) and the

@@ -41,6 +41,7 @@ from isitright.core.families import default_mutators
 from isitright.core.hints import Hints
 from isitright.core.mutations import Candidate, World
 from isitright.core.oracles import Outcome, Role
+from isitright.core.replay import ReplayArtifact
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
 from isitright.core.selection import (
     Ranking,
@@ -414,6 +415,81 @@ def _counts(outcomes: list[RunOutcome]) -> dict[str, int]:
     }
 
 
+def _json_safe(value: Any) -> Any:
+    """The value as JSON holds it (numpy numbers and the like become their text)."""
+    import json
+
+    return json.loads(json.dumps(value, default=str))
+
+
+def _outcome_name(outcome: RunOutcome) -> str:
+    if outcome.error:
+        return "ERROR"
+    return outcome.outcome.value if outcome.outcome is not None else "ERROR"
+
+
+def run_records(target: WorldRuns) -> list[dict[str, Any]]:
+    """What the agent did on the world, run by run: the answer, the code if it returned any, and
+    how the answer compared with the reference."""
+    records = []
+    for number, (run, outcome) in enumerate(zip(target.runs, target.outcomes, strict=True), 1):
+        records.append(
+            {
+                "run": number,
+                "outcome": _outcome_name(outcome),
+                "answer": _json_safe(run.answer),
+                "code": run.code or None,
+                "error": run.error,
+                "input_tokens": run.input_tokens,
+                "output_tokens": run.output_tokens,
+            }
+        )
+    return records
+
+
+def live_artifact(
+    audit: DataAudit,
+    agent: DataAgent,
+    finding_id: str,
+    target: WorldRuns,
+    frozen_finding_id: str | None = None,
+) -> ReplayArtifact:
+    """The recorded observation of a live finding: the world, the reference, the policy and the
+    agent's runs. Replaying it checks the reference and the recorded comparison (and executes the
+    code the agent returned, where it returned any). It does not run the agent again."""
+    records = run_records(target)
+    code_answers: list[Any] = []
+    for record in records:
+        if record["code"] is None:
+            code_answers.append(None)
+            continue
+        result = audit.host.run(record["code"], target.world.world.state)
+        code_answers.append(_json_safe(result.answer()[0]) if result.status == "ok" else None)
+    return ReplayArtifact(
+        pack="data",
+        case_id=finding_id,
+        world=target.world.world.to_json(),
+        host={"fidelity": "NATIVE_ISOLATED", "mode": "live"},
+        inputs={
+            "task_id": audit.task.id,
+            "question": audit.task.question,
+            "gold_code": audit.task.gold,
+            "files": {f.table: f.file for f in audit.task.files},
+            "schema": audit.prepared.spec.schema.model_dump(mode="json"),
+            "policy": audit.comparator.describe(),
+            "agent": {"name": agent.name, "model": agent.model},
+            "runs": records,
+            "frozen_finding": frozen_finding_id,
+            "agent_rerun": False,
+        },
+        expected={
+            "gold_answer": _json_safe(target.world.gold_answer),
+            "recorded_outcomes": [r["outcome"] for r in records],
+            "code_answers": code_answers,
+        },
+    )
+
+
 def _live_record(target: WorldRuns, base: WorldRuns) -> LiveRecord:
     base_codes = {r.code for r in base.runs}
     changed = sum(1 for r in target.runs if r.code and r.code not in base_codes)
@@ -488,9 +564,11 @@ def _report(
             if target.sprt is not None
             else None
         )
+        finding_id = f"{task.id}:live:{target.world.id}"
+        audit.artifacts[finding_id] = live_artifact(audit, agent, finding_id, target)
         findings.append(
             Finding(
-                finding_id=f"{task.id}:live:{target.world.id}",
+                finding_id=finding_id,
                 world_id=target.world.id,
                 validity=validity_record(target.world.validity),
                 oracles=[_oracle(NOT_MET)],
@@ -500,9 +578,14 @@ def _report(
                 world_diff=diff_states(p.base, target.world.world.state),
                 mutation_path=_path(target.world.world),
                 divergence={
-                    "scope": "the agent's own runs on this world",
+                    "scope": "the agent's own runs on this world, recorded; the agent is not "
+                    "rerun by replay or export",
+                    "agent": {"name": agent.name, "model": agent.model},
                     "agent_answers": [str(a)[:200] for a in target.answers],
+                    "agent_runs": run_records(target),
                     "gold_answer": target.world.gold_answer,
+                    "data_files": audit.data_files(target.world.world.state),
+                    "gold_program": audit.task.gold,
                 },
                 fidelity=FidelityRecord(found_on="NATIVE_ISOLATED", verified_on="LIVE_AGENT"),
                 mode="live_agent",
@@ -515,12 +598,21 @@ def _report(
                 ),
             )
         )
+    generated_findings = list(findings)
+    verification_record: dict[str, Any] | None = None
     if verification is not None:
         world_records.append(record(verification))
-        if any(is_bad(o) for o in verification.outcomes):
+        verified_bad = sum(is_bad(o) for o in verification.outcomes)
+        verified_finding: str | None = None
+        if verified_bad:
+            verified_finding = f"{task.id}:live:minimized"
+            frozen_id = frozen_finding.finding_id if frozen_finding else None
+            audit.artifacts[verified_finding] = live_artifact(
+                audit, agent, verified_finding, verification, frozen_id
+            )
             findings.append(
                 Finding(
-                    finding_id=f"{task.id}:live:minimized",
+                    finding_id=verified_finding,
                     world_id="minimized",
                     validity=validity_record(verification.world.validity),
                     oracles=[_oracle(NOT_MET)],
@@ -529,18 +621,40 @@ def _report(
                     world_diff=diff_states(p.base, verification.world.world.state),
                     mutation_path=_path(verification.world.world),
                     divergence={
-                        "scope": "the agent's own runs on the minimized frozen counterexample",
+                        "scope": "the agent's own runs on the minimized frozen counterexample: a "
+                        "separate verification, not one of the generated worlds of the search; "
+                        "recorded, the agent is not rerun by replay or export",
+                        "search_scope": "minimized_verification",
+                        "agent": {"name": agent.name, "model": agent.model},
                         "agent_answers": [str(a)[:200] for a in verification.answers],
+                        "agent_runs": run_records(verification),
                         "gold_answer": verification.world.gold_answer,
-                        "frozen_finding": frozen_finding.finding_id if frozen_finding else None,
+                        "data_files": audit.data_files(verification.world.world.state),
+                        "gold_program": audit.task.gold,
+                        "frozen_finding": frozen_id,
                     },
                     fidelity=FidelityRecord(found_on="NATIVE_ISOLATED", verified_on="LIVE_AGENT"),
                     mode="live_agent",
                     live=_live_record(verification, base),
                     minimization=dict(frozen_finding.minimization) if frozen_finding else {},
-                    headline="The agent's answer differs from the reference on the minimized world",
+                    headline="The agent's answer differs from the reference on the minimized "
+                    "world (separate verification, not a generated world)",
                 )
             )
+        verified = _counts(verification.outcomes)
+        verification_record = {
+            "scope": "the minimized world of a frozen finding, run apart from the search; it is "
+            "not one of the generated worlds and is not in `multiplicity`",
+            "world": "minimized",
+            "frozen_finding": frozen_finding.finding_id if frozen_finding else None,
+            "runs": verified["n"],
+            "failures": verified_bad,
+            "judged": sum(is_judged(o) for o in verification.outcomes),
+            "errors": verified["errors"],
+            "status": "OBSERVED_FAILURE" if verified_bad else "NOT_REPRODUCED",
+            "finding": verified_finding,
+            "grade": "OBSERVED_FAILURE" if verified_bad else None,
+        }
     for world_id, reason in not_run.items():
         screened = screens.get(world_id)
         world_records.append(
@@ -560,18 +674,14 @@ def _report(
                 else None,
             )
         )
-    judged = sum(
-        is_judged(o)
-        for t in [*results, *([verification] if verification else [])]
-        for o in t.outcomes
-    )
+    judged_search = sum(is_judged(o) for t in results for o in t.outcomes)
     status = (
         DivergenceStatus.COUNTEREXAMPLE_FOUND
         if any(f.evidence_grade is EvidenceGrade.RATE_INCREASE for f in findings)
         else DivergenceStatus.OBSERVED_FAILURE
         if findings
         else DivergenceStatus.INCONCLUSIVE
-        if judged == 0
+        if judged_search == 0
         else DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
     )
     grades = {f.world_id: f.evidence_grade for f in findings}
@@ -583,21 +693,31 @@ def _report(
     for s in screens.values():
         counts[s.cls.value] += 1
     ran = len(results)
-    rate_worlds = sum(f.evidence_grade is EvidenceGrade.RATE_INCREASE for f in findings)
-    if findings:
+    rate_worlds = sum(f.evidence_grade is EvidenceGrade.RATE_INCREASE for f in generated_findings)
+    if generated_findings:
         summary = (
-            f"the agent's answer differed from the reference in {len(findings)} of {ran} worlds "
-            f"run ({rate_worlds} with a rate increase decided by the paired test, "
-            f"{len(findings) - rate_worlds} observed only; {len(not_run)} not run)"
+            f"the agent's answer differed from the reference in {len(generated_findings)} of "
+            f"{ran} generated worlds run ({rate_worlds} with a rate increase decided by the "
+            f"paired test, {len(generated_findings) - rate_worlds} observed only; "
+            f"{len(not_run)} not run)"
         )
-    elif judged == 0:
+    elif judged_search == 0:
         summary = (
-            f"no mutated world produced a judged run ({ran} worlds run; the baseline runs do "
+            f"no generated world produced a judged run ({ran} worlds run; the baseline runs do "
             f"not count; {len(not_run)} not run)"
         )
     else:
         summary = (
-            f"no disagreement in the {ran} worlds the agent was run on ({len(not_run)} not run)"
+            f"no disagreement in the {ran} generated worlds the agent was run on "
+            f"({len(not_run)} not run)"
+        )
+    if verification_record is not None:
+        summary += (
+            f"; separately, on the minimized frozen counterexample the answer differed in "
+            f"{verification_record['failures']} of {verification_record['judged']} judged runs"
+            if verification_record["failures"]
+            else "; separately, the minimized frozen counterexample was run "
+            f"{verification_record['runs']} times and the answer did not differ"
         )
     account = generation.accounting()
     search_record = SearchRecord(
@@ -648,6 +768,7 @@ def _report(
                 "mode": "live",
                 "baseline_codes": sorted({r.code for r in base.runs})[:3],
                 "budget": budget.to_json(),
+                "verification": verification_record,
             }
         },
     )

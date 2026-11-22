@@ -17,9 +17,12 @@ from isitright.core.evidence import (
     AuditReport,
     DivergenceStatus,
     EvidenceGrade,
+    LiveFailOn,
     describe_graded_findings,
+    policy_triggered,
 )
 from isitright.core.paths import UnsafePathError, contained_path
+from isitright.core.replay import load_artifact
 
 data_app = typer.Typer(
     help="Audit data-analysis agents: recorded programs (frozen) and agents (live)."
@@ -27,6 +30,7 @@ data_app = typer.Typer(
 
 EXIT_INTERNAL_ERROR = 1
 EXIT_INVALID_INPUT = 2
+EXIT_POLICY_TRIGGERED = 3
 TRUST_HELP = (
     "Run the recorded programs and the gold program on this machine. They are untrusted code: "
     "they run in a separate, limited process, which is not a security boundary. Use a container."
@@ -334,6 +338,14 @@ def audit_command(
     ] = None,
     max_seconds: Annotated[float | None, typer.Option(min=1.0)] = None,
     seed: Annotated[int, typer.Option()] = 0,
+    fail_on: Annotated[
+        LiveFailOn,
+        typer.Option(
+            help="CI gate, off by default (none). rate-increase: exit 3 when a paired test "
+            "decided a higher failure rate. observed-failure: also exit 3 on a failure observed "
+            "with no rate decision."
+        ),
+    ] = LiveFailOn.NONE,
     allow_failing_baseline: Annotated[
         bool,
         typer.Option(
@@ -431,11 +443,15 @@ def audit_command(
             typer.echo(str(error), err=True)
             raise typer.Exit(EXIT_INVALID_INPUT) from error
     typer.echo("")
-    write_report(build_report([case], time.monotonic() - started, kind="case"), output, {})
+    write_report(
+        build_report([case], time.monotonic() - started, kind="case"), output, audit.artifacts
+    )
     typer.echo(case.headline)
     for line in describe_graded_findings(case):
         if line and not line.startswith("#"):
             typer.echo(line)
+    if policy_triggered(case, fail_on):
+        raise typer.Exit(EXIT_POLICY_TRIGGERED)
 
 
 @data_app.command("replay")
@@ -464,8 +480,13 @@ def replay_command(
         typer.echo(f"Input error: {error}", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
     result = load_and_replay(artifact, trust_code=True)
+    live = load_artifact(artifact).host.get("mode") == "live"
     typer.echo(
-        "Reproduced both answers and the disagreement."
+        (
+            "Reproduced the recorded observation."
+            if live
+            else "Reproduced both answers and the disagreement."
+        )
         if result.reproduced
         else "Did not reproduce:"
     )
@@ -501,6 +522,7 @@ def export_command(
     except UnsafePathError as error:
         typer.echo(f"Input error: {error}", err=True)
         raise typer.Exit(EXIT_INVALID_INPUT) from error
+    output.mkdir(parents=True, exist_ok=True)
     index = output / "cases.jsonl"
     index.write_text(
         "".join(

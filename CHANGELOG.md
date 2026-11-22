@@ -65,7 +65,7 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
 - **Two grades.** A live-agent finding (agents, data live, research with a stochastic agent) has an
   `evidence_grade`. `RATE_INCREASE`: a paired sequential test crossed its upper boundary, so it
   decided the world fails more often than the baseline. `OBSERVED_FAILURE`: a judged run failed on a
-  valid mutated world and no test decided a higher rate. Before, one failed run in a world was a
+  mutated world that ran and was not found invalid, and no test decided a higher rate. Before, one failed run in a world was a
   counterexample, whatever the baseline did: an agent that fails 5% of its runs at random showed one
   in about half of the audits of a few worlds. Findings of frozen programs and recorded reports,
   deterministic subjects and SQL have no grade (`null`) and keep `COUNTEREXAMPLE_FOUND`.
@@ -81,13 +81,15 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   interval, the same for the baseline runs made for the world's pairs, the concrete world diff and a
   replay command, whatever the paired test said.
 - **The report says how many worlds were tested** (`multiplicity`): that the per-world decisions are
-  not corrected for it, and the number of rate-increase claims expected by chance under no effect (at
-  most worlds tested x 0.05; the test's real rate is lower) and of worlds with an observed failure if
+  not corrected for it, and a nominal upper bound on the false rate-increase claims expected under
+  no effect (worlds tested x 0.05; not a measured rate, no family-wise guarantee) and of worlds with an observed failure if
   every world failed at the baseline's rate.
 - **CI.** `--fail-on` gains `rate-increase` and `observed-failure` for `agents run` and the live
   research modes. `any-finding`, `invariant-violation` and `any-counterexample` now trip only on a
   rate increase (an observed failure no longer does); `observed-failure` also trips on observations.
-  The data pack's live audit still has no `--fail-on`.
+  The data pack's live audit takes `--fail-on none|rate-increase|observed-failure` (the broader
+  cross-pack vocabulary is N10). The default of every `--fail-on` stays `none`: a rate-based gate is
+  opt-in.
 - **Export.** Findings graded `OBSERVED_FAILURE` are exported on request: `agents export` and
   `data export` take `--include-observed`; `research check` writes their eval case only with
   `--export-observed` (`research export --include-observed` writes it later).
@@ -109,6 +111,40 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   (`pytest -m statistical`), the two grades through the agents, data and research packs, the CLI
   gate and export selection, a failing data baseline, no judged run. Existing tests that encoded the
   old counts or statuses are changed and listed in the pull request.
+- **Review follow-up.**
+  - *Live data replay and export.* Every live data finding (and the verification of a minimized
+    world) now has a replay artifact (`findings/<id>/replay.json`) that exists, and `data replay`
+    runs it: it checks the reference answer on the recorded world, the recorded comparison of each
+    agent answer with it, and what any code the agent returned gives on the world. It says the
+    agent was not rerun. An agent that returned only an answer has no code recorded, and none is
+    invented. `data export` writes the dataset, the question, the reference `gold.py`, the expected
+    answer and the recorded observation; before, a live finding named replay files that were never
+    written and exported empty. A finding with no artifact names no replay path.
+    `data export` also no longer fails on an empty export into a new directory.
+  - *Minimized-world verification is reported apart.* `extensions.data.verification` records its
+    runs and failures; its finding has `search_scope: minimized_verification`. It can decide the
+    case status, but is not among the generated worlds or in `multiplicity`, and the headline
+    separates the two.
+  - *The default gate stays `none`.* A rate-based gate is opt-in: `--fail-on rate-increase`
+    (recommended for generated-world CI) or `observed-failure` (stricter). `data audit` gains
+    `--fail-on`. Tests pin the default with the option omitted.
+  - *Unassessed worlds.* A fixed MCP world with no validator keeps `validity.status:
+    NOT_ASSESSED` in the world list, its findings and the case (the case used to read `VALID` with
+    no tier); no tier is claimed, the report says so beside each finding, and the grade text says
+    it is conditional on the world as run. An `INVALID` world is still not run.
+  - *The report model checks the evidence.* `RATE_INCREASE` needs a sequential decision of
+    `RATE_INCREASE` and an agreeing rate claim; `OBSERVED_FAILURE` needs a recorded judged failure
+    and no decided rate. A tampered report is refused when it is loaded.
+  - *Ranking.* Domain-validated, structurally validated and other `COUNTEREXAMPLE_FOUND`, then
+    `OBSERVED_FAILURE`, then `INCONCLUSIVE` and `UNSUPPORTED`, then `NOT_FOUND_WITHIN_BUDGET`. Before,
+    an observation, an inconclusive case and a counterexample with no assessed tier tied.
+  - *Export without a trace.* `agents export` accepts a finding whose run called no tool (no
+    `trace.jsonl`) and writes an empty trace; a malformed trace or a missing world still fails.
+  - *Wording.* The expected claims under no effect is a nominal upper bound (worlds tested x 0.05),
+    not a measured rate or a family-wise guarantee.
+  - *Not closed:* a research finding's grade is decided on the searched world while the minimized
+    world is shown (N5; a 0.9.0 release blocker in the findings ledger). The report now says so.
+
 
 ## 0.8.1 - Hotfix
 
