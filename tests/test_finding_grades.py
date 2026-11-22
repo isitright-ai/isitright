@@ -1071,36 +1071,23 @@ def test_cases_rank_domain_structural_other_counterexample_observed_inconclusive
     assert _rate_case().validity.tiers == ["STRUCTURAL"]
 
 
-def test_a_finding_shown_on_a_minimized_world_says_where_its_grade_was_decided() -> None:
-    """Research grades the world the search ran; the finding may show its minimization (N5)."""
+def test_a_finding_is_graded_on_the_world_it_shows() -> None:
+    """N5: the grade and the counts are those of the world shown, so the report no longer needs to
+    say that they describe another world."""
     from isitright.core.evidence import describe_graded_findings
 
     case = _observed_case()
-    finding = case.findings[0]
-    same = case.model_copy(
-        update={
-            "findings": [
-                finding.model_copy(update={"divergence": {"graded_on_world": finding.world_id}})
-            ]
-        }
-    )
-    assert "describe the world the search ran" not in "\n".join(describe_graded_findings(same))
-    moved = case.model_copy(
-        update={
-            "findings": [
-                finding.model_copy(update={"divergence": {"graded_on_world": "searched-world"}})
-            ]
-        }
-    )
-    text = "\n".join(describe_graded_findings(moved))
-    assert "describe the world the search ran (searched-world)" in text
-    assert "was not itself tested by the paired test" in text and "until N5" in text
+    text = "\n".join(describe_graded_findings(case))
+    assert "describe the world the search ran" not in text and "until N5" not in text
 
 
-def test_research_records_the_world_its_grade_was_decided_on() -> None:
+def test_research_grades_the_world_it_shows() -> None:
     _, case = _research(frozenset({2}))
+    assert case.findings
     for finding in case.findings:
-        assert finding.divergence["graded_on_world"]
+        assert "graded_on_world" not in finding.divergence
+        assert finding.world_fingerprint == finding.world_id
+        assert finding.built_from["counts"] == finding.world_fingerprint
 
 
 # -- the opt-in CI default (owner decision: `--fail-on` stays `none`) ----------------------------

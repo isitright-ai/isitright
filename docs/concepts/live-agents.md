@@ -131,8 +131,17 @@ be graded `RATE_INCREASE`: every finding is an observed failure.
 
 For a finding with more than one [mutation](worlds-and-mutations.md#mutations), `--minimize` shrinks the mutation path by delta debugging.
 Each candidate subset is judged by repeated runs, and a smaller path is kept only after a test said
-it still fails. The path is replaced only when every single removal was tested and did not reproduce.
-Inconsistent evidence returns the unminimized path. It costs runs, so it is off by default.
+it still fails. The noise floor of a subset is the baseline's own failure rate (5% to 50%). The path
+is replaced only when every single removal was tested and did not reproduce. Inconsistent evidence
+returns the unminimized path. It costs runs, so it is off by default.
+
+The minimal path is then run as a world of its own: `--trials` runs and, if one failed, fresh pairs
+with the baseline, like any searched world. The finding shows that world, with its own counts, paired
+test, run directory and validity, only if it failed and, when the searched world's paired test decided
+a rate increase, its own test decided one too (`minimization.adopted`). Otherwise the finding stays on
+the searched world, with that world's evidence, and `minimization.not_adopted` says why. A rate
+increase is never moved to a world no paired test decided it on. The extra runs are at most `--trials`
+plus two per pair up to `--max-trials`.
 
 ## Budgets
 

@@ -7,7 +7,7 @@ nothing about the agent that wrote it until a live confirmation (`live.py`) is r
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,10 +30,11 @@ from isitright.core.evidence import (
 )
 from isitright.core.families import default_mutators
 from isitright.core.hints import Hints
-from isitright.core.minimize import minimize_world
-from isitright.core.mutations import Candidate, World
+from isitright.core.minimize import changed_atoms, minimize_world
+from isitright.core.mutations import Candidate, Mutation, World
 from isitright.core.replay import ReplayArtifact
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
+from isitright.core.shown import built_from, surviving_path, world_json_fingerprint
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import Budget
 from isitright.core.subjects import SubjectKind
@@ -97,7 +98,7 @@ def validity_record(validity: Validity) -> ValidityRecord:
     )
 
 
-def _path(world: World) -> list[MutationRecord]:
+def _records(path: Sequence[Mutation]) -> list[MutationRecord]:
     return [
         MutationRecord(
             family=m.family,
@@ -106,8 +107,16 @@ def _path(world: World) -> list[MutationRecord]:
             hints=m.hints,
             atoms=[list(a) for a in m.atoms],
         )
-        for m in world.path
+        for m in path
     ]
+
+
+def _path(world: World) -> list[MutationRecord]:
+    return _records(world.path)
+
+
+class _NotReproduced(Exception):
+    """A disagreement that did not reproduce when its world was rerun: no finding is reported."""
 
 
 @dataclass
@@ -402,21 +411,38 @@ class DataAudit:
             stop_on_first=config.findings <= 1,
             progress=progress,
         )
-        findings = [
-            self._finding(
-                program, case_id, n, f.candidate.world, f.validity, f.evaluation, hints, scan.flags
-            )
-            for n, f in enumerate(result.findings[: config.findings], 1)
-        ]
+        findings: list[Finding] = []
+        lost: list[str] = []
+        for n, f in enumerate(result.findings[: config.findings], 1):
+            try:
+                findings.append(
+                    self._finding(
+                        program,
+                        case_id,
+                        n,
+                        f.candidate.world,
+                        f.validity,
+                        f.evaluation,
+                        hints,
+                        scan.flags,
+                    )
+                )
+            except _NotReproduced as error:
+                lost.append(str(error))
         status = (
             DivergenceStatus.COUNTEREXAMPLE_FOUND
             if findings
+            else DivergenceStatus.INCONCLUSIVE
+            if lost
             else DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
         )
         summary = (
             f"the program and the reference give different answers on {len(findings)} "
-            f"minimized world{'s' if len(findings) != 1 else ''}"
+            f"world{'s' if len(findings) != 1 else ''}"
             if findings
+            else "a disagreement was found but did not reproduce when its world was rerun "
+            "(the program is nondeterministic)"
+            if lost
             else f"no disagreement in {result.executed} worlds executed ({result.attempts} tried)"
         )
         return self._report(
@@ -426,6 +452,10 @@ class DataAudit:
             result,
             headline_for(status, summary),
             findings=findings,
+            errors=[
+                {"code": "NOT_REPRODUCED", "message": message, "phase": "confirmation"}
+                for message in lost
+            ],
             flags=scan.flags,
             base_pair=base_pair,
             hints=hints,
@@ -459,16 +489,26 @@ class DataAudit:
             referenced=[f.table for f in self.task.files],
             max_attempts=config.minimization_max_attempts,
         )
-        final = minimized.world
-        pair = self.run_pair(program.code, final.state)
-        _, _, detail = self.judge(pair)
-        final_validity = p.spec.validate_world(final.state, world.path)
-        self.artifacts[f"{case_id}:{number}"] = self.replay_artifact(
-            program, case_id, final, detail
-        )
+        shown = minimized.world
+        pair = self.run_pair(program.code, shown.state)
+        verdict, _, detail = self.judge(pair)
+        if verdict is not Verdict.DISAGREE:  # the minimized world must be shown only if it differs
+            shown = world
+            pair = self.run_pair(program.code, shown.state)
+            verdict, _, detail = self.judge(pair)
+            if verdict is not Verdict.DISAGREE:
+                raise _NotReproduced(
+                    "the disagreement did not reproduce when the world it was found on was rerun"
+                )
+        is_minimized = shown is minimized.world
+        final_validity = p.spec.validate_world(shown.state, world.path)
+        artifact = self.replay_artifact(program, case_id, shown, detail)
+        self.artifacts[f"{case_id}:{number}"] = artifact
+        fingerprint = shown.fingerprint()
+        kept_path = _records(surviving_path(world.path, shown.state, p.base))
         return Finding(
             finding_id=f"{case_id}:{number}",
-            world_id=world.fingerprint(),
+            world_id=fingerprint,
             validity=validity_record(final_validity),
             oracles=[
                 OracleRecord(
@@ -479,17 +519,17 @@ class DataAudit:
                     limits=GOLD_LIMITS,
                 )
             ],
-            world_diff=diff_states(p.base, final.state),
-            mutation_path=_path(world),
+            world_diff=diff_states(p.base, shown.state),
+            mutation_path=kept_path,
             divergence={
                 "scope": "this program on this world; not a statement about the agent",
-                "reproduces": self.judge(pair)[0] is Verdict.DISAGREE,
+                "reproduces": verdict is Verdict.DISAGREE,
                 "difference": detail.get("difference"),
                 "gold_answer": detail.get("gold_answer"),
                 "program_answer": detail.get("program_answer"),
                 "program_status": detail.get("program_status"),
                 "program_error": detail.get("program_error") or None,
-                "data_files": self.data_files(final.state),
+                "data_files": self.data_files(shown.state),
                 "gold_program": self.task.gold,
                 "program_flags": flags,
             },
@@ -499,12 +539,20 @@ class DataAudit:
                 "complete": minimized.complete,
                 "attempts": minimized.attempts,
                 "rows_before": minimized.atoms_before,
-                "rows_after": minimized.atoms_after,
-                "changed_atoms": minimized.changed_atoms,
+                "rows_after": minimized.atoms_after if is_minimized else minimized.atoms_before,
+                "changed_atoms": minimized.changed_atoms
+                if is_minimized
+                else changed_atoms(shown.state, p.base),
+                "shown": "minimized" if is_minimized else "unminimized",
+            },
+            world_fingerprint=fingerprint,
+            built_from={
+                **built_from(fingerprint, "validity", "world_diff", "divergence"),
+                "replay": world_json_fingerprint(artifact.world),
             },
             headline=(
                 f"Program and reference diverge after a "
-                f"{world.path[-1].family if world.path else 'baseline'} mutation"
+                f"{kept_path[-1].family if kept_path else 'baseline'} mutation"
             ),
         )
 

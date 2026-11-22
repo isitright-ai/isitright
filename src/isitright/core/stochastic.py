@@ -570,18 +570,28 @@ class SubjectRunner(Generic[T, R]):
         return done
 
     def run_staged(
-        self, world: T, baseline: T, config: SprtConfig, k: int, tag: str = "search"
+        self,
+        world: T,
+        baseline: T,
+        config: SprtConfig,
+        k: int,
+        tag: str = "search",
+        *,
+        after_search: bool = False,
     ) -> StagedRuns[R]:
         """``k`` runs of a world; fresh pairs with the baseline only if one of them failed.
 
         A world that never failed has no failure to test, so no baseline run is spent on it. The
         pairs are new runs: the screening runs choose which worlds are tested and take no part in
-        the test, so choosing on a failure does not bias it.
+        the test, so choosing on a failure does not bias it. ``after_search`` is as for `run`.
         """
-        screening = self.run_repeated(world, k, tag)
+        screening = self.run_repeated(world, k, tag, after_search=after_search)
         if not any(is_bad(e.outcome) for e in screening):
             return StagedRuns(screening)
-        return StagedRuns(screening, self.run_paired(world, baseline, config, tag))
+        return StagedRuns(
+            screening,
+            self.run_paired(world, baseline, config, tag, after_search=after_search),
+        )
 
     def run_paired(
         self,

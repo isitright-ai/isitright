@@ -201,9 +201,9 @@ def test_a_suite_case_carries_gold_trusted() -> None:
 
 def test_a_finding_verified_only_on_the_unminimized_world_says_so() -> None:
     """Native confirmation runs on the minimized world first; when only the larger world found
-    before minimizing differs natively, the verification note says the minimal example is not
-    itself confirmed (found in review of the Spider case bq284, where the emulation's
-    ``count_if`` gave NULL on the minimized state)."""
+    before minimizing differs natively, that world is the one shown (so the verification describes
+    it) and the minimized one is attached as emulated and unverified (found in review of the
+    Spider case bq284, where the emulation's ``count_if`` gave NULL on the minimized state)."""
 
     class OnlyTheSecondWorld(_Client):
         candidate_calls = 0
@@ -225,4 +225,9 @@ def test_a_finding_verified_only_on_the_unminimized_world_says_so() -> None:
     worlds = [c["world"] for c in finding.divergence["native_confirmation"]]
     assert worlds == ["minimized", "unminimized divergent"]
     assert finding.fidelity.verification.status == "VERIFIED"
-    assert "not itself confirmed" in finding.fidelity.verification.note
+    assert "the world shown" in finding.fidelity.verification.note
+    assert "attached as emulated and unverified" in finding.fidelity.verification.note
+    attached = finding.divergence["minimized_world"]
+    assert attached["fidelity"] == "EMULATED" and attached["verified"] is False
+    assert attached["native_result"] == "agree"
+    assert finding.minimization["shown"] == "unminimized"

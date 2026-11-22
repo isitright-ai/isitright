@@ -127,6 +127,23 @@ def test_every_live_finding_names_a_replay_artifact_that_exists_and_replays(
     assert "It replays the recorded observation; the agent is not rerun." in markdown
 
 
+@pytest.mark.parametrize("agent", ["forgot_dropna", "answer_only"])
+def test_every_live_finding_is_built_from_the_world_its_replay_artifact_holds(
+    audited: Any, agent: str
+) -> None:
+    """N5: the finding's world, and every part tied to it, is the world the artifact stores."""
+    from isitright.core.shown import world_json_fingerprint
+
+    out, _ = audited(agent, 3)
+    findings = _report(out)["cases"][0]["findings"]
+    assert findings
+    for finding in findings:
+        stored = json.loads((out / finding["replay"]["artifact"]).read_text(encoding="utf-8"))
+        assert finding["world_fingerprint"] == world_json_fingerprint(stored["world"])
+        assert set(finding["built_from"]) >= {"validity", "world_diff", "counts", "replay"}
+        assert set(finding["built_from"].values()) == {finding["world_fingerprint"]}
+
+
 def test_the_replay_verifies_the_evidence_it_claims_and_catches_a_change(audited: Any) -> None:
     out, _ = audited("forgot_dropna", 3)
     case = _report(out)["cases"][0]

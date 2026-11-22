@@ -345,6 +345,13 @@
       "additionalProperties": false,
       "description": "One disagreement in one world; attribution is separate and undetermined by default.",
       "properties": {
+        "built_from": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Built From",
+          "type": "object"
+        },
         "divergence": {
           "additionalProperties": true,
           "title": "Divergence",
@@ -463,6 +470,18 @@
           "additionalProperties": true,
           "title": "World Diff",
           "type": "object"
+        },
+        "world_fingerprint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "World Fingerprint"
         },
         "world_id": {
           "title": "World Id",

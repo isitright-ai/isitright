@@ -52,6 +52,7 @@ from isitright.core.selection import (
     rank_worlds,
 )
 from isitright.core.sequential import PairedSprt, SprtConfig
+from isitright.core.shown import built_from, world_json_fingerprint
 from isitright.core.stochastic import (
     Budget,
     EvidenceGrade,
@@ -582,6 +583,7 @@ def _report(
         )
         finding_id = f"{task.id}:live:{target.world.id}"
         audit.artifacts[finding_id] = live_artifact(audit, agent, finding_id, target)
+        fingerprint = target.world.world.fingerprint()
         findings.append(
             Finding(
                 finding_id=finding_id,
@@ -607,6 +609,11 @@ def _report(
                 mode="live_agent",
                 live=_live_record(target, base),
                 minimization={},
+                world_fingerprint=fingerprint,
+                built_from={
+                    **built_from(fingerprint, "validity", "world_diff", "divergence", "counts"),
+                    "replay": world_json_fingerprint(audit.artifacts[finding_id].world),
+                },
                 headline=(
                     f"The agent's answer differs from the reference in "
                     f"{sum(is_bad(o) for o in target.outcomes)} of {len(target.outcomes)} runs "
@@ -626,6 +633,7 @@ def _report(
             audit.artifacts[verified_finding] = live_artifact(
                 audit, agent, verified_finding, verification, frozen_id
             )
+            verified_fingerprint = verification.world.world.fingerprint()
             findings.append(
                 Finding(
                     finding_id=verified_finding,
@@ -653,6 +661,13 @@ def _report(
                     mode="live_agent",
                     live=_live_record(verification, base),
                     minimization=dict(frozen_finding.minimization) if frozen_finding else {},
+                    world_fingerprint=verified_fingerprint,
+                    built_from={
+                        **built_from(
+                            verified_fingerprint, "validity", "world_diff", "divergence", "counts"
+                        ),
+                        "replay": world_json_fingerprint(audit.artifacts[verified_finding].world),
+                    },
                     headline="The agent's answer differs from the reference on the minimized "
                     "world (separate verification, not a generated world)",
                 )

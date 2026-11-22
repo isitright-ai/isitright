@@ -138,7 +138,7 @@ def minimize_world(
         state.size(),
         attempts + reduction.attempts,
         complete,
-        _changed_atoms(state, base),
+        changed_atoms(state, base),
     )
 
 
@@ -152,7 +152,8 @@ def _closure(spec: WorldSpec, state: State, atoms: Iterable[Atom]) -> set[Atom]:
     return out
 
 
-def _changed_atoms(state: State, base: State | None) -> int:
+def changed_atoms(state: State, base: State | None) -> int:
+    """Atoms of ``state`` that differ from ``base`` (all of them when there is no base)."""
     if base is None:
         return state.size()
     return sum(

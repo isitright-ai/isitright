@@ -12,8 +12,9 @@ between pre-1.0 releases.
 Schema `0.9` replaces `0.8`. Reports written as `0.4`, `0.5`, `0.6` or `0.8` still load: `replay` and
 `export` read them, because every field added since is optional. Older schemas are removed.
 0.9 adds four counts to `stability.sequential` (`world_runs`, `baseline_runs`, `excluded_errored`,
-`excluded_unjudged`, default 0, so older reports load) and the run loop's change of meaning for the
-test: every pair is a run of the world and a fresh baseline run (see
+`excluded_unjudged`, default 0, so older reports load), `findings[].world_fingerprint` and
+`findings[].built_from` (see [One world per finding](#one-world-per-finding); both default to empty, so
+older reports load) and the run loop's change of meaning for the test: every pair is a run of the world and a fresh baseline run (see
 [live agents](../concepts/live-agents.md#sequential-testing-per-world)). A 0.8 report keeps its old
 meaning: the research and data packs paired against baseline runs they had, or assumed. 0.6 added `findings[].mode`
 (`frozen_program` or `live_agent`) and `findings[].live` (see below). 0.8 adds the mode `frozen_trace`
@@ -60,6 +61,7 @@ Each field answers one question and is never merged with another.
 - A `RATE_INCREASE` grade is set only from a paired sequential test that crossed its upper boundary: the finding must carry a sequential record whose decision is `RATE_INCREASE` and a rate claim that agrees with it. An `OBSERVED_FAILURE` finding carries no such decision or claim and records at least one judged failure in its `observation`. A report that breaks either rule is refused when it is loaded. Findings with no grade (frozen programs and reports, deterministic subjects, SQL, legacy reports) need none of this.
 - A world whose validity was not assessed (a fixed MCP world with no validator) keeps `validity.status: NOT_ASSESSED` with no tier, in its finding, its `worlds` entry and the case. A grade says nothing about validation: a `RATE_INCREASE` on such a world is conditional on the world as run.
 - Suite and case ranking (`rank_cases`), strongest first: domain-validated `COUNTEREXAMPLE_FOUND`; structurally validated; other `COUNTEREXAMPLE_FOUND` (including an unassessed validity); `OBSERVED_FAILURE`; `INCONCLUSIVE` and `UNSUPPORTED`; `NOT_FOUND_WITHIN_BUDGET`. Equal strengths keep their order.
+- A finding that names a `world_fingerprint` is about that one world, and the model refuses a finding whose parts disagree (see [One world per finding](#one-world-per-finding)).
 - An `UNSUPPORTED` case has no executed worlds.
 - A DuckDB result must be labeled `EMULATED`; a PostgreSQL or SQLite one must not.
 - `NOT_FOUND_WITHIN_BUDGET` means no disagreement was found within the budget. It is never a claim of
@@ -67,6 +69,34 @@ Each field answers one question and is never merged with another.
 - A world that screening or a stopping rule did not run is `NOT_RUN`, never a pass.
 - An observed failure is never presented as a rate change, and an emulated finding is never
   presented as native: `verified_on` says whether PostgreSQL confirmed it.
+
+### One world per finding
+
+A finding reports one world. `world_fingerprint` is the fingerprint of that world (`World.fingerprint`:
+its state, response edits and timers; the mutation path is a record of how it was made and is not part
+of it). `built_from` maps each part of the finding that describes a world to the fingerprint of the
+world that part was built from: `validity`, `world_diff`, `divergence` (the outputs and the
+reproduction result), `counts` (when the finding has run counts), `replay` (when it names a replay
+artifact) and `export` (when it names an eval case). Replay and export entries are taken from the
+world stored in the artifact itself. The model enforces that:
+
+- every `built_from` entry equals `world_fingerprint`; a finding whose parts name different worlds is
+  refused when it is built or loaded, naming the parts;
+- `validity` and `world_diff` are always tied to the world, and so are `counts`, `replay` and `export`
+  when the finding has them;
+- a finding that names a world does not carry `divergence.reproduces` or
+  `divergence.reproduces_on_shown_world` set to false: a world that does not reproduce is not shown.
+
+Reports written before 0.9 carry no fingerprint and load as they always did. The packs choose the
+world to show as follows. A SQL finding shows the minimized world when it reproduces a disagreement of
+the kind that was found (an error, a different row count, or different values with the same count);
+otherwise it shows the world the search found. For a warehouse, if only the larger world differs on
+the native engine, that is the world shown, `fidelity.verified_on` describes it, and the minimized
+world is attached as `divergence.minimized_world` with `fidelity: EMULATED` and `verified: false`.
+`minimization.shown` says which world is shown (`minimized` or `unminimized`), and `minimization.reason`
+why it is the larger one. An agents finding shows the minimal mutation path only when that path, run
+as a world of its own, fails at least as strongly as the searched world; the research pack applies
+the same rule, and records a minimized world that is not shown under `minimization.not_adopted`.
 
 ### Frozen and live findings (0.6)
 
@@ -108,7 +138,8 @@ the replayed program) and `verified_on` is `LIVE_AGENT` once the agent itself ra
 `comparison_policy` records `columns`, `column_vectors`, `null_as_zero`, `reference_columns` and
 the tolerances. A finding's `fidelity.verified_on` is `NATIVE_INLINE` once a native host has run
 both queries on the inlined state. `divergence.native_confirmation` lists each world tried
-(`minimized`, then `unminimized divergent`) and its result. A finding's `validity.notes` says
+(`minimized`, then `unminimized divergent`) and its result; the world shown is the one the native
+engine confirmed (see [One world per finding](#one-world-per-finding)). A finding's `validity.notes` says
 when it needs equal values in a column with no declared key or unique rule. A case whose only
 divergence did not reproduce natively is `INCONCLUSIVE` with no finding, and the divergence is
 listed under `emulation_artifacts`.

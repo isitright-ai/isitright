@@ -149,6 +149,13 @@ Only the worlds of a finding are sent. First the minimized world; if it does not
 unminimized divergent world. Both outcomes are in `native_confirmation`. Each confirmation is two
 queries.
 
+The finding shows the world that was confirmed. If the minimized world differs natively, it is the
+world shown. If only the larger world differs there, the larger world is shown, `verified_on` and the
+`VERIFIED` note describe it, and the minimized world is attached as `divergence.minimized_world`,
+labeled `EMULATED` and `verified: false` with its native result (`agree`), so a reader never takes a
+reproducer for a world the native engine did not confirm. If neither differs, the divergence is an
+emulation artifact and no finding is reported.
+
 The text sent has every table replaced by inline rows, typed so that an empty table and an empty
 array are well typed:
 

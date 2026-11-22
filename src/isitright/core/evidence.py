@@ -13,6 +13,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from isitright.core.sequential import Decision
+from isitright.core.shown import EVIDENCE_PARTS
 from isitright.core.stochastic import EvidenceGrade as EvidenceGrade
 from isitright.core.stochastic import Multiplicity, Observation, Stability
 
@@ -228,12 +229,57 @@ class Finding(Closed):
     recorded run replayed, its report not regenerated. ``live_agent``: the agent's own runs.
     ``None``: not stated (0.4 and 0.5 reports, and packs without the distinction)."""
     live: LiveRecord | None = None
+    world_fingerprint: str | None = None
+    """Added in 0.9: the fingerprint (``World.fingerprint``) of the one world this finding shows.
+    ``None`` in a report written before 0.9."""
+    built_from: dict[str, str] = Field(default_factory=dict)
+    """Added in 0.9: for each part of the finding that describes a world (``validity``,
+    ``world_diff``, ``divergence``, ``counts``, ``replay``, ``export``), the fingerprint of the
+    world that part was built from. Every entry equals ``world_fingerprint``: the model refuses a
+    finding whose parts come from different worlds."""
     headline: str
 
     @field_validator("headline")
     @classmethod
     def headline_avoids_verdicts(cls, value: str) -> str:
         return _check_headline(value)
+
+    @model_validator(mode="after")
+    def one_world(self) -> Self:
+        """The diff, validity, counts, reproduction, replay artifact and export are of one world."""
+        shown = self.world_fingerprint
+        if shown is None:
+            if self.built_from:
+                raise ValueError("`built_from` needs the `world_fingerprint` it is compared with")
+            return self
+        unknown = sorted(set(self.built_from) - set(EVIDENCE_PARTS))
+        if unknown:
+            raise ValueError(f"`built_from` names no part of a finding: {', '.join(unknown)}")
+        other = sorted(part for part, made in self.built_from.items() if made != shown)
+        if other:
+            raise ValueError(
+                f"finding {self.finding_id}: {', '.join(other)} built from another world than "
+                f"the one it shows ({shown})"
+            )
+        required = ["validity", "world_diff"]
+        if self.observation is not None or self.stability is not None:
+            required.append("counts")
+        if self.replay.artifact:
+            required.append("replay")
+        if self.export:
+            required.append("export")
+        missing = [part for part in required if part not in self.built_from]
+        if missing:
+            raise ValueError(
+                f"finding {self.finding_id}: {', '.join(missing)} not tied to the world it shows"
+            )
+        for key in ("reproduces", "reproduces_on_shown_world"):
+            if self.divergence.get(key) is False:
+                raise ValueError(
+                    f"finding {self.finding_id} does not reproduce on the world it shows "
+                    f"(`{key}` is false): report the world that reproduces, or no finding"
+                )
+        return self
 
     @model_validator(mode="after")
     def grade_matches_its_evidence(self) -> Self:
@@ -539,14 +585,6 @@ def describe_graded_findings(case: CaseReport) -> list[str]:
         sequential = finding.stability.sequential if finding.stability else None
         if sequential is not None:
             text += f". Paired test: {sequential.decision.value} after {sequential.pairs} pairs"
-        graded_on = finding.divergence.get("graded_on_world")
-        if graded_on and graded_on != finding.world_id:
-            text += (
-                f". The grade and the counts above describe the world the search ran "
-                f"({graded_on}); "
-                f"the world shown ({finding.world_id}) is its minimization and was not itself "
-                "tested by the paired test (ledger E4: open until N5)"
-            )
         text += f". World validity: {_validity_text(finding.validity)}"
         if finding.replay.command:
             text += f". Replay: `{finding.replay.command}`"

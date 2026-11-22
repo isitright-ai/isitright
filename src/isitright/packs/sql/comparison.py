@@ -9,7 +9,7 @@ from collections import Counter, deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import cast
+from typing import Literal, cast
 
 from isitright.packs.sql.models import (
     CanonicalValue,
@@ -33,6 +33,23 @@ class ComparisonOutcome:
     matches: bool
     difference: str | None
     ordered: bool
+
+
+DifferenceKind = Literal["error", "row_count", "row_values"]
+
+
+def difference_kind(reference: QueryResult, candidate: QueryResult) -> DifferenceKind:
+    """The kind of difference between two results that do not match: the candidate errors where
+    the reference does not, the row counts differ, or the counts agree and the values do not.
+
+    Minimization keeps a smaller world only when its difference has the kind that was found, so a
+    world never drifts from one disagreement to another.
+    """
+    if is_error_result(candidate) and not is_error_result(reference):
+        return "error"
+    if len(reference.rows) != len(candidate.rows):
+        return "row_count"
+    return "row_values"
 
 
 def compare_results(
