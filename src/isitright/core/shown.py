@@ -226,7 +226,7 @@ def change_phrase(kept: Sequence[Any], searched: Sequence[Any], diff: Mapping[st
             f"on a world that differs from the base in {change_description(diff)} "
             "(which mutation caused it is undetermined)"
         )
-    return "on the base world"
+    return "on the baseline world"
 
 
 def searched_path_record(searched: Sequence[Mutation], kept: Sequence[Mutation]) -> dict[str, Any]:

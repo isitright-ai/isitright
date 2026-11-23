@@ -949,7 +949,7 @@ def test_the_headline_says_what_is_left_when_no_mutation_survives() -> None:
         "(which mutation caused it is undetermined)"
     )
     # no mutation at all: the world is the base world
-    assert change_phrase([], [], {}) == "on the base world"
+    assert change_phrase([], [], {}) == "on the baseline world"
 
 
 def test_the_searched_path_is_kept_as_provenance_and_attribution_says_what_it_can() -> None:
