@@ -882,7 +882,8 @@ def _observed_case() -> Any:
 
 
 def _rate_case() -> Any:
-    """A case whose one finding rests on a decided paired test (30 world-only discordant pairs)."""
+    """A case whose one finding rests on a decided paired test (12 world-only discordant pairs,
+    12 judged runs of the world and 12 of the baseline)."""
     from isitright.core.evidence import DivergenceStatus, EvidenceGrade, Finding
     from isitright.core.oracles import Outcome
     from isitright.core.sequential import PairedSprt, SprtConfig

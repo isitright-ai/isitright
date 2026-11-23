@@ -90,8 +90,10 @@ world stored in the artifact itself. The model enforces that:
 - a finding that names a world does not carry `divergence.reproduces` or
   `divergence.reproduces_on_shown_world` set to false: a world that does not reproduce is not shown;
 - a finding graded `RATE_INCREASE` has a paired decision of `RATE_INCREASE` whose pairs are runs of
-  the world shown: the finding's `observation.world` has at least as many judged runs as the test has
-  pairs. The grade is never carried from another world.
+  the world shown, and carries the counts behind it: an `observation` whose `world` has at least as many
+  judged runs as the test has pairs and whose `baseline` (the fresh baseline runs made for those pairs)
+  has at least as many too. A finding with no `observation`, or with fewer counts than pairs, is
+  refused. The grade is never carried from another world.
 
 Reports written as `0.8` or earlier carry no fingerprint and load as they always did, including
 findings with the older divergence fields. A stamp written by the code that built a finding is not
@@ -111,7 +113,9 @@ found, by this precedence: `error` (the candidate errors and the reference does 
 differ). If the reference itself errors there is no kind, and no finding. Keeping the kind is a coarse
 safeguard, not proof that minimization kept the same root cause. When neither the minimized nor the found
 world reproduces a difference of that kind on a rerun, there is no finding: the case is `INCONCLUSIVE`
-with the error code `NOT_REPRODUCED`. An agents finding shows the minimal mutation path only when that path, run
+with the error code `NOT_REPRODUCED` (a disagreement that was established failed its confirmation). A
+reference query that errors on the world gives `INCONCLUSIVE` with `REFERENCE_ERROR` instead: there was
+nothing trustworthy to confirm. An agents finding shows the minimal mutation path only when that path, run
 as a world of its own, fails at least as strongly as the searched world; the research pack applies
 the same rule, and records a minimized world that is not shown under `minimization.not_adopted`.
 
@@ -127,18 +131,23 @@ world. A mutation with no traceable edits is not named: nothing shows an effect.
 
 The path that produced the world the search found is kept apart, as provenance, under
 `minimization`: `searched_path` (family, target and description of each mutation),
-`provenance_only: true` (it is not a replay recipe: the shown world may be a minimization that no
-replay of that path reconstructs; replay and export use the shown world) and `mutation_attribution`:
-`SURVIVING_EDITS`, `UNDETERMINED` (the world differs from the base but no searched mutation has a
-surviving effect, for example because minimization removed the rows it edited and the world differs
-by an absence) or `NONE` (no mutation produced the world). With an empty `mutation_path` and a
+`provenance_only: true` (it describes `searched_path`: that history is kept for the reader and is
+not a replay recipe, because the shown world may be a minimization that no replay of the path
+reconstructs; replay and export use the shown world; it says nothing about the finding's current
+evidence) and `mutation_attribution`: `SURVIVING_EFFECTS` (some searched mutation has a surviving
+effect in the shown world: a state edit, a response edit or a timer), `UNDETERMINED` (a searched path
+exists but no mutation's effect can be attributed to the shown world, for example because
+minimization removed the rows it edited and the world differs by an absence) or `NONE` (no mutation
+produced the world). With an empty `mutation_path` and a
 non-empty `world_diff` the headline describes the change that is left ("on a world that differs from
 the base in 1 removed (which mutation caused it is undetermined)"), never a mutation and never the
 baseline.
 
-`totals.by_family` counts each distinct family in `mutation_path` once per finding. A finding with
-two surviving families counts for both, a finding with none for none, so the values can add up to
-more than the number of findings. Before 0.9 only the last mutation's family was counted, so totals
+`totals.by_family` counts each distinct family in `mutation_path` once per finding, so it describes
+demonstrated surviving effects, not which family led the search to a world. The values can add up to
+**more** than the number of findings (a finding with two surviving families counts for both) or to
+**fewer** (a finding with no surviving family, such as an `UNDETERMINED` one, counts for none; its
+searched family stays in `minimization.searched_path`). Before 0.9 only the last mutation's family was counted, so totals
 of reports from before 0.9 are not comparable.
 
 ### Frozen and live findings (0.6)

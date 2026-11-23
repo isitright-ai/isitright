@@ -51,7 +51,7 @@ def test_frozen_findings_are_the_objective_ones_and_scoped_to_the_recorded_run()
     assert "baseline" not in retract.headline
     removed = next(f for f in report.findings if origin_family(f) == "remove")
     assert [m.family for m in removed.mutation_path] == ["remove"]
-    assert removed.minimization["mutation_attribution"] == "SURVIVING_EDITS"
+    assert removed.minimization["mutation_attribution"] == "SURVIVING_EFFECTS"
     for f in report.findings:
         assert f.mode == "frozen_trace"
         assert "not a statement about the agent" in f.divergence["scope"]

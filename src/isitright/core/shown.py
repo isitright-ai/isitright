@@ -231,14 +231,21 @@ def change_phrase(kept: Sequence[Any], searched: Sequence[Any], diff: Mapping[st
 
 def searched_path_record(searched: Sequence[Mutation], kept: Sequence[Mutation]) -> dict[str, Any]:
     """Provenance of a finding: the mutations that produced the world the search found, apart from
-    the ones with an effect in the world shown. Not a replay recipe: the shown world may be a
-    minimization that no replay of this path reconstructs. Replay and export use the shown world."""
+    the ones with an effect in the world shown.
+
+    ``provenance_only`` describes ``searched_path``: that history is kept for the reader and is not
+    a recipe, because the shown world may be a minimization that no replay of the path
+    reconstructs (replay and export use the shown world). It says nothing about the finding's
+    current evidence. ``mutation_attribution``: ``SURVIVING_EFFECTS`` (some searched mutation has a
+    surviving effect in the shown world: a state edit, a response edit or a timer),
+    ``UNDETERMINED`` (a searched path exists but no mutation's effect can be attributed to the
+    shown world) or ``NONE`` (no mutation produced the world)."""
     return {
         "provenance_only": True,
         "searched_path": [
             {"family": m.family, "target": m.target, "description": m.description} for m in searched
         ],
-        "mutation_attribution": "SURVIVING_EDITS"
+        "mutation_attribution": "SURVIVING_EFFECTS"
         if kept
         else ("UNDETERMINED" if searched else "NONE"),
     }

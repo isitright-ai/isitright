@@ -200,22 +200,25 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   edits that remain in the world, without an edit that a later one overwrote. Before, it listed every
   mutation of the world the search found, including ones minimization had removed. The path that
   produced the world the search found is kept under `minimization.searched_path` as provenance
-  (`provenance_only`, with `mutation_attribution`: `SURVIVING_EDITS`, `UNDETERMINED` or `NONE`); it is
+  (`provenance_only`, with `mutation_attribution`: `SURVIVING_EFFECTS`, `UNDETERMINED` or `NONE`); it is
   not a replay recipe. When no mutation survives, `mutation_path` is empty and the headline gives the
   change that is left and says that which mutation caused it is undetermined; it never names the
   baseline or a mutation. `totals.by_family` counts each surviving family once per finding, so it can
-  add up to more than the number of findings; totals of older reports counted only the last mutation's
+  add up to more or fewer than the number of findings (an undetermined finding counts for none); totals of older reports counted only the last mutation's
   family and are not comparable.
 - **Schema 0.9 requires the identity.** A report with `schema_version` `0.9` is refused if a finding has
   no `world_fingerprint`; a finding that names a world must tie its validity, world diff and
   divergence (and counts, replay artifact and export when it has them) to it. A `RATE_INCREASE` needs
-  at least as many judged runs of the world shown as the test has pairs. Reports written as 0.8 or
+  at least as many judged runs of the world shown, and of the paired baseline runs, as the test has
+  pairs, and its `observation` is required. Reports written as 0.8 or
   earlier load as before. The world stored in a replay artifact is compared with the finding's
   fingerprint when the data and research packs write it, in `data replay`, `agents export` and
   `agents replay`.
 - **SQL.** The kind of difference has a stated precedence (error, then row count, then values or
-  columns), the fallback to the world the search found must reproduce that kind, and a reference
-  query that errors gives no counterexample (the case is `INCONCLUSIVE`, `NOT_REPRODUCED`).
+  columns), the fallback to the world the search found must reproduce that kind (else the case is
+  `INCONCLUSIVE`, `NOT_REPRODUCED`), and a reference query that errors on the world gives no
+  counterexample: `INCONCLUSIVE` with `REFERENCE_ERROR`, since no disagreement was established to
+  confirm.
 - **Agents.** A minimal world that carries a response or timing change does not claim
   `DOMAIN_VALIDATED`, and `minimization.not_adopted` records the minimal world's fingerprint and counts
   (failures out of judged runs, errors) with the reason; the searched world's significance is not

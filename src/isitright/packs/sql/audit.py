@@ -149,6 +149,10 @@ class _NotReproduced(Exception):
     """A disagreement that did not reproduce when its world was rerun: no finding is reported."""
 
 
+class _ReferenceError(Exception):
+    """The reference query errors on the world: nothing was established to confirm, no finding."""
+
+
 class _Abort(Exception):
     """A native engine failed in a way the search cannot continue from."""
 
@@ -715,7 +719,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     description="No generated mutation; the original database diverged.",
                     base=None,
                 )
-            except _NotReproduced as error:
+            except (_NotReproduced, _ReferenceError) as error:
                 return self._not_reproduced(case, policy, started, config, original, errors, error)
             return self._report(
                 case,
@@ -838,7 +842,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     description="; ".join(m.description for m in found.candidate.world.path),
                     base=base_state,
                 )
-            except _NotReproduced as error:
+            except (_NotReproduced, _ReferenceError) as error:
                 return self._not_reproduced(
                     case, policy, started, config, original, errors, error, result
                 )
@@ -1167,7 +1171,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         p = self.prepared
         found_kind = difference_kind(outputs[0], outputs[1])
         if found_kind is None:  # the reference errors: nothing trustworthy to compare against
-            raise _NotReproduced(
+            raise _ReferenceError(
                 "the reference query errors on the world the disagreement was found on, so the "
                 "two queries cannot be compared there"
             )
@@ -1386,11 +1390,15 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         config: CheckConfig,
         original: dict[str, Any],
         errors: list[dict[str, str]],
-        error: _NotReproduced,
+        error: _NotReproduced | _ReferenceError,
         search_result: SearchResult | None = None,
     ) -> CaseReport:
-        """A disagreement that did not reproduce when its world was rerun is no finding."""
-        errors.append({"code": "NOT_REPRODUCED", "message": str(error), "phase": "confirmation"})
+        """A disagreement that did not reproduce when its world was rerun, or one with a reference
+        that errors, is no finding. The two are told apart: ``NOT_REPRODUCED`` says a disagreement
+        that was established failed its confirmation; ``REFERENCE_ERROR`` says there was nothing
+        trustworthy to confirm."""
+        code = "REFERENCE_ERROR" if isinstance(error, _ReferenceError) else "NOT_REPRODUCED"
+        errors.append({"code": code, "message": str(error), "phase": "confirmation"})
         return self._report(
             case,
             policy,

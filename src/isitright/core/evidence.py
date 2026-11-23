@@ -294,10 +294,23 @@ class Finding(Closed):
                 raise ValueError("a rate increase needs a sequential decision of RATE_INCREASE")
             if claim is None:
                 raise ValueError("a rate increase needs the rate claim of its sequential test")
-            if self.observation is not None and self.observation.world.judged < sequential.pairs:
+            if self.observation is None:
+                raise ValueError(
+                    "a rate increase needs the observation counts of the world shown and of the "
+                    "baseline runs paired with it"
+                )
+            if self.observation.world.judged < sequential.pairs:
                 raise ValueError(
                     "a rate increase rests on pairs of runs of the world shown, which has fewer "
                     "judged runs than the test has pairs"
+                )
+            if (
+                self.observation.baseline is None
+                or self.observation.baseline.judged < sequential.pairs
+            ):
+                raise ValueError(
+                    "a rate increase rests on pairs with fresh baseline runs: fewer judged "
+                    "baseline runs are recorded than the test has pairs"
                 )
             if (
                 claim.test != sequential.test

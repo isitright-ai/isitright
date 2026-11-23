@@ -958,7 +958,7 @@ def test_the_searched_path_is_kept_as_provenance_and_attribution_says_what_it_ca
     none_left = searched_path_record(searched, [])
     assert none_left["mutation_attribution"] == "UNDETERMINED" and none_left["provenance_only"]
     assert [m["family"] for m in none_left["searched_path"]] == ["retract", "boundary"]
-    assert searched_path_record(searched, survivors)["mutation_attribution"] == "SURVIVING_EDITS"
+    assert searched_path_record(searched, survivors)["mutation_attribution"] == "SURVIVING_EFFECTS"
     assert searched_path_record([], [])["mutation_attribution"] == "NONE"
 
 
@@ -1189,3 +1189,308 @@ def test_an_agents_replay_refuses_a_recorded_world_that_is_not_the_one_the_run_u
         (out / run["run_dir"] / "world.json").write_bytes(kept)
     assert not outcome.reproduced
     assert "not the world the run was launched with" in outcome.detail
+
+
+# -- a rate increase carries the counts behind its paired decision -----------------------------
+
+
+def _rate_finding_data() -> dict[str, Any]:
+    from .test_finding_grades import _rate_case
+
+    return _rate_case().findings[0].model_dump(mode="json")
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda d: d.update(observation=None), "needs the observation counts"),
+        (
+            lambda d: d["observation"]["world"].update(judged=3),
+            "fewer judged runs than the test has pairs",
+        ),
+        (
+            lambda d: d["observation"]["baseline"].update(judged=3),
+            "fewer judged baseline runs are recorded than the test has pairs",
+        ),
+        (
+            lambda d: d["observation"].update(baseline=None),
+            "fewer judged baseline runs are recorded than the test has pairs",
+        ),
+    ],
+)
+def test_a_rate_increase_without_the_counts_behind_its_pairs_is_refused(
+    change: Any, message: str
+) -> None:
+    data = _rate_finding_data()
+    Finding.model_validate(data)  # the unchanged finding is fine
+    change(data)
+    with pytest.raises(ValidationError, match=message):
+        Finding.model_validate(data)
+
+
+# -- SQL: a reference that errors is not a failed confirmation ---------------------------------
+
+
+@pytest.mark.parametrize("both_error", [False, True])
+def test_a_reference_that_errors_gives_no_finding_and_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, both_error: bool
+) -> None:
+    from isitright.packs.sql import check, hosts
+    from isitright.packs.sql.results import error_result
+
+    database = tmp_path / "ids.sqlite"
+    connection = sqlite3.connect(database)
+    try:
+        connection.executescript(
+            "CREATE TABLE t(id INTEGER PRIMARY KEY, v INTEGER); INSERT INTO t VALUES (1, 5);"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    real = hosts.SqliteHost.run_pair
+
+    def run_pair(
+        self: Any, state: Any, reference_sql: str, candidate_sql: str, **kwargs: Any
+    ) -> Any:
+        _, right = real(self, state, reference_sql, candidate_sql, **kwargs)
+        return error_result("reference failed"), (
+            error_result("candidate failed") if both_error else right
+        )
+
+    monkeypatch.setattr(hosts.SqliteHost, "run_pair", run_pair)
+    report = check(
+        database=database, reference_sql="SELECT v FROM t", candidate_sql="SELECT DISTINCT v FROM t"
+    )
+    assert report.findings == []
+    assert report.divergence_status is DivergenceStatus.INCONCLUSIVE
+    # not NOT_REPRODUCED: no disagreement was ever established, so none failed its confirmation
+    assert [e["code"] for e in report.errors] == ["REFERENCE_ERROR"]
+    assert "the reference query errors" in report.errors[0]["message"]
+    assert "reference query errors" in report.headline
+
+
+# -- research: the noise floor of a minimization is the baseline's failure rate ----------------
+
+
+@pytest.mark.parametrize(
+    ("baseline_failures", "reference"), [(0, 0.05), (1, 0.25), (2, 0.5), (4, 0.5)]
+)
+def test_the_research_noise_floor_comes_from_the_baseline_failure_rate(
+    monkeypatch: pytest.MonkeyPatch, baseline_failures: int, reference: float
+) -> None:
+    """The reference failure rate is the baseline's observed rate, at least 5% and at most 50%;
+    the alternative is 45 points above it (at most 95%)."""
+    from isitright.packs.research import audit as research_audit
+    from isitright.packs.research.agents import STAND_INS
+    from isitright.packs.research.audit import Subject
+
+    from .research_fixtures import audit
+
+    a = audit(
+        depth=1,
+        runs=4,
+        minimize=True,
+        minimized_findings=1,
+        max_findings=1,
+        seed=11,
+        allow_failing_baseline=True,
+    )
+    careful = a.stand_in(STAND_INS["careful"](a.task))
+    base = a.base.fingerprint()
+    baseline_calls = {"n": 0}
+
+    def execute(world: Any, seed: int) -> Any:
+        run = careful.execute(world, seed)
+        if world.fingerprint() == base:
+            baseline_calls["n"] += 1
+            return _ghost_citation(run) if baseline_calls["n"] <= baseline_failures else run
+        return _ghost_citation(run)
+
+    seen: dict[str, Any] = {}
+    real = research_audit.minimize_path_noisy
+
+    def spy(world: Any, path: Any, run: Any, *, config: Any = None, **kwargs: Any) -> Any:
+        seen["config"] = config
+        return real(world, path, run, config=config, **kwargs)
+
+    monkeypatch.setattr(research_audit, "minimize_path_noisy", spy)
+    case = a.check(Subject(careful.label, True, execute))
+    assert case.findings and "config" in seen, case.headline
+    config = seen["config"]
+    assert config.reference == pytest.approx(reference)
+    assert config.effect == pytest.approx(min(0.95, reference + 0.45))
+    assert case.findings[0].minimization["reference_failure_rate"] == pytest.approx(reference)
+
+
+# -- research: the writer refuses an artifact that holds another world -------------------------
+
+
+def test_the_research_writer_refuses_a_replay_artifact_of_another_world(tmp_path: Path) -> None:
+    from isitright.packs.research.replaying import write_outputs
+
+    from .research_fixtures import run_stand_in
+
+    a, case = run_stand_in("credulous", depth=1)
+    assert case.findings
+    write_outputs(
+        tmp_path / "ok", case, a.artifacts, a.exports
+    )  # the artifacts hold the shown worlds
+    finding = case.findings[0]
+    swapped = dict(a.artifacts)
+    swapped[finding.finding_id] = a.artifacts[finding.finding_id].model_copy(
+        update={"world": a.base.to_json()}
+    )
+    assert finding.world_fingerprint != a.base.fingerprint()
+    with pytest.raises(ValueError, match="is not the world of finding"):
+        write_outputs(tmp_path / "bad", case, swapped, a.exports)
+
+
+# -- data: a frozen disagreement that disappears when rerun is no finding -----------------------
+
+
+def test_a_frozen_data_disagreement_that_disappears_on_rerun_is_no_finding(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("pandas")
+    from isitright.packs.data.audit import AuditConfig, DataAudit, Pair
+    from isitright.packs.data.task import load_task
+    from tests.data_factories import DROPNA_FORGOTTEN, make_task, program
+
+    task = load_task(make_task(tmp_path / "task"))
+    with DataAudit(task, AuditConfig(attempts=80, trust_code=True, reuse=20)) as audit:
+        real = audit.run_pair
+        seen: dict[str, int] = {}
+
+        def run_pair(code: str, state: Any) -> Any:
+            pair = real(code, state)
+            seen[state.fingerprint()] = seen.get(state.fingerprint(), 0) + 1
+            # a world sighted before gives the reference's answer for both: nothing differs now
+            return (
+                Pair(gold=pair.gold, program=pair.gold) if seen[state.fingerprint()] >= 2 else pair
+            )
+
+        audit.run_pair = run_pair  # type: ignore[method-assign]
+        case = audit.check_frozen(program(DROPNA_FORGOTTEN, "dropna_forgotten"))
+    assert case.findings == []
+    assert case.divergence_status is DivergenceStatus.INCONCLUSIVE
+    assert [e["code"] for e in case.errors] == ["NOT_REPRODUCED"]
+
+
+# -- agents: a rate increase stays with the world its paired test decided it on ----------------
+
+
+def _careless_shop_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, sequential: bool, fake_minimal: Any = None
+) -> tuple[Any, Path, str]:
+    pytest.importorskip("mcp")
+    from isitright.core.oracles import Role
+    from isitright.packs.mcp import audit as mcp_audit
+    from isitright.packs.mcp.audit import run_scenario
+    from isitright.packs.mcp.generate import generate_worlds
+    from isitright.packs.mcp.model import load_scenario
+
+    scenario = load_scenario(SHOP_REF)
+    found, _ = generate_worlds(scenario, attempts=2000, depth=2)
+    composed = next(
+        w for w in found if w.role is Role.TRAP and w.observable and len(w.families) == 2
+    )
+    if fake_minimal is not None:
+        real = mcp_audit._run_world
+
+        def run_world(
+            runner: Any,
+            target: Any,
+            base: Any,
+            comparison: Any,
+            config: Any,
+            k: int,
+            sequential: bool,
+            after_search: bool = False,
+        ) -> None:
+            if after_search:
+                fake_minimal(target)
+            else:
+                real(runner, target, base, comparison, config, k, sequential, after_search)
+
+        monkeypatch.setattr(mcp_audit, "_run_world", run_world)
+    monkeypatch.setenv("SHOP_AGENT_MODE", "careless")
+    out = tmp_path / "out"
+    report = run_scenario(
+        scenario_ref=SHOP_REF,
+        agent_command=f'"{sys.executable}" "{EXAMPLES / "shop" / "scripted_agent.py"}"',
+        output_dir=out,
+        worlds="generated",
+        k=2,
+        attempts=2000,
+        only=[composed.id],
+        trust_code=True,
+        timeout_seconds=60,
+        minimize=True,
+        minimize_max_runs=120,
+        sequential=sequential,
+    )
+    return report, out, composed.id
+
+
+def test_an_agents_rate_increase_is_not_moved_to_a_minimal_world_without_its_own_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The searched world's paired test decided a rate increase. The minimal world fails once and
+    has no paired test: it is recorded with its counts, and the finding keeps the searched world,
+    its grade, its counts, its replay and its export."""
+    from isitright.core.oracles import Outcome
+    from isitright.core.stochastic import RunOutcome
+    from isitright.packs.mcp.audit import export_eval_cases
+
+    def one_failure_no_pairs(target: Any) -> None:
+        target.result.outcomes = [RunOutcome(Outcome.NOT_MET), RunOutcome(Outcome.MET)]
+
+    report, out, searched = _careless_shop_run(
+        tmp_path, monkeypatch, sequential=True, fake_minimal=one_failure_no_pairs
+    )
+    (finding,) = report.cases[0].findings
+    assert finding.world_id == searched and len(finding.mutation_path) == 2
+    assert finding.evidence_grade is not None and finding.evidence_grade.value == "RATE_INCREASE"
+    assert finding.stability is not None and finding.stability.sequential is not None
+    assert finding.minimization["adopted"] is False
+    not_adopted = finding.minimization["not_adopted"]
+    assert "no paired test decided a rate increase" in not_adopted["reason"]
+    assert (not_adopted["failures"], not_adopted["judged_runs"]) == (1, 2)
+    assert not_adopted["world"] != finding.world_fingerprint
+    # the counts are the searched world's own runs, not the minimal world's two outcomes
+    runs = [r for r in report.cases[0].extensions["mcp"]["runs"] if r["world_id"] == searched]
+    assert finding.observation is not None and finding.observation.world.judged > 2
+    assert finding.observation.world.judged + finding.observation.world.errors == len(runs)
+    assert finding.divergence["example_run_dir"].startswith(f"runs/{searched}/")
+    (case,) = export_eval_cases(SHOP_REF, report, out)
+    assert world_json_fingerprint(case.payload["world"]) == finding.world_fingerprint
+    assert len(World.from_json(case.payload["world"]).path) == 2
+
+
+def test_the_replay_of_an_adopted_minimal_world_run_reproduces_its_recorded_verdict(
+    minimized_shop: tuple[Any, Path, str],
+) -> None:
+    """The replay re-executes the recorded calls in the minimal world and checks the final state,
+    the invariant verdicts and the oracle outcome against what the run recorded."""
+    from isitright.packs.mcp.model import WORLD_CHANGE, load_scenario
+    from isitright.packs.mcp.replay import replay_run
+    from isitright.packs.mcp.runner import read_trace
+
+    report, out, searched = minimized_shop
+    (finding,) = report.cases[0].findings
+    runs = report.cases[0].extensions["mcp"]["runs"]
+    run = next(r for r in runs if r["run_dir"] == finding.divergence["example_run_dir"])
+    assert run["world_id"] == f"{searched}.minimal"
+    assert run["outcome"] == "NOT_MET" or run["violations"]  # the recorded failure
+    events = list(read_trace(out / run["run_dir"] / "trace.jsonl"))
+    outcome = replay_run(load_scenario(SHOP_REF), run, out)
+    assert outcome.reproduced, outcome.detail
+    calls = sum(1 for e in events if e["name"] != WORLD_CHANGE)
+    assert f"{calls} calls re-executed; state and verdicts match" in outcome.detail
+    # a recorded verdict that the world does not give is not reproduced: the oracle outcome ...
+    flipped = dict(run, outcome="MET" if run["outcome"] != "MET" else "NOT_MET")
+    scenario = load_scenario(SHOP_REF)
+    assert not replay_run(scenario, flipped, out).reproduced
+    # ... and the invariant verdicts
+    other = [] if run["violations"] else [{"invariant": "none_such", "message": "x"}]
+    assert not replay_run(scenario, dict(run, violations=other), out).reproduced
