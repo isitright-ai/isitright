@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from isitright import __version__
+from isitright.core.constraints import ValidityStatus, ValidityTier
 from isitright.core.evidence import (
     AuditReport,
     CaseReport,
@@ -45,6 +46,7 @@ from isitright.core.oracles import Outcome, Role, controls_status
 from isitright.core.paths import contained_path, replay_placeholder
 from isitright.core.search import Progress
 from isitright.core.sequential import PairedSprt, RateSprtConfig, SprtConfig
+from isitright.core.shown import built_from, world_json_fingerprint
 from isitright.core.stochastic import (
     DEFAULT_K,
     Budget,
@@ -61,7 +63,7 @@ from isitright.core.stochastic import (
     stability_sequential,
 )
 from isitright.core.world import diff_states, sha256_text
-from isitright.packs.mcp.generate import GeneratedWorld, generate_worlds
+from isitright.packs.mcp.generate import GeneratedWorld, annotate, generate_worlds
 from isitright.packs.mcp.model import (
     WORLD_CHANGE,
     FixedWorld,
@@ -224,6 +226,13 @@ class WorldResult:
     paired_baseline: list[RunOutcome] = field(default_factory=list)
     """The fresh baseline runs this world's pairs were made with (empty when not paired)."""
     minimization: NoisyMinimization | None = None
+    adopted: WorldResult | None = None
+    """The minimal path of ``minimization`` run as a world of its own: the evidence of the finding
+    when the minimal world fails at least as strongly as this one (see `_confirm_minimal`)."""
+    not_adopted: dict[str, Any] | None = None
+    """Why a minimal path was found but not shown, when it was not: ``reason``, and, when the
+    minimal world was run, its fingerprint and counts (failures out of judged runs, errors). The
+    observations are kept; the searched world's significance is not carried over to them."""
 
 
 @dataclass
@@ -347,6 +356,7 @@ def _judge_launched(
         result.runs.append(
             {
                 "world_id": rw.id,
+                "world_fingerprint": rw.world.fingerprint(),
                 "trial": launched.trial,
                 "seed": launched.seed,
                 "run_status": status,
@@ -543,6 +553,9 @@ def run_scenario(
                 extra,
                 min(minimize_max_runs, _runs_left(budget)),
             )
+            _confirm_minimal(
+                scenario, rw, result, runner, base_target, comparison, config, k, sequential, extra
+            )
     if rail is not None:
         for rw in ranked[len(to_run) :]:
             skip(rw, f"safety rail: --max-worlds {rail} reached")
@@ -631,6 +644,96 @@ def _minimize_world(
     return result
 
 
+def _confirm_minimal(
+    scenario: McpScenario,
+    rw: RunWorld,
+    result: WorldResult,
+    runner: SubjectRunner[RunTarget, _Launched],
+    base: RunTarget,
+    comparison: RunTarget,
+    config: SprtConfig,
+    k: int,
+    sequential: bool,
+    extra: list[WorldResult],
+) -> None:
+    """Run a minimal path as a world of its own and show it only if it fails as strongly.
+
+    The minimal path was judged by the minimization's own runs. The finding must be about one world,
+    with its own counts, paired test, run directory and validity, so the minimal world is run the
+    way a searched world is (``k`` runs and, after a failure, fresh pairs) and replaces the searched
+    world in the finding only if it was found valid and judgeable, failed, and, when the searched
+    world's paired test decided a rate increase, did so too.
+    """
+    found = result.minimization
+    if found is None or not found.minimal or len(found.path) >= len(rw.world.path):
+        return
+    world = World(scenario.base)
+    for mutation in found.path:
+        world = world.apply(mutation)
+    validity = scenario.spec.validate_world(world.state, world.path)
+    if validity.status is not ValidityStatus.VALID:
+        result.not_adopted = {"reason": "the minimal path gives a world that is not valid"}
+        return
+    minimal = annotate(scenario, world, validity, f"{rw.id}.minimal", "minimal", len(world.path))
+    if minimal.role is Role.UNJUDGEABLE:
+        result.not_adopted = {
+            "reason": f"the oracle cannot judge the minimal world: {minimal.role_basis}"
+        }
+        return
+    minimal_rw = RunWorld(
+        minimal.id,
+        world,
+        minimal.description,
+        minimal.reference,
+        _minimal_world_validity(world, minimal),
+        generated=minimal,
+    )
+    tested = WorldResult(minimal_rw)
+    extra.append(tested)
+    _run_world(runner, RunTarget(minimal_rw, tested), base, comparison, config, k, sequential, True)
+    reason = None
+    if not tested.outcomes:
+        reason = "the run budget was spent before the minimal world was run"
+    elif not any(is_bad(o) for o in tested.outcomes):
+        reason = "no run of the minimal world failed"
+    elif (
+        grade_of(result.sequential) is EvidenceGrade.RATE_INCREASE
+        and grade_of(tested.sequential) is not EvidenceGrade.RATE_INCREASE
+    ):
+        reason = "no paired test decided a rate increase on the minimal world"
+    if reason is None:
+        result.adopted = tested
+    else:
+        counts = count(tested.outcomes)
+        result.not_adopted = {
+            "reason": reason,
+            "world": world.fingerprint(),
+            "failures": sum(is_bad(o) for o in tested.outcomes),
+            "judged_runs": sum(is_judged(o) for o in tested.outcomes),
+            "errors": counts.errors,
+        }
+
+
+def _minimal_world_validity(world: World, generated: GeneratedWorld) -> ValidityRecord:
+    """What is established about a minimal world: the scenario's state validation and the
+    generation's tiers, and no more. Response and timing changes are not validated by any rule, so
+    a path that carries one does not claim ``DOMAIN_VALIDATED``."""
+    tiers = list(generated.tiers)
+    notes = list(generated.notes)
+    if any(m.target != "state" for m in world.path):
+        tiers = [t for t in tiers if t != ValidityTier.DOMAIN_VALIDATED.value]
+        notes.append(
+            "the minimal path has a response or timing change, which no rule validates: "
+            "DOMAIN_VALIDATED is not claimed for this world"
+        )
+    return ValidityRecord(
+        status="VALID",
+        tiers=tiers,
+        unobservable=not generated.observable,
+        notes=notes,
+    )
+
+
 def _ineligible_reason(rw: RunWorld) -> str:
     g = rw.generated
     if g is None:
@@ -663,13 +766,16 @@ def _run_world(
     config: SprtConfig,
     k: int,
     sequential: bool,
+    after_search: bool = False,
 ) -> None:
     """Run one world: k runs. When the test is sequential and one of them failed, pairs with fresh
-    baseline runs follow until the test decides; a world that did not fail costs no baseline run."""
+    baseline runs follow until the test decides; a world that did not fail costs no baseline run.
+    ``after_search`` is for a world run after the search (a minimal path)."""
+    tag = "confirm" if after_search else "search"
     if not sequential or all(o.error for o in base.result.outcomes):  # no baseline run to pair with
-        runner.run_repeated(target, k, "search")
+        runner.run_repeated(target, k, tag, after_search=after_search)
         return
-    staged = runner.run_staged(target, comparison, config, k)
+    staged = runner.run_staged(target, comparison, config, k, tag, after_search=after_search)
     if staged.paired is not None:
         target.result.sequential = staged.paired.test
         target.result.paired_baseline = staged.paired.baseline_outcomes
@@ -730,6 +836,8 @@ def build_report(
     runnable = [r for r in results if r.world.runnable and not r.world.baseline]
     findings: list[Finding] = []
     world_records: list[WorldRecord] = []
+    result_grades: dict[str, EvidenceGrade] = {}
+    """Per searched world: the grade its own paired test gave (the search's multiplicity)."""
     for r in results:
         rw = r.world
         outcomes = r.outcomes
@@ -762,7 +870,15 @@ def build_report(
         bad = [o for o in outcomes if o.violated or o.outcome is Outcome.NOT_MET]
         if not bad or r.example is None:
             continue
-        violated = sorted({n for n, _ in r.violations})
+        s = r.adopted or r  # the world the finding shows, and the runs that are its evidence
+        shown_rw, outcomes = s.world, s.outcomes
+        bad = [o for o in outcomes if o.violated or o.outcome is Outcome.NOT_MET]
+        fingerprint = shown_rw.world.fingerprint()
+        example_run = next(
+            run for run in s.runs if run["violations"] or run["outcome"] == "NOT_MET"
+        )
+        result_grades[rw.id] = grade_of(r.sequential)
+        violated = sorted({n for n, _ in s.violations})
         oracles = [
             OracleRecord(
                 name=n,
@@ -783,43 +899,46 @@ def build_report(
                 description=scenario.oracle.description,
             )
         )
+        # the world the example run was launched with (a hand-built record may not say)
+        stored = example_run.get("world_fingerprint", fingerprint)
         findings.append(
             Finding(
-                finding_id=f"{scenario.id}:{rw.id}",
-                world_id=rw.id,
-                validity=rw.validity,
+                finding_id=f"{scenario.id}:{shown_rw.id}",
+                world_id=shown_rw.id,
+                validity=shown_rw.validity,
                 oracles=oracles,
                 stability=(
-                    stability_sequential(r.paired_baseline, outcomes, k, r.sequential)
-                    if r.sequential is not None
+                    stability_sequential(s.paired_baseline, outcomes, k, s.sequential)
+                    if s.sequential is not None
                     else stability_counts_only(baseline_outcomes, outcomes, k)
                 ),
-                evidence_grade=grade_of(r.sequential),
-                observation=observation_of(outcomes, r.paired_baseline),
-                world_diff=diff_states(scenario.base, rw.world.state),
-                mutation_path=(
-                    _mutation_records(r.minimization.path)
-                    if r.minimization is not None and r.minimization.minimal
-                    else _path(rw.world)
-                ),
-                minimization=_minimization_record(r.minimization, len(rw.world.path)),
+                evidence_grade=grade_of(s.sequential),
+                observation=observation_of(outcomes, s.paired_baseline),
+                world_diff=diff_states(scenario.base, shown_rw.world.state),
+                mutation_path=_path(shown_rw.world),
+                minimization=_minimization_record(r.minimization, len(rw.world.path), r),
                 divergence={
-                    "role": rw.role.value,
-                    "example_run_dir": next(
-                        run["run_dir"]
-                        for run in r.runs
-                        if run["violations"] or run["outcome"] == "NOT_MET"
-                    ),
-                    "messages": r.messages,
-                    "violations": [{"invariant": n, "message": m} for n, m in r.violations[:5]],
+                    "role": shown_rw.role.value,
+                    "example_run_dir": example_run["run_dir"],
+                    "found_on_world": rw.id,
+                    "messages": s.messages,
+                    "violations": [{"invariant": n, "message": m} for n, m in s.violations[:5]],
                     "runs_affected": len(bad),
                     "runs_evaluated": len(outcomes),
                     "world_changes_in_trace": sum(
-                        1 for e in r.example.trace if e["name"] == WORLD_CHANGE
-                    ),
+                        1 for e in s.example.trace if e["name"] == WORLD_CHANGE
+                    )
+                    if s.example is not None
+                    else 0,
                 },
                 fidelity=FidelityRecord(found_on=scenario.fidelity.value),
-                headline=_finding_headline(violated, reached, len(bad), len(outcomes), rw.id),
+                world_fingerprint=fingerprint,
+                built_from={
+                    **built_from(fingerprint, "validity", "world_diff", "divergence", "counts"),
+                    "replay": stored,
+                    "export": stored,
+                },
+                headline=_finding_headline(violated, reached, len(bad), len(outcomes), shown_rw.id),
             )
         )
     world_records.extend(_not_run_records(context))
@@ -837,9 +956,8 @@ def build_report(
         if judged_mutated == 0
         else DivergenceStatus.NOT_FOUND_WITHIN_BUDGET
     )
-    grades = {f.world_id: f.evidence_grade for f in findings}
     multiplicity = multiplicity_of(
-        [(r.outcomes, grades.get(r.world.id)) for r in runnable],
+        [(r.outcomes, result_grades.get(r.world.id)) for r in runnable],
         [*(baseline_outcomes or []), *(o for r in runnable for o in r.paired_baseline)],
     )
     pairs = [(r.world.role, [o.outcome for o in r.outcomes if o.outcome]) for r in results]
@@ -1051,16 +1169,27 @@ def _mutation_records(path: Any) -> list[MutationRecord]:
     ]
 
 
-def _minimization_record(result: NoisyMinimization | None, original: int) -> dict[str, Any]:
-    """What the noisy minimization did, with its evidence. A path is replaced only when minimal."""
+def _minimization_record(
+    result: NoisyMinimization | None, original: int, searched: WorldResult | None = None
+) -> dict[str, Any]:
+    """What the noisy minimization did, with its evidence. A path is shown only when it is minimal
+    and its world, run in its own right, fails at least as strongly as the searched one."""
     if result is None:
         return {}
+    adopted = searched is not None and searched.adopted is not None
     return {
+        "adopted": adopted,
+        **(
+            {"not_adopted": searched.not_adopted}
+            if searched is not None and searched.not_adopted
+            else {}
+        ),
         "method": "delta debugging over the path's mutations, steps judged by a sequential test",
         "status": result.status.value,
         "minimal": result.minimal,
         "mutations_before": original,
-        "mutations_after": len(result.path),
+        "mutations_after": len(result.path) if adopted else original,
+        "minimal_path_mutations": len(result.path),
         "runs": result.runs,
         "kept": [m.description for m in result.path],
         "note": result.note,
@@ -1351,6 +1480,14 @@ def export_eval_cases(
             output_dir, str(finding.divergence["example_run_dir"]), what="run directory"
         )
         world = json.loads((run_dir / "world.json").read_text(encoding="utf-8"))
+        if (
+            finding.world_fingerprint is not None
+            and world_json_fingerprint(world) != finding.world_fingerprint
+        ):
+            raise ValueError(
+                f"the world recorded in {finding.divergence['example_run_dir']} is not the world "
+                f"of finding {finding.finding_id}: refusing to export it"
+            )
         run = next(
             r
             for r in case.extensions["mcp"]["runs"]

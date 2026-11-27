@@ -178,6 +178,11 @@ def render_case(case: CaseReport) -> str:
         )
         reference = QueryResult.model_validate(divergence["reference_result"])
         candidate = QueryResult.model_validate(divergence["candidate_result"])
+        world_word = (
+            "minimized"
+            if finding.minimization.get("shown", "minimized") == "minimized"
+            else "larger"
+        )
         lines.extend(
             [
                 "**Observed difference:** "
@@ -199,7 +204,7 @@ def render_case(case: CaseReport) -> str:
                 case.inputs["candidate_sql"],
                 "```",
                 "",
-                "## Outputs on the minimized reproducer",
+                f"## Outputs on the {world_word} reproducer",
                 "",
                 "### Reference output",
                 "",
@@ -218,9 +223,24 @@ def render_case(case: CaseReport) -> str:
                 "```",
                 "",
                 f"The fixture is `{finding.replay.artifact or 'not emitted'}` and "
-                "`counterexample.sql` holds the minimized schema and rows; the JSON report "
+                f"`counterexample.sql` holds the {world_word} schema and rows; the JSON report "
                 "retains both queries and outputs.",
                 "",
+                *(
+                    [
+                        "The world shown is the world found before minimizing, because "
+                        f"{finding.minimization.get('reason', 'minimizing did not reproduce it')}."
+                        + (
+                            " The minimized world is in the JSON report as "
+                            "`divergence.minimized_world`, labeled emulated and unverified."
+                            if "minimized_world" in divergence
+                            else ""
+                        ),
+                        "",
+                    ]
+                    if world_word == "larger"
+                    else []
+                ),
                 "## What to do next",
                 "",
                 "1. Compare the question with both SQL queries and the output difference above.",

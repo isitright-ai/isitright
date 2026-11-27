@@ -32,10 +32,10 @@ review 1, finding C1).
 | V1 | Any rules file, even an empty one, grants `DOMAIN_VALIDATED` | Critical | `core/constraints.py` | R2 C1 | open (N3) |
 | V2 | Timers and response edits are never validated after they apply | High | `core/world.py`, `packs/mcp/runtime` | R1 C3 | open (N4) |
 | V3 | MCP minimization steps carry no validity assessment | Medium | `packs/mcp/audit.py` | R1 H2 | open (N4) |
-| E1 | Warehouse `VERIFIED` can refer to the unminimized world | High | `packs/sql/audit.py` | R3 H3 | open (N5) |
-| E2 | The SQL minimizer accepts any disagreement and keeps the first label | Medium | `packs/sql/audit.py` | R1 H5, R2 M6 | open (N5) |
-| E3 | MCP joins a minimized path to the original world's evidence | High | `packs/mcp/audit.py` | R1 H2 | open (N5) |
-| E4 | Research minimization repeats one seed and keeps findings that do not reproduce | High | `packs/research/audit.py` | R1 H2, R2 H4 | partly fixed in N1 (the seed: every call has its own); the kept non-reproducing finding stays open (N5). **0.9.0 release blocker, not closed by N2** (see "0.9.0 release blockers") |
+| E1 | Warehouse `VERIFIED` can refer to the unminimized world | High | `packs/sql/audit.py` | R3 H3 | fixed in N5 (see "Fixed by N5" below); reproduced |
+| E2 | The SQL minimizer accepts any disagreement and keeps the first label | Medium | `packs/sql/audit.py` | R1 H5, R2 M6 | fixed in N5 (see below); reproduced |
+| E3 | MCP joins a minimized path to the original world's evidence | High | `packs/mcp/audit.py` | R1 H2 | fixed in N5 (see below); reproduced |
+| E4 | Research minimization repeats one seed and keeps findings that do not reproduce | High | `packs/research/audit.py` | R1 H2, R2 H4 | fixed: the seed in N1 (every call has its own), the kept non-reproducing finding and the grade decided on another world in N5 (see below); reproduced |
 | E5 | Research baseline, minimization and confirmation run outside the budget | High | `packs/research/audit.py` | R1 H3, R2 H4, R3 H1 | fixed in 0.8.1 (H3, `d98598b`); N1 moves the check into the run loop |
 | E6 | MCP minimization never checks the money or time budget | Medium | `packs/mcp/audit.py` | R1 H3 | fixed in 0.8.1 (H3, `d98598b`); N1 moves the check into the run loop |
 | E7 | Live-data reports name replay files that are never written | High | `packs/data/live.py`, `packs/data/cli.py` | R1 H4 | open (N6) |
@@ -100,4 +100,16 @@ Branch `feature/0.9.0-n2-finding-grades`; the commits are those on the branch be
 
 | ID | Blocker | Owner of the fix | State |
 | --- | --- | --- | --- |
-| E4 / E3 (research) | A research finding's statistical decision (grade, counts, sequential record) is computed on the original tested world, while the reported finding shows the minimized world. N5 must attach a rate-increase claim to the world the paired evidence supports, and keep minimization from silently transferring significance to a different world. | N5 | open. N2 only states the limit: the report says the grade and counts describe the searched world (`divergence.graded_on_world`), and the shown world "was not itself tested by the paired test". Not marked resolved. |
+| E4 / E3 (research) | A research finding's statistical decision (grade, counts, sequential record) was computed on the original tested world, while the reported finding showed the minimized world. | N5 | closed by N5 (`e9cd5e0, dceacb8, 71ca494, 15bddb3, 782f0d2, fcc86db, 8941158, a6331b7`): a minimized world is run in its own right and shown only if it has at least the grade of the searched world; otherwise the finding stays on the searched world. `divergence.graded_on_world` is removed. |
+
+## Fixed by N5
+
+Branch `feature/0.9.0-n5-one-world`; the commits are those on the branch before it is squashed or merged. The tests named as failing before were run on `develop` at `6b1c4ab` (the N2 merge) and failed for the reason given; they pass on the branch. They are in `tests/test_one_world_per_finding.py`.
+
+| ID | What N5 did | Test that failed before | Commit |
+| --- | --- | --- | --- |
+| E1 | The warehouse finding shows the world the native engine confirmed; when only the larger world differs natively, that world is shown, `verified_on` describes it, and the minimized world is attached as emulated and unverified | `::test_the_world_that_differed_natively_is_the_world_the_finding_shows` (on `6b1c4ab`: the finding showed 1 row; the native engine differed on 2) | `e9cd5e0, dceacb8, 71ca494, 15bddb3, 782f0d2, fcc86db, 8941158, a6331b7` |
+| E2 | Minimization keeps a smaller world only if its difference is of the kind that was found (error, row count, row values); a minimized world that does not reproduce is not shown; the headline and mutation path name the mutations that survive | `::test_minimization_keeps_the_kind_of_difference_it_started_from` (on `6b1c4ab`: found `row count differs`, shown `ordered row 0 differs`) | `e9cd5e0, dceacb8, 71ca494, 15bddb3, 782f0d2, fcc86db, 8941158, a6331b7` |
+| E3 | The minimal path is run as a world of its own and the finding is built from those runs, or stays on the searched world; `agents export` refuses a recorded world that is not the finding's | `::test_the_exported_world_is_the_world_of_the_reported_path` (on `6b1c4ab`: the finding named 1 mutation, the exported world had 2) | `e9cd5e0, dceacb8, 71ca494, 15bddb3, 782f0d2, fcc86db, 8941158, a6331b7` |
+| E3 (data frozen) | A frozen data finding's `world_id` is the world it shows | `::test_a_frozen_data_finding_is_identified_by_the_world_it_shows` | `e9cd5e0, dceacb8, 71ca494, 15bddb3, 782f0d2, fcc86db, 8941158, a6331b7` |
+| E4 | The noise floor comes from the baseline rate; a minimized world is shown only with evidence of its own and at least the searched world's grade; a finding that did not reproduce on its shown world is refused by the model | `::test_a_research_finding_never_shows_a_world_that_did_not_reproduce` (on `6b1c4ab`: `shown_world_is_minimized` with `reproduces_on_shown_world` false). The adoption rules are pinned by new tests that were not run on the old code: `::test_a_research_finding_shows_the_minimized_world_when_it_has_evidence_of_its_own`, `::test_a_research_finding_stays_on_the_searched_world_when_the_minimized_one_does_not_fail`, `::test_a_rate_increase_is_never_moved_to_a_world_that_no_paired_test_decided_on` | `e9cd5e0, dceacb8, 71ca494, 15bddb3, 782f0d2, fcc86db, 8941158, a6331b7` |

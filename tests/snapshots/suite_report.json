@@ -19,6 +19,11 @@
       "extensions": {},
       "findings": [
         {
+          "built_from": {
+            "divergence": "ffffffffffffffff",
+            "validity": "ffffffffffffffff",
+            "world_diff": "ffffffffffffffff"
+          },
           "divergence": {},
           "evidence_grade": null,
           "export": null,
@@ -61,6 +66,7 @@
             "unobservable": false
           },
           "world_diff": {},
+          "world_fingerprint": "ffffffffffffffff",
           "world_id": "w"
         }
       ],

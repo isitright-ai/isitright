@@ -42,9 +42,15 @@ from isitright.core.evidence import (
 )
 from isitright.core.families import default_mutators
 from isitright.core.hints import Hints
-from isitright.core.minimize import minimize_world
+from isitright.core.minimize import changed_atoms, minimize_world
 from isitright.core.mutations import Candidate, World
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
+from isitright.core.shown import (
+    built_from,
+    change_phrase,
+    searched_path_record,
+    surviving_path,
+)
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import Budget
 from isitright.core.subjects import SubjectKind
@@ -56,7 +62,12 @@ from isitright.packs.sql.analysis import (
     harvest_query_guidance,
     validate_read_only_query,
 )
-from isitright.packs.sql.comparison import ComparisonError, compare_results, resolve_ordering
+from isitright.packs.sql.comparison import (
+    ComparisonError,
+    compare_results,
+    difference_kind,
+    resolve_ordering,
+)
 from isitright.packs.sql.dialect_fidelity import catalog_of, translate_for_duckdb
 from isitright.packs.sql.dialects import resolve_dialect_and_engine
 from isitright.packs.sql.domain_validation import domain_errors
@@ -132,6 +143,14 @@ Progress = Callable[[str], None]
 
 class InputError(ValueError):
     """A required input cannot be read or changed while it was being analyzed."""
+
+
+class _NotReproduced(Exception):
+    """A disagreement that did not reproduce when its world was rerun: no finding is reported."""
+
+
+class _ReferenceError(Exception):
+    """The reference query errors on the world: nothing was established to confirm, no finding."""
 
 
 class _Abort(Exception):
@@ -248,6 +267,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         self._warehouse_translations: dict[str, Translation] = {}
         self._native_cache: dict[str, tuple[str, Any, Any, Any]] = {}
         self.emulation_artifacts: list[dict[str, Any]] = []
+        self.unreconciled_native: list[dict[str, Any]] = []
+        """Native observations of a world no finding could be made on (warehouses)."""
         _validate_domain_schema(domain_schema)
         self.prepared = self._prepare(self.engine, database, ddl, domain_schema, validator)
 
@@ -400,6 +421,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         p = self.prepared
         self._native_cache = {}
         self.emulation_artifacts = []
+        self.unreconciled_native = []
         try:
             statements = (
                 self._statement(case.reference_sql),
@@ -685,20 +707,23 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
 
         # An original-data mismatch is a finding on the unmutated world, if it is admissible.
         if original_diff is not None and original_validity.status is ValidityStatus.VALID:
-            finding = self._finding(
-                case,
-                World(p.original),
-                p.original,
-                original_validity,
-                original_diff,
-                referenced=referenced,
-                config=config,
-                disagrees=confirmed,
-                native=confirm_native if self.dialect.warehouse else native_status,
-                generator="original_state",
-                description="No generated mutation; the original database diverged.",
-                base=None,
-            )
+            try:
+                finding = self._finding(
+                    case,
+                    World(p.original),
+                    p.original,
+                    original_validity,
+                    original_diff,
+                    referenced=referenced,
+                    config=config,
+                    disagrees=confirmed,
+                    native=confirm_native if self.dialect.warehouse else native_status,
+                    generator="original_state",
+                    description="No generated mutation; the original database diverged.",
+                    base=None,
+                )
+            except (_NotReproduced, _ReferenceError) as error:
+                return self._not_reproduced(case, policy, started, config, original, errors, error)
             return self._report(
                 case,
                 policy,
@@ -803,22 +828,27 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         if result.findings:
             found = result.findings[0]
             left, right, difference = found.evaluation.detail
-            finding = self._finding(
-                case,
-                found.candidate.world,
-                found.candidate.world.state,
-                found.validity,
-                (left, right, difference),
-                referenced=referenced,
-                config=config,
-                disagrees=confirmed,
-                native=confirm_native if self.dialect.warehouse else native_status,
-                generator=found.candidate.world.path[-1].family
-                if len(found.candidate.world.path) == 1
-                else "+".join(m.family for m in found.candidate.world.path),
-                description="; ".join(m.description for m in found.candidate.world.path),
-                base=base_state,
-            )
+            try:
+                finding = self._finding(
+                    case,
+                    found.candidate.world,
+                    found.candidate.world.state,
+                    found.validity,
+                    (left, right, difference),
+                    referenced=referenced,
+                    config=config,
+                    disagrees=confirmed,
+                    native=confirm_native if self.dialect.warehouse else native_status,
+                    generator=found.candidate.world.path[-1].family
+                    if len(found.candidate.world.path) == 1
+                    else "+".join(m.family for m in found.candidate.world.path),
+                    description="; ".join(m.description for m in found.candidate.world.path),
+                    base=base_state,
+                )
+            except (_NotReproduced, _ReferenceError) as error:
+                return self._not_reproduced(
+                    case, policy, started, config, original, errors, error, result
+                )
             verification = finding.fidelity.verification
             if (
                 self.dialect.warehouse
@@ -850,7 +880,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     search_result=result,
                     checked=list(found.validity.checked_rules),
                 )
-            family = finding.mutation_path[-1].family if finding.mutation_path else "baseline"
+            phrase = change_phrase(
+                finding.mutation_path,
+                finding.minimization.get("searched_path") or [],
+                finding.world_diff,
+            )
             return self._report(
                 case,
                 policy,
@@ -859,10 +893,10 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 status=DivergenceStatus.COUNTEREXAMPLE_FOUND,
                 validity=finding.validity,
                 headline=(
-                    f"Generated counterexample (candidate errors): the candidate errors after a "
-                    f"{family} mutation where the reference returns a result"
+                    f"Generated counterexample (candidate errors): the candidate errors "
+                    f"{phrase} where the reference returns a result"
                     if is_error_result(right)
-                    else f"Generated counterexample: queries diverge after a {family} mutation"
+                    else f"Generated counterexample: queries diverge {phrase}"
                 ),
                 original=original,
                 errors=errors,
@@ -1036,24 +1070,25 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         return "NATIVE_UNVERIFIED"
 
     def _verification(
-        self, native: tuple[str, Any, Any, Any], *, only_unminimized: bool = False
+        self, native: tuple[str, Any, Any, Any], *, minimized_agrees: bool = False
     ) -> VerificationRecord | None:
-        """What native re-execution said about a finding found on an emulating engine."""
+        """What native re-execution said about the world a finding shows. ``minimized_agrees``: the
+        world shown is the one found before minimizing, as the minimized one agrees natively."""
         if self.engine != "duckdb":
             return None
         status, _, _, note = native
         if self.dialect.warehouse:
             host = self._confirm_host
             label = host.engine if host is not None else None
-            if status == "differ" and only_unminimized:
+            if status == "differ" and minimized_agrees:
                 return VerificationRecord(
                     status="VERIFIED",
                     engine=label,
                     note=(
                         f"re-executed on {label} with the state inlined; the results differ on "
-                        "the larger world found before minimizing, but the minimized world shown "
-                        "here does not differ there (see native_confirmation): the minimal "
-                        "example is not itself confirmed"
+                        "the world shown, which is the larger world found before minimizing. The "
+                        "minimized world agrees there: it is attached as emulated and unverified "
+                        "(see minimized_world and native_confirmation)"
                     ),
                 )
             if status == "differ":
@@ -1091,6 +1126,32 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             note=str(note or self._verifier_note or "the finding was not re-executed natively"),
         )
 
+    def _world_artifacts(
+        self, case: SqlCase, state: State, referenced: list[str]
+    ) -> tuple[dict[str, list[dict[str, Any]]], str]:
+        """The rows of one world (the tables the queries read), as JSON, and the script that
+        rebuilds it on the engine the audit ran on."""
+        p = self.prepared
+        data = to_database_state(p.model, state)
+        retained = _retained_tables(p.model, referenced, data)
+        data = DatabaseState(tuple(t for t in data.tables if t.name in retained))
+        if self.engine == "sqlite":
+            reproducer = sqlite_reproducer(p.model.db, data)
+        elif self.dialect.warehouse:
+            reproducer = warehouse_reproducer(p.model.db, data, *self._executed)
+        else:
+            assert p.pg is not None
+            reproducer = postgres_reproducer(
+                p.pg, data, case.reference_sql, case.candidate_sql, engine=self.engine
+            )
+        rows = {
+            t.name: [
+                dict(zip(t.columns, row, strict=True)) for row in _json_rows(p.model, state, t.name)
+            ]
+            for t in data.tables
+        }
+        return rows, reproducer
+
     def _finding(
         self,
         case: SqlCase,
@@ -1107,13 +1168,23 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         description: str,
         base: State | None,
     ) -> Finding:
+        """One finding, about one world: the minimized world when it reproduces the disagreement
+        that was found (same kind) and, for a warehouse, differs natively; else the world found.
+        Everything in the finding is built from that world."""
         p = self.prepared
+        found_kind = difference_kind(outputs[0], outputs[1])
+        if found_kind is None:  # the reference errors: nothing trustworthy to compare against
+            raise _ReferenceError(
+                "the reference query errors on the world the disagreement was found on, so the "
+                "two queries cannot be compared there"
+            )
 
         def reproduces(candidate: World) -> bool:
             try:
-                return disagrees(candidate.state)[0]
+                differs, left, right, _ = disagrees(candidate.state)
             except Exception:
                 return False
+            return differs and difference_kind(left, right) == found_kind
 
         minimized = minimize_world(
             p.spec,
@@ -1129,24 +1200,66 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
             final_world, nested_before, nested_after = shrink_nested(
                 p.spec, minimized.world, trees, reproduces
             )
-        final_state = final_world.state
-        differs, left, right, difference = disagrees(final_state)
-        final_validity = p.spec.validate(final_state)
-        data = to_database_state(p.model, final_state)
-        retained = _retained_tables(p.model, referenced, data)
-        data = DatabaseState(tuple(t for t in data.tables if t.name in retained))
-        if self.engine == "sqlite":
-            reproducer = sqlite_reproducer(p.model.db, data)
-            fixture = "counterexample.sql"
-        elif self.dialect.warehouse:
-            reproducer = warehouse_reproducer(p.model.db, data, *self._executed)
-            fixture = "counterexample.sql"
-        else:
-            assert p.pg is not None
-            reproducer = postgres_reproducer(
-                p.pg, data, case.reference_sql, case.candidate_sql, engine=self.engine
+        shown = final_world
+        why_unminimized: str | None = None
+        differs, left, right, difference = disagrees(shown.state)
+        if not (differs and difference_kind(left, right) == found_kind):
+            why_unminimized = "the minimized world did not reproduce the disagreement when rerun"
+            shown = world
+            differs, left, right, difference = disagrees(shown.state)
+            if not (differs and difference_kind(left, right) == found_kind):
+                raise _NotReproduced(
+                    "the disagreement did not reproduce when the world it was found on was rerun"
+                )
+        native_shown = native(shown.state)
+        confirmation: list[dict[str, Any]] = []
+        attached: tuple[World, tuple[str, Any, Any, Any]] | None = None
+        if self.dialect.warehouse:
+            confirmation.append(
+                {
+                    "world": "minimized" if shown is not world else "unminimized",
+                    "result": native_shown[0],
+                    "note": native_shown[3],
+                }
             )
-            fixture = "counterexample.sql"
+            if native_shown[0] == "agree" and shown.state.fingerprint() != state.fingerprint():
+                second = native(state)  # the world found before minimizing
+                confirmation.append(
+                    {"world": "unminimized divergent", "result": second[0], "note": second[3]}
+                )
+                if second[0] == "differ":
+                    # The minimized world agrees natively: it is not the world the native engine
+                    # confirmed. Show the world it did confirm, and attach the minimized one as
+                    # emulated and unverified.
+                    attached = (shown, native_shown)
+                    shown, native_shown = world, second
+                    why_unminimized = "the minimized world agrees on the native engine"
+                    differs, left, right, difference = disagrees(shown.state)
+                    if not (differs and difference_kind(left, right) == found_kind):
+                        # Nothing can be published under the disagreement found: keep what the
+                        # native engine showed with the case, apart from any finding.
+                        rows, script = self._world_artifacts(case, shown.state, referenced)
+                        self.unreconciled_native.append(
+                            {
+                                "mutation_path": [m.description for m in world.path],
+                                "native_confirmation": confirmation,
+                                **self._native_results(native_shown),
+                                "candidate_state": rows,
+                                "reproducer_sql": script,
+                            }
+                        )
+                        raise _NotReproduced(
+                            "the native engine differed on the world found before minimizing, "
+                            "but the disagreement found did not reproduce on that world when it "
+                            "was rerun; the native observations are kept with the case"
+                        )
+        fingerprint = shown.fingerprint()
+        rows, reproducer = self._world_artifacts(case, shown.state, referenced)
+        shown_validity = p.spec.validate(shown.state)
+        validity_record = _validity_record(shown_validity)
+        if self.dialect.warehouse:
+            validity_record.notes.extend(self._duplicate_notes(shown, reproduces))
+        kept = surviving_path(world.path, shown, base)
         path = [
             MutationRecord(
                 family=m.family,
@@ -1155,77 +1268,77 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                 hints=m.hints,
                 atoms=[list(a) for a in m.atoms],
             )
-            for m in world.path
+            for m in kept
         ]
-        state_json = {
-            t.name: [
-                dict(zip(t.columns, row, strict=True))
-                for row in _json_rows(p.model, final_state, t.name)
-            ]
-            for t in data.tables
-        }
-        validity_record = _validity_record(final_validity)
-        if self.dialect.warehouse:
-            validity_record.notes.extend(self._duplicate_notes(final_world, reproduces))
-        before = minimized.atoms_before
-        native_final = native(final_state)
-        confirmation: list[dict[str, Any]] = []
-        only_unminimized = False
-        if self.dialect.warehouse:
-            confirmation.append(
-                {"world": "minimized", "result": native_final[0], "note": native_final[3]}
+        world_diff = diff_states(base, shown.state) if base is not None else {}
+        minimized_world: dict[str, Any] = {}
+        if attached is not None:
+            attached_rows, attached_script = self._world_artifacts(
+                case, attached[0].state, referenced
             )
-            same_world = state.fingerprint() == final_state.fingerprint()
-            if native_final[0] == "agree" and not same_world:  # the world found before minimizing
-                second = native(state)
-                confirmation.append(
-                    {"world": "unminimized divergent", "result": second[0], "note": second[3]}
-                )
-                if second[0] == "differ":
-                    native_final = second
-                    only_unminimized = True
+            minimized_world = {
+                "minimized_world": {
+                    "fidelity": "EMULATED",
+                    "verified": False,
+                    "native_result": attached[1][0],
+                    "note": "the world minimization produced: it differs on the emulating engine "
+                    "and agrees on the native engine, so it is not the world shown and no native "
+                    "run confirmed it",
+                    "candidate_state": attached_rows,
+                    "reproducer_sql": attached_script,
+                }
+            }
+        is_minimized = shown is final_world
         return Finding(
             finding_id=f"{case.case_id or 'case'}:1",
             world_id=generator or "baseline",
             validity=validity_record,
             oracles=[_oracle_record(NOT_MET)],
-            world_diff=diff_states(base, final_state) if base is not None else {},
+            world_diff=world_diff,
             mutation_path=path,
             divergence={
                 "reference_result": left.model_dump(mode="json"),
                 "candidate_result": right.model_dump(mode="json"),
                 "difference": difference or outputs[2] or "query results differ",
                 **({"kind": "candidate_errors"} if is_error_result(right) else {}),
-                "candidate_state": state_json,
+                "candidate_state": rows,
                 "reproducer_sql": reproducer,
                 "original_injected_change": description,
                 "generator": generator,
                 "reproduces": differs,
-                **self._native_results(native_final),
+                **self._native_results(native_shown),
                 **({"native_confirmation": confirmation} if confirmation else {}),
+                **minimized_world,
             },
             fidelity=self._fidelity(
-                self._verification(native_final, only_unminimized=only_unminimized)
+                self._verification(native_shown, minimized_agrees=attached is not None)
             ),
-            replay=ReplayRecord(artifact=fixture),
+            replay=ReplayRecord(artifact="counterexample.sql"),
             minimization={
                 "complete": minimized.complete,
                 "attempts": minimized.attempts,
-                "rows_before": before,
-                "rows_after": minimized.atoms_after,
-                "changed_atoms": minimized.changed_atoms,
+                "rows_before": minimized.atoms_before,
+                "rows_after": minimized.atoms_after if is_minimized else minimized.atoms_before,
+                "changed_atoms": minimized.changed_atoms
+                if is_minimized
+                else changed_atoms(shown.state, base),
+                "shown": "minimized" if is_minimized else "unminimized",
+                **({"reason": why_unminimized} if why_unminimized else {}),
+                **searched_path_record(world.path, kept),
                 **(
                     {"nested_elements_before": nested_before, "nested_elements_after": nested_after}
                     if trees
                     else {}
                 ),
             },
+            world_fingerprint=fingerprint,
+            built_from=built_from(fingerprint, "validity", "world_diff", "divergence", "replay"),
             headline=(
                 "Candidate errors where the reference returns a result"
                 if is_error_result(right)
                 else "Original-data mismatch: queries return different results"
                 if generator == "original_state"
-                else f"Queries diverge after a {path[-1].family if path else 'baseline'} mutation"
+                else f"Queries diverge {change_phrase(kept, world.path, world_diff)}"
             ),
         )
 
@@ -1289,6 +1402,36 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                         "a query defect"
                     )
         return notes
+
+    def _not_reproduced(
+        self,
+        case: SqlCase,
+        policy: ComparisonPolicy,
+        started: float,
+        config: CheckConfig,
+        original: dict[str, Any],
+        errors: list[dict[str, str]],
+        error: _NotReproduced | _ReferenceError,
+        search_result: SearchResult | None = None,
+    ) -> CaseReport:
+        """A disagreement that did not reproduce when its world was rerun, or one with a reference
+        that errors, is no finding. The two are told apart: ``NOT_REPRODUCED`` says a disagreement
+        that was established failed its confirmation; ``REFERENCE_ERROR`` says there was nothing
+        trustworthy to confirm."""
+        code = "REFERENCE_ERROR" if isinstance(error, _ReferenceError) else "NOT_REPRODUCED"
+        errors.append({"code": code, "message": str(error), "phase": "confirmation"})
+        return self._report(
+            case,
+            policy,
+            started,
+            config,
+            status=DivergenceStatus.INCONCLUSIVE,
+            validity=ValidityRecord(status="NOT_ASSESSED"),
+            headline=f"Inconclusive: {safe_detail(error)}",
+            original=original,
+            errors=errors,
+            search_result=search_result,
+        )
 
     def _unsupported(self, case: SqlCase, message: str, started: float) -> CaseReport:
         return self._report(
@@ -1392,6 +1535,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     "native_verification": self._native_label(findings or []),
                     "emulation_artifacts": self.emulation_artifacts[:20],
                     "emulation_artifact_count": len(self.emulation_artifacts),
+                    **(
+                        {"unreconciled_native_evidence": self.unreconciled_native}
+                        if self.unreconciled_native
+                        else {}
+                    ),
                     "ordering_policy": config.ordering_policy.value,
                     "seeded": p.seeded,
                     "schema_ddl": self._ddl_statements(),

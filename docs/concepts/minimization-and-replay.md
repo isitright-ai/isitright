@@ -21,14 +21,42 @@ is off by default (`--minimize`).
 
 The [SQL quick start](../get-started/sql.md) shows it: a four-row counterexample reduced to two rows.
 
+## One world per finding
+
+A finding is about one world, and everything in it is built from that world: the diff, the validity
+tiers, the run counts, the reproduction result, the replay artifact and the export. Minimization may
+not change what the evidence is about.
+
+- A SQL query pair keeps a smaller world only if its difference is of the kind that was found: the
+  candidate errors, the row counts differ, or the counts agree and the values or columns differ. A removal that
+  turns one disagreement into another is not kept. If the minimized world does not reproduce when it
+  is rerun, the finding shows the world the search found.
+- For a warehouse, the shown world is the one the native engine confirmed. If only the larger world
+  differs natively, that world is shown and the minimized one is attached as emulated and unverified.
+- A live agent's minimal mutation path is run as a world of its own (`--trials` runs and, after a
+  failure, fresh baseline pairs, as for any searched world). It replaces the searched world in the
+  finding only if it fails and, when the searched world's paired test decided a rate increase, its own
+  paired test decided one too. Otherwise the finding stays on the searched world and the minimization
+  record says why the minimal path is not shown.
+- The mutations named in a finding are the ones with a surviving effect in the shown world; an edit
+  another mutation overwrote does not count. If none has (minimization removed the rows they edited,
+  so the world differs from the base by an absence), `mutation_path` is empty, the headline describes the
+  change that is left and says which mutation caused it is undetermined, and the path that produced the
+  world found is kept as provenance under `minimization.searched_path` (not a replay recipe: replay and
+  export use the shown world). See [which mutations a finding names](../reference/report.md#which-mutations-a-finding-names).
+
+Each finding records the fingerprint of the world it shows and, for each part, the fingerprint of the
+world that part was built from; the report model refuses a finding where they differ. See
+[the report schema](../reference/report.md#one-world-per-finding).
+
 ## Replay
 
 Replay answers "can I see this fail again, without trusting the search?"
 
 - **SQL:** rebuilds the minimized world on the recorded engine from the concrete rows in the report
   and checks that both queries produce the recorded outputs.
-- **Agents:** re-executes the recorded tool calls against the simulated service and checks the final
-  state and verdicts match. It does not call your agent.
+- **Agents:** re-executes the recorded tool calls against the simulated service, in the world recorded
+  with the run, and checks the final state and verdicts match. It does not call your agent.
 
 Replay works from the concrete minimized world, **not from a random seed**. A seed reproduces a search
 only as long as the search code is unchanged; a concrete world reproduces the finding forever.

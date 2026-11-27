@@ -13,6 +13,7 @@ from isitright.core.evidence import (
     OracleRecord,
     ValidityRecord,
 )
+from isitright.core.shown import built_from
 from isitright.packs.sql.models import (
     CanonicalValue,
     CanonicalValueKind,
@@ -89,6 +90,8 @@ def _counterexample_case(case_id: str, *, generated: bool) -> CaseReport:
         },
         fidelity=FidelityRecord(found_on="NATIVE_ISOLATED", engine="sqlite 3"),
         minimization={"complete": True, "attempts": 3, "rows_before": 15, "rows_after": 2},
+        world_fingerprint="a" * 16,
+        built_from=built_from("a" * 16, "validity", "world_diff", "divergence", "replay"),
         headline="Evidence recorded for review",
     )
     return make_case(

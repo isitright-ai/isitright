@@ -93,6 +93,9 @@ def replay_run(scenario: McpScenario, run: dict[str, Any], output_dir: Path) -> 
             return outcome(True, "the run did not complete; nothing was recorded to replay")
         return outcome(False, "the recorded state files are missing")
     world, interferences = _world(scenario, run, run_dir)
+    launched_with = run.get("world_fingerprint")
+    if launched_with and world.fingerprint() != launched_with:
+        return outcome(False, "the recorded world is not the world the run was launched with")
     events = read_trace(run_dir / "trace.jsonl")
     if scenario.external is not None:
         return _rejudge(scenario, run, run_dir, world, events, outcome)

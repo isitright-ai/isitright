@@ -193,8 +193,11 @@ how many expectations were not met, how many runs were judged and how many were 
 with 2 judged and 18 unjudged runs does not look like one with 20 judged), and the observations behind the
 three behavior labels: in how many worlds the added document appeared, its claim was exposed, the
 answer adopted it and the report cited it. `findings-cases.md` puts, for each finding, the question, the documents, both
-reports and the verdict side by side. A finding is shown on its minimized world; the confirmation
-and the oracle outcome are on that same world.
+reports and the verdict side by side. A finding is about one world: its minimized world
+when that world reproduces the failure and, for a stochastic agent, was run in its own right (`runs` runs and,
+after a failure, fresh pairs) and shows at least the grade of the searched world; otherwise the world the search ran
+(`minimization.not_adopted` says why). The grade, the counts, the confirmation, the oracle outcome, the replay artifact and
+the eval case are all of that world (`world_fingerprint` and `built_from` in the report).
 
 **Runs that cannot be judged.** A run is `CANNOT_JUDGE` when its answer cannot be read as the
 declared kind (prose holding two numbers, a negation) or when no right answer is defined in that

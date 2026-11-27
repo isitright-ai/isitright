@@ -243,6 +243,18 @@ def test_the_unminimized_world_is_tried_when_the_minimized_one_does_not_reproduc
     results = [a["result"] for a in finding.divergence["native_confirmation"]]
     assert results == ["agree", "differ"]
     assert finding.fidelity.verified_on == "NATIVE_INLINE"
+    # N5: verified_on describes the world shown. That is the larger world the native engine
+    # differed on; the minimized world, which agreed there, is attached as emulated and unverified.
+    assert finding.minimization["shown"] == "unminimized"
+    attached = finding.divergence["minimized_world"]
+    assert attached["fidelity"] == "EMULATED" and attached["verified"] is False
+    assert attached["native_result"] == "agree"
+    rows = sum(len(r) for r in finding.divergence["candidate_state"].values())
+    assert (
+        rows
+        == finding.minimization["rows_before"]
+        > sum(len(r) for r in attached["candidate_state"].values())
+    )
 
 
 def test_a_world_that_minimization_did_not_change_is_confirmed_once() -> None:

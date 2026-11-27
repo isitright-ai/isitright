@@ -12,8 +12,9 @@ between pre-1.0 releases.
 Schema `0.9` replaces `0.8`. Reports written as `0.4`, `0.5`, `0.6` or `0.8` still load: `replay` and
 `export` read them, because every field added since is optional. Older schemas are removed.
 0.9 adds four counts to `stability.sequential` (`world_runs`, `baseline_runs`, `excluded_errored`,
-`excluded_unjudged`, default 0, so older reports load) and the run loop's change of meaning for the
-test: every pair is a run of the world and a fresh baseline run (see
+`excluded_unjudged`, default 0, so older reports load), `findings[].world_fingerprint` and
+`findings[].built_from` (see [One world per finding](#one-world-per-finding); both default to empty, so
+older reports load) and the run loop's change of meaning for the test: every pair is a run of the world and a fresh baseline run (see
 [live agents](../concepts/live-agents.md#sequential-testing-per-world)). A 0.8 report keeps its old
 meaning: the research and data packs paired against baseline runs they had, or assumed. 0.6 added `findings[].mode`
 (`frozen_program` or `live_agent`) and `findings[].live` (see below). 0.8 adds the mode `frozen_trace`
@@ -60,6 +61,7 @@ Each field answers one question and is never merged with another.
 - A `RATE_INCREASE` grade is set only from a paired sequential test that crossed its upper boundary: the finding must carry a sequential record whose decision is `RATE_INCREASE` and a rate claim that agrees with it. An `OBSERVED_FAILURE` finding carries no such decision or claim and records at least one judged failure in its `observation`. A report that breaks either rule is refused when it is loaded. Findings with no grade (frozen programs and reports, deterministic subjects, SQL, legacy reports) need none of this.
 - A world whose validity was not assessed (a fixed MCP world with no validator) keeps `validity.status: NOT_ASSESSED` with no tier, in its finding, its `worlds` entry and the case. A grade says nothing about validation: a `RATE_INCREASE` on such a world is conditional on the world as run.
 - Suite and case ranking (`rank_cases`), strongest first: domain-validated `COUNTEREXAMPLE_FOUND`; structurally validated; other `COUNTEREXAMPLE_FOUND` (including an unassessed validity); `OBSERVED_FAILURE`; `INCONCLUSIVE` and `UNSUPPORTED`; `NOT_FOUND_WITHIN_BUDGET`. Equal strengths keep their order.
+- A finding that names a `world_fingerprint` is about that one world, and the model refuses a finding whose parts disagree (see [One world per finding](#one-world-per-finding)).
 - An `UNSUPPORTED` case has no executed worlds.
 - A DuckDB result must be labeled `EMULATED`; a PostgreSQL or SQLite one must not.
 - `NOT_FOUND_WITHIN_BUDGET` means no disagreement was found within the budget. It is never a claim of
@@ -67,6 +69,95 @@ Each field answers one question and is never merged with another.
 - A world that screening or a stopping rule did not run is `NOT_RUN`, never a pass.
 - An observed failure is never presented as a rate change, and an emulated finding is never
   presented as native: `verified_on` says whether PostgreSQL confirmed it.
+
+### One world per finding
+
+A finding reports one world. `world_fingerprint` is the fingerprint of that world (`World.fingerprint`:
+its state, response edits and timers; the mutation path is a record of how it was made and is not part
+of it). `built_from` maps each part of the finding that describes a world to the fingerprint of the
+world that part was built from: `validity`, `world_diff`, `divergence` (the outputs and the
+reproduction result), `counts` (when the finding has run counts), `replay` (when it names a replay
+artifact) and `export` (when it names an eval case). Replay and export entries are taken from the
+world stored in the artifact itself. The model enforces that:
+
+- every finding of a report with `schema_version` `0.9` has a non-empty `world_fingerprint`; a 0.9
+  report without one is refused. A finding that names a world is checked whatever the report's
+  version;
+- every `built_from` entry equals `world_fingerprint`; a finding whose parts name different worlds is
+  refused when it is built or loaded, naming the parts;
+- `validity`, `world_diff` and `divergence` are always tied to the world, and so are `counts`
+  (when the finding has an `observation` or `stability`), `replay` and `export` when it has them;
+- a finding that names a world does not carry `divergence.reproduces` or
+  `divergence.reproduces_on_shown_world` set to false: a world that does not reproduce is not shown;
+- a finding graded `RATE_INCREASE` has a paired decision of `RATE_INCREASE` whose pairs are runs of
+  the world shown, and carries the counts behind it: an `observation` whose `world` has at least as many
+  judged runs as the test has pairs and whose `baseline` (the fresh baseline runs made for those pairs)
+  has at least as many too. A finding with no `observation`, or with fewer counts than pairs, is
+  refused. The grade is never carried from another world.
+
+Reports written as `0.8` or earlier carry no fingerprint and load as they always did, including
+findings with the older divergence fields. A stamp written by the code that built a finding is not
+proof that an artifact holds that world, so wherever the artifact and the finding are both at hand the
+world stored in the artifact is compared with `world_fingerprint`: when the data and research packs
+write their replay artifacts, in `data replay`, in `agents export` and in `agents replay` (against
+the world the run was launched with). The packs choose the
+world to show as follows. A SQL finding shows the minimized world when it reproduces a disagreement of
+the kind that was found (an error, a different row count, or different values with the same count);
+otherwise it shows the world the search found. For a warehouse, if only the larger world differs on
+the native engine, that is the world shown, `fidelity.verified_on` describes it, and the minimized
+world is attached as `divergence.minimized_world` with `fidelity: EMULATED` and `verified: false`.
+`minimization.shown` says which world is shown (`minimized` or `unminimized`), and `minimization.reason`
+why it is the larger one. A minimized SQL world is kept only if its difference has the kind of the one
+found, by this precedence: `error` (the candidate errors and the reference does not), else
+`row_count` (the row counts differ, whatever the columns do), else `row_values` (values or columns
+differ). If the reference itself errors there is no kind, and no finding. Keeping the kind is a coarse
+safeguard, not proof that minimization kept the same root cause. When neither the minimized nor the found
+world reproduces a difference of that kind on a rerun, there is no finding: the case is `INCONCLUSIVE`
+with the error code `NOT_REPRODUCED` (a disagreement that was established failed its confirmation). The
+same holds when a warehouse's native engine differed only on the larger world and that world, rerun on
+the emulating engine, no longer gives a difference of the kind found: no finding is made, and what the
+native engine showed (the confirmation attempts, its outputs, the world's rows and reproducer) is under
+`extensions.sql.unreconciled_native_evidence`.
+
+`REFERENCE_ERROR` is narrow. It is reported, with `INCONCLUSIVE` and no finding, only when a
+disagreement reaches the finding stage with an error as the reference's result: there was nothing
+trustworthy to confirm. It does not cover a query that raises while it is executed. Those keep their
+own routes: on the original data the case is `INCONCLUSIVE` with `QUERY_ERROR`, `QUERY_TIMEOUT` or
+`QUERY_RESOURCE_LIMIT`, and during the search a world on which a query raises a query error is skipped
+and counted in the search record. An agents finding shows the minimal mutation path only when that path, run
+as a world of its own, fails at least as strongly as the searched world; the research pack applies
+the same rule, and records a minimized world that is not shown under `minimization.not_adopted`.
+
+### Which mutations a finding names
+
+`mutation_path` lists the mutations with a demonstrable effect in the world the finding shows (SQL,
+frozen data, deterministic and frozen research). An edit counts when it is still in effect: a row it
+added is present, a row it removed is absent, a field it set holds the value it assigned and differs
+from the base, a field it unset is absent, a parameter holds its value, and no later edit that is
+itself in effect overwrote it (mutation A sets `v = 1`, B sets `v = 2`, the world has `v = 2`: only B
+is named). A response or timing mutation is named while its response edit or timer is in the shown
+world. A mutation with no traceable edits is not named: nothing shows an effect.
+
+The path that produced the world the search found is kept apart, as provenance, under
+`minimization`: `searched_path` (family, target and description of each mutation),
+`provenance_only: true` (it describes `searched_path`: that history is kept for the reader and is
+not a replay recipe, because the shown world may be a minimization that no replay of the path
+reconstructs; replay and export use the shown world; it says nothing about the finding's current
+evidence) and `mutation_attribution`: `SURVIVING_EFFECTS` (some searched mutation has a surviving
+effect in the shown world: a state edit, a response edit or a timer), `UNDETERMINED` (a searched path
+exists but no mutation's effect can be attributed to the shown world, for example because
+minimization removed the rows it edited and the world differs by an absence) or `NONE` (no mutation
+produced the world). With an empty `mutation_path` and a
+non-empty `world_diff` the headline describes the change that is left ("on a world that differs from
+the base in 1 removed (which mutation caused it is undetermined)"), never a mutation and never the
+baseline.
+
+`totals.by_family` counts each distinct family in `mutation_path` once per finding, so it describes
+demonstrated surviving effects, not which family led the search to a world. The values can add up to
+**more** than the number of findings (a finding with two surviving families counts for both) or to
+**fewer** (a finding with no surviving family, such as an `UNDETERMINED` one, counts for none; its
+searched family stays in `minimization.searched_path`). Before 0.9 only the last mutation's family was counted, so totals
+of reports from before 0.9 are not comparable.
 
 ### Frozen and live findings (0.6)
 
@@ -108,7 +199,10 @@ the replayed program) and `verified_on` is `LIVE_AGENT` once the agent itself ra
 `comparison_policy` records `columns`, `column_vectors`, `null_as_zero`, `reference_columns` and
 the tolerances. A finding's `fidelity.verified_on` is `NATIVE_INLINE` once a native host has run
 both queries on the inlined state. `divergence.native_confirmation` lists each world tried
-(`minimized`, then `unminimized divergent`) and its result. A finding's `validity.notes` says
+(`minimized`, then `unminimized divergent`) and its result; the world shown is the one the native
+engine confirmed (see [One world per finding](#one-world-per-finding)). Native confirmation, here and on
+PostgreSQL, establishes that a disagreement exists on the shown world, not necessarily its particular
+category. A finding's `validity.notes` says
 when it needs equal values in a column with no declared key or unique rule. A case whose only
 divergence did not reproduce natively is `INCONCLUSIVE` with no finding, and the divergence is
 listed under `emulation_artifacts`.

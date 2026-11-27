@@ -96,6 +96,10 @@ Minimized rows         4 to 2
 Reading it: *on a valid world that differs from mine by one NULL, the two queries return 70 and 170;
 the world is small enough to read; nobody has said which is right.* The next step is yours.
 
+Every field of a finding is about the same world. `world_fingerprint` identifies it, and `built_from`
+names, for each part, the world that part was built from; a report where they disagree is refused (see
+[One world per finding](../reference/report.md#one-world-per-finding)).
+
 ## How strong is this finding?
 
 Ask in this order:

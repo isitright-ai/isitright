@@ -36,11 +36,19 @@ from isitright.core.evidence import (
 )
 from isitright.core.hints import Hint, Hints
 from isitright.core.minimize import minimize_path_noisy, minimize_world
-from isitright.core.mutations import Candidate, Mutator, World
+from isitright.core.mutations import Candidate, Mutation, Mutator, World
 from isitright.core.oracles import Outcome, Role, controls_status
 from isitright.core.replay import ReplayArtifact
 from isitright.core.search import Evaluation, SearchResult, Verdict, search
-from isitright.core.sequential import PairedSprt, SprtConfig
+from isitright.core.sequential import PairedSprt, RateSprtConfig, SprtConfig
+from isitright.core.shown import (
+    built_from,
+    change_phrase,
+    families_of,
+    searched_path_record,
+    surviving_path,
+    world_json_fingerprint,
+)
 from isitright.core.spec import WorldSpec
 from isitright.core.stochastic import (
     Budget,
@@ -149,7 +157,7 @@ def validity_record(validity: Validity, unobservable: bool = False) -> ValidityR
     )
 
 
-def _path(world: World) -> list[MutationRecord]:
+def _records(path: Sequence[Mutation]) -> list[MutationRecord]:
     return [
         MutationRecord(
             family=m.family,
@@ -158,8 +166,12 @@ def _path(world: World) -> list[MutationRecord]:
             hints=m.hints,
             atoms=[list(a) for a in m.atoms],
         )
-        for m in world.path
+        for m in path
     ]
+
+
+def _path(world: World) -> list[MutationRecord]:
+    return _records(world.path)
 
 
 @dataclass
@@ -624,9 +636,35 @@ class ResearchAudit:
                     fact,
                     minimize,
                     budget,
+                    k,
                 )
             )
         return out
+
+    def _confirm(self, subject: Subject, placed: _Placed, k: int) -> None:
+        """Run a world the search did not run, the way it ran its worlds: ``k`` runs and, for a
+        stochastic subject that failed in one of them, fresh pairs with the baseline. The world then
+        has evidence of its own (counts, paired test, grade), not that of another world."""
+        wr = placed.result
+        if subject.stochastic and self.config.sequential and k > 1:
+            staged = self._runner.run_staged(
+                placed,
+                self._baseline_target,
+                SprtConfig(
+                    min_pairs=min(4, self.config.max_pairs), max_pairs=self.config.max_pairs
+                ),
+                k,
+                "confirm",
+                after_search=True,
+            )
+            wr.outcomes = [e.outcome for e in staged.screening]
+            if staged.paired is not None:
+                wr.outcomes += staged.paired.world_outcomes
+                wr.sequential = staged.paired.test
+                wr.paired_baseline = staged.paired.baseline_outcomes
+        else:
+            done = self._runner.run_repeated(placed, k, "confirm", after_search=True)
+            wr.outcomes = [e.outcome for e in done]
 
     def _finding(
         self,
@@ -640,43 +678,64 @@ class ResearchAudit:
         fact: dict[str, Any] | None,
         minimize: bool,
         budget: Budget,
+        k_runs: int,
     ) -> Finding:
+        """One finding, about one world: the world the search ran with its own evidence, or its
+        minimization when the minimized world was run in its own right and shows at least the
+        grade of the searched one. A minimized world that does not reproduce is not shown."""
         case_id = f"{self.task.id}:{subject.label.name}"
         original = results[world.fingerprint()]
         kind = original.judged[0].expectation.kind if original.judged else None
+        found_grade = grade_of(original.sequential) if subject.stochastic else None
         final = world
         minimization: dict[str, Any] = {"minimized": False}
         if minimize and budget.can_run_after_search():
-            final, minimization = self._minimize(world, subject, baseline, fact, kind, budget)
-        # Confirmation and the verdict shown are on the world that is shown.
-        shown = WorldResult(final, self.spec.validate_world(final.state, world.path))
-        k = max(1, len(original.runs))
-        confirmed = self._runner.run_repeated(
-            _Placed(final, shown), k, "confirm", after_search=True
-        )
-        bad_runs = sum(is_bad(e.outcome) for e in confirmed)
-        if not shown.runs:
-            # The run budget was spent before one confirmation run: report the world the search
-            # ran, with the search's own runs, rather than a world no run has been made on.
-            final = world
-            minimization = {
-                "minimized": False,
-                "reason": "the run budget was spent before the minimized world was confirmed",
-            }
-            shown = original
-            bad_runs = sum(is_bad(o) for o in original.outcomes)
+            final, minimization = self._minimize(
+                world, subject, baseline, baseline_outcomes, fact, kind, budget
+            )
+        shown_world, shown = world, original
+        if final.fingerprint() != world.fingerprint():
+            tested = WorldResult(final, self.spec.validate_world(final.state, final.path))
+            self._confirm(subject, _Placed(final, tested), k_runs)
+            failures = sum(is_bad(o) for o in tested.outcomes)
+            reason = None
+            if not tested.runs:
+                reason = "the run budget was spent before the minimized world was run"
+            elif failures == 0:
+                reason = "no run of the minimized world failed"
+            elif (
+                subject.stochastic
+                and found_grade is EvidenceGrade.RATE_INCREASE
+                and grade_of(tested.sequential) is not EvidenceGrade.RATE_INCREASE
+            ):
+                reason = "no paired test decided a rate increase on the minimized world"
+            if reason is None:
+                shown_world, shown = final, tested
+                minimization = {**minimization, "adopted": True}
+            else:
+                minimization = {
+                    **minimization,
+                    "minimized": False,
+                    "adopted": False,
+                    "not_adopted": {
+                        "world": final.fingerprint(),
+                        "reason": reason,
+                        "failures": failures,
+                        "judged_runs": sum(is_judged(o) for o in tested.outcomes),
+                    },
+                }
+        k = max(1, len(shown.runs))
+        bad_runs = sum(is_bad(o) for o in shown.outcomes)
         verdict = shown.judged[0] if shown.judged else None
         worst = next((j for j in shown.judged if j.outcome is Outcome.NOT_MET), verdict)
         run = shown.runs[shown.judged.index(worst)] if worst in shown.judged else shown.runs[0]
-        reproduces = bad_runs > 0
         self._observability(shown, baseline)
-        self.artifacts[f"{case_id}:{number}"] = self._artifact(
-            case_id, number, final, subject, baseline, run, worst, fact
-        )
+        artifact = self._artifact(case_id, number, shown_world, subject, baseline, run, worst, fact)
+        self.artifacts[f"{case_id}:{number}"] = artifact
         docs_before = [
             {"id": i, "title": d.get("title"), "date": d.get("date"), "text": d["text"]}
             for i, d in sorted(documents_of(self.state).items())
-            if i in documents_of(final.state) or i in _cited(baseline)
+            if i in documents_of(shown_world.state) or i in _cited(baseline)
         ]
         docs_after = [
             {
@@ -687,37 +746,40 @@ class ResearchAudit:
                 "provenance": d.get("provenance"),
                 "text": d["text"],
             }
-            for i, d in sorted(documents_of(final.state).items())
+            for i, d in sorted(documents_of(shown_world.state).items())
         ]
-        self.exports[f"{case_id}:{number}"] = export_case(self.artifacts[f"{case_id}:{number}"])
+        self.exports[f"{case_id}:{number}"] = export_case(artifact)
         gold_note = (
             f"gold {self.task.gold!r}: {self.task.gold_basis}"
             if self.task.gold is not None
             else "no gold answer was given; the baseline answer is the reference"
         )
+        fingerprint = shown_world.fingerprint()
+        stored = world_json_fingerprint(artifact.world)  # replay and export derive from it
+        kept = surviving_path(shown_world.path, shown_world, self.state)
+        world_diff = diff_states(self.state, shown_world.state)
         return Finding(
             finding_id=f"{case_id}:{number}",
-            world_id=final.fingerprint(),
+            world_id=fingerprint,
             validity=validity_record(shown.validity, shown.unobservable),
             oracles=_oracle_records(worst),
             stability=stability_sequential(
-                original.paired_baseline, original.outcomes, k, original.sequential
+                shown.paired_baseline, shown.outcomes, k, shown.sequential
             )
-            if original.sequential is not None
-            else stability_counts_only(baseline_outcomes, original.outcomes, k)
+            if shown.sequential is not None
+            else stability_counts_only(baseline_outcomes, shown.outcomes, k)
             if subject.stochastic
             else None,
-            evidence_grade=grade_of(original.sequential) if subject.stochastic else None,
-            observation=observation_of(original.outcomes, original.paired_baseline)
+            evidence_grade=grade_of(shown.sequential) if subject.stochastic else None,
+            observation=observation_of(shown.outcomes, shown.paired_baseline)
             if subject.stochastic
             else None,
-            world_diff=diff_states(self.state, final.state),
-            mutation_path=_path(world),
+            world_diff=world_diff,
+            mutation_path=_records(kept),
             divergence={
                 "scope": "this subject on this world",
                 "subject": subject.label.model_dump(mode="json"),
-                "reproduces_on_shown_world": reproduces,
-                "graded_on_world": original.world.fingerprint(),
+                "reproduces_on_shown_world": bad_runs > 0,
                 "question": self.task.question,
                 "baseline_report": baseline.report.model_dump(mode="json"),
                 "world_report": run.report.model_dump(mode="json"),
@@ -734,15 +796,27 @@ class ResearchAudit:
                 "reference_trust": gold_note,
                 "tie_break_decided_rank": shown.tie,
                 "found_on_world": world.fingerprint(),
-                "shown_world": final.fingerprint(),
-                "shown_world_is_minimized": bool(minimization.get("minimized")),
+                "shown_world": fingerprint,
+                "shown_world_is_minimized": shown_world is not world,
             },
             fidelity=FidelityRecord(found_on="SIMULATED", engine="frozen BM25 (isitright)"),
             replay=ReplayRecord(artifact=f"{number}.replay.json"),
             export=f"{number}.eval-case.json",
-            minimization=minimization,
+            minimization={**minimization, **searched_path_record(world.path, kept)},
             mode="live_agent",
-            headline=_finding_headline(worst, world),
+            world_fingerprint=fingerprint,
+            built_from={
+                **built_from(
+                    fingerprint,
+                    "validity",
+                    "world_diff",
+                    "divergence",
+                    *(["counts"] if subject.stochastic else []),
+                ),
+                "replay": stored,
+                "export": stored,
+            },
+            headline=_finding_headline(worst, change_phrase(kept, world.path, world_diff)),
         )
 
     def _minimize(
@@ -750,6 +824,7 @@ class ResearchAudit:
         world: World,
         subject: Subject,
         baseline: RecordedRun,
+        baseline_outcomes: list[RunOutcome],
         fact: dict[str, Any] | None,
         kind: Expect | None,
         budget: Budget,
@@ -767,7 +842,13 @@ class ResearchAudit:
             return kind is None or wr.judged[0].expectation.kind is kind
 
         if subject.stochastic:
-            noisy = minimize_path_noisy(self.base, world.path, lambda w: reproduces(w))
+            # The noise floor of a subset is the baseline's own failure rate, not a constant.
+            noise = sum(is_bad(o) for o in baseline_outcomes) / max(len(baseline_outcomes), 1)
+            reference = min(0.5, max(0.05, noise))
+            config = RateSprtConfig(reference=reference, effect=min(0.95, reference + 0.45))
+            noisy = minimize_path_noisy(
+                self.base, world.path, lambda w: reproduces(w), config=config
+            )
             path_world = self.base
             for m in noisy.path:
                 path_world = path_world.apply(m)
@@ -778,6 +859,9 @@ class ResearchAudit:
                 "minimal": noisy.minimal,
                 "runs": noisy.runs,
                 "note": noisy.note,
+                "reference_failure_rate": reference,
+                "reference_basis": f"{sum(is_bad(o) for o in baseline_outcomes)} failed of "
+                f"{len(baseline_outcomes)} baseline runs, within 5% to 50%",
                 "documents_before": len(documents_of(world.state)),
                 "documents_after": len(documents_of(path_world.state)),
             }
@@ -984,6 +1068,8 @@ class ResearchAudit:
 
         minimized = minimize_world(self.spec, world, self.state, reproduces)
         final = minimized.world
+        if not reproduces(final):  # a minimized world is shown only if it still reproduces
+            final = world
         shown = judge(final, recorded, recorded, fact, self.task.answer_type)
         self.artifacts[f"{case_id}:{number}"] = self._artifact(
             case_id,
@@ -1006,13 +1092,17 @@ class ResearchAudit:
             }
             for i, d in sorted(documents_of(final.state).items())
         ]
+        fingerprint = final.fingerprint()
+        stored = world_json_fingerprint(self.artifacts[f"{case_id}:{number}"].world)
+        kept = surviving_path(world.path, final, self.state)
+        world_diff = diff_states(self.state, final.state)
         return Finding(
             finding_id=f"{case_id}:{number}",
-            world_id=final.fingerprint(),
+            world_id=fingerprint,
             validity=validity_record(self.spec.validate_world(final.state, world.path)),
             oracles=_oracle_records(shown),
-            world_diff=diff_states(self.state, final.state),
-            mutation_path=_path(world),
+            world_diff=world_diff,
+            mutation_path=_records(kept),
             divergence={
                 "scope": "this recorded report on this world; not a statement about the agent "
                 "(the report is not regenerated)",
@@ -1029,22 +1119,31 @@ class ResearchAudit:
                 "depends_on_simulated_ranking": False,
                 "reproduces_on_shown_world": bool(reproduces(final)),
                 "found_on_world": world.fingerprint(),
-                "shown_world": final.fingerprint(),
-                "shown_world_is_minimized": True,
+                "shown_world": fingerprint,
+                "shown_world_is_minimized": final is not world,
             },
             fidelity=FidelityRecord(found_on="SIMULATED", engine="frozen BM25 (isitright)"),
             replay=ReplayRecord(artifact=f"{number}.replay.json"),
             export=f"{number}.eval-case.json",
             minimization={
-                "minimized": True,
+                "minimized": final is not world,
                 "mode": "corpus (frozen index statistics)",
                 "complete": minimized.complete,
                 "attempts": minimized.attempts,
                 "documents_before": minimized.atoms_before,
-                "documents_after": minimized.atoms_after,
+                "documents_after": minimized.atoms_after
+                if final is not world
+                else minimized.atoms_before,
+                **searched_path_record(world.path, kept),
             },
             mode="frozen_trace",
-            headline=_finding_headline(shown, world),
+            world_fingerprint=fingerprint,
+            built_from={
+                **built_from(fingerprint, "validity", "world_diff", "divergence"),
+                "replay": stored,
+                "export": stored,
+            },
+            headline=_finding_headline(shown, change_phrase(kept, world.path, world_diff)),
         )
 
     # -- reports ---------------------------------------------------------------------------------
@@ -1459,12 +1558,12 @@ def _expected(verdict: Judged | None) -> dict[str, Any]:
     }
 
 
-def _finding_headline(verdict: Judged | None, world: World) -> str:
-    family = world.path[-1].family if world.path else "baseline"
+def _finding_headline(verdict: Judged | None, phrase: str) -> str:
+    """``phrase`` says what changed: see `isitright.core.shown.change_phrase`."""
     if verdict is None:
-        return f"The report and the expected behavior disagree after a {family} mutation"
+        return f"The report and the expected behavior disagree {phrase}"
     return (
-        f"The report and the expected behavior disagree after a {family} mutation "
+        f"The report and the expected behavior disagree {phrase} "
         f"({verdict.expectation.kind.value.lower()}, behavior {verdict.behavior.value.lower()})"
     )
 
@@ -1472,7 +1571,8 @@ def _finding_headline(verdict: Judged | None, world: World) -> str:
 def _classify(finding: Finding) -> dict[str, str]:
     """A proposal for the owner, labeled as such. Attribution stays UNDETERMINED."""
     d = finding.divergence
-    family = finding.mutation_path[-1].family if finding.mutation_path else ""
+    families = families_of(finding.mutation_path)
+    family = families[-1] if families else ""
     citations = d.get("citations") or {}
     if citations.get("l0_failures"):
         return {"class": "likely agent defect", "why": "it cites a document that does not exist"}
