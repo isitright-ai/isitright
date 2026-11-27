@@ -232,6 +232,10 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
 - **Core.** `SubjectRunner.run_staged` takes `after_search`, and `isitright.core.shown` holds the
   helpers (`built_from`, `surviving_path`, `world_json_fingerprint`).
 
+### Fixes
+
+- **Data runner on Windows.** The runner sent its reply before it left the program's work directory, so a caller that deleted the directory at once could fail with `PermissionError: [WinError 32]` (seen as an intermittent failure of a live data audit). It now leaves the directory first.
+
 ## 0.8.1 - Hotfix
 
 A hotfix for 0.8.0. It changes no report schema (still 0.8). The release was built and tested
