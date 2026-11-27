@@ -75,7 +75,9 @@ much to trust an output.
 
 When an emulated finding is re-executed on native PostgreSQL, the result records `found_on:
 EMULATED` and `verified_on: NATIVE_ISOLATED`; on your BigQuery, Trino or own engine it records
-`verified_on: NATIVE_INLINE`. A divergence that does not reproduce natively is an
+`verified_on: NATIVE_INLINE`. Either one confirms that the queries disagree on the world shown, not
+necessarily that they disagree in the same category (an error, a different row count, or different
+values). A divergence that does not reproduce natively is an
 **emulation artifact**, excluded from the counterexamples and never failing CI. See
 [Engines](../sql/engines.md).
 

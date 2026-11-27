@@ -6,7 +6,8 @@ can then be confirmed on your own engine with the state written into the query t
 
 !!! note "Every finding starts as emulated"
     DuckDB is not BigQuery and is not Presto. A finding is reported `found_on: EMULATED` until a
-    native host re-runs it and gets the same disagreement (`verified_on: NATIVE_INLINE`). A
+    native host re-runs it and the two queries disagree there too (`verified_on: NATIVE_INLINE`;
+    [not necessarily in the same way](#confirming-a-finding)). A
     divergence that does not reproduce natively is an emulation artifact: it is counted and
     listed, and it is not a counterexample.
 
@@ -155,6 +156,11 @@ world shown. If only the larger world differs there, the larger world is shown, 
 labeled `EMULATED` and `verified: false` with its native result (`agree`), so a reader never takes a
 reproducer for a world the native engine did not confirm. If neither differs, the divergence is an
 emulation artifact and no finding is reported.
+
+`verified_on` means that your engine found a disagreement on the world shown. It does not
+necessarily confirm the particular category of disagreement (an error, a different row count, or
+different values) that DuckDB showed and the headline describes. Compare the native results in the
+finding with the emulated ones before relying on how the queries differ.
 
 The text sent has every table replaced by inline rows, typed so that an empty table and an empty
 array are well typed:

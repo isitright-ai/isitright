@@ -57,6 +57,12 @@ on which DuckDB reports a divergence is re-executed on a disposable PostgreSQL i
 
 [Minimization](../concepts/minimization-and-replay.md) keeps the native disagreement, so a minimized world is verified too.
 
+**What native verification confirms.** It confirms that the two queries disagree on the world shown.
+It does not necessarily confirm the particular category of disagreement (an error, a different row
+count, or different values): the native engine is asked whether the results differ, and it may differ
+in another way than the emulating engine did. The headline and the outputs of an emulated finding
+describe what the emulating engine showed.
+
 **Integer division.** PostgreSQL divides two integers with truncation (`5 / 2` is 2); DuckDB gives
 2.5. The translation rewrites every `/` whose operands are both integers, by declared column types
 and literals, to a truncating division, guarded so a zero divisor is an error as in PostgreSQL. A

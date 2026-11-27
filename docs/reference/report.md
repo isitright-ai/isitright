@@ -200,7 +200,9 @@ the replayed program) and `verified_on` is `LIVE_AGENT` once the agent itself ra
 the tolerances. A finding's `fidelity.verified_on` is `NATIVE_INLINE` once a native host has run
 both queries on the inlined state. `divergence.native_confirmation` lists each world tried
 (`minimized`, then `unminimized divergent`) and its result; the world shown is the one the native
-engine confirmed (see [One world per finding](#one-world-per-finding)). A finding's `validity.notes` says
+engine confirmed (see [One world per finding](#one-world-per-finding)). Native confirmation, here and on
+PostgreSQL, establishes that a disagreement exists on the shown world, not necessarily its particular
+category. A finding's `validity.notes` says
 when it needs equal values in a column with no declared key or unique rule. A case whose only
 divergence did not reproduce natively is `INCONCLUSIVE` with no finding, and the divergence is
 listed under `emulation_artifacts`.
