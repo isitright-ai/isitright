@@ -25,14 +25,19 @@ def test_llms_txt_names_the_package_version() -> None:
 
 
 def test_the_top_changelog_heading_is_the_package_version() -> None:
+    """A release names the newest released heading. A development version names the release it
+    leads to, whose heading is the newest one and still marked unreleased."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    released = [
-        m.group(1)
+    headings = [
+        (m.group(1), "Unreleased" in m.group(2))
         for m in re.finditer(r"^## (\S+)(.*)$", text, re.MULTILINE)
-        if "Unreleased" not in m.group(2)
     ]
-    assert released and released[0] == isitright.__version__
+    release, development, _ = isitright.__version__.partition(".dev")
+    if development:
+        assert headings[0] == (release, True)
+    else:
+        assert next(v for v, unreleased in headings if not unreleased) == release
 
 
-def test_the_version_is_the_hotfix_release() -> None:
-    assert isitright.__version__ == "0.8.1"
+def test_the_version_is_the_development_version() -> None:
+    assert isitright.__version__ == "0.9.0.dev0"
