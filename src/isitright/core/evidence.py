@@ -412,8 +412,9 @@ class Totals(Closed):
     by_validity: dict[str, int] = Field(default_factory=dict)
     by_family: dict[str, int] = Field(default_factory=dict)
     """Findings per mutation family that has a surviving effect in the world shown (0.9). A finding
-    counts once for each distinct family it still shows, so the values can add up to more than the
-    number of findings. Before 0.9 only the last mutation's family was counted."""
+    counts once for each distinct family it still shows, and a finding with no surviving family
+    counts for none, so the values can add up to more or to fewer than the number of findings.
+    Before 0.9 only the last mutation's family was counted."""
 
 
 class AuditReport(Closed):

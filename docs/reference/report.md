@@ -113,9 +113,18 @@ found, by this precedence: `error` (the candidate errors and the reference does 
 differ). If the reference itself errors there is no kind, and no finding. Keeping the kind is a coarse
 safeguard, not proof that minimization kept the same root cause. When neither the minimized nor the found
 world reproduces a difference of that kind on a rerun, there is no finding: the case is `INCONCLUSIVE`
-with the error code `NOT_REPRODUCED` (a disagreement that was established failed its confirmation). A
-reference query that errors on the world gives `INCONCLUSIVE` with `REFERENCE_ERROR` instead: there was
-nothing trustworthy to confirm. An agents finding shows the minimal mutation path only when that path, run
+with the error code `NOT_REPRODUCED` (a disagreement that was established failed its confirmation). The
+same holds when a warehouse's native engine differed only on the larger world and that world, rerun on
+the emulating engine, no longer gives a difference of the kind found: no finding is made, and what the
+native engine showed (the confirmation attempts, its outputs, the world's rows and reproducer) is under
+`extensions.sql.unreconciled_native_evidence`.
+
+`REFERENCE_ERROR` is narrow. It is reported, with `INCONCLUSIVE` and no finding, only when a
+disagreement reaches the finding stage with an error as the reference's result: there was nothing
+trustworthy to confirm. It does not cover a query that raises while it is executed. Those keep their
+own routes: on the original data the case is `INCONCLUSIVE` with `QUERY_ERROR`, `QUERY_TIMEOUT` or
+`QUERY_RESOURCE_LIMIT`, and during the search a world on which a query raises a query error is skipped
+and counted in the search record. An agents finding shows the minimal mutation path only when that path, run
 as a world of its own, fails at least as strongly as the searched world; the research pack applies
 the same rule, and records a minimized world that is not shown under `minimization.not_adopted`.
 

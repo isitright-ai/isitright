@@ -218,7 +218,13 @@ Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by 
   columns), the fallback to the world the search found must reproduce that kind (else the case is
   `INCONCLUSIVE`, `NOT_REPRODUCED`), and a reference query that errors on the world gives no
   counterexample: `INCONCLUSIVE` with `REFERENCE_ERROR`, since no disagreement was established to
-  confirm.
+  confirm. This code covers an error given as the reference's result at the finding stage; a query
+  that raises while executing keeps its own routes (`QUERY_ERROR` and its kin on the original data,
+  a skipped world during the search). For a warehouse, when only the larger world differs natively
+  and that world no longer gives the kind of difference found on rerun, there is no finding
+  (`NOT_REPRODUCED`) and the native observations are kept under
+  `extensions.sql.unreconciled_native_evidence`; before, this either raised a validation error or
+  published the other disagreement under the finding.
 - **Agents.** A minimal world that carries a response or timing change does not claim
   `DOMAIN_VALIDATED`, and `minimization.not_adopted` records the minimal world's fingerprint and counts
   (failures out of judged runs, errors) with the reason; the searched world's significance is not

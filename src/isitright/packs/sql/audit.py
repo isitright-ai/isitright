@@ -267,6 +267,8 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         self._warehouse_translations: dict[str, Translation] = {}
         self._native_cache: dict[str, tuple[str, Any, Any, Any]] = {}
         self.emulation_artifacts: list[dict[str, Any]] = []
+        self.unreconciled_native: list[dict[str, Any]] = []
+        """Native observations of a world no finding could be made on (warehouses)."""
         _validate_domain_schema(domain_schema)
         self.prepared = self._prepare(self.engine, database, ddl, domain_schema, validator)
 
@@ -419,6 +421,7 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
         p = self.prepared
         self._native_cache = {}
         self.emulation_artifacts = []
+        self.unreconciled_native = []
         try:
             statements = (
                 self._statement(case.reference_sql),
@@ -1232,6 +1235,24 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     shown, native_shown = world, second
                     why_unminimized = "the minimized world agrees on the native engine"
                     differs, left, right, difference = disagrees(shown.state)
+                    if not (differs and difference_kind(left, right) == found_kind):
+                        # Nothing can be published under the disagreement found: keep what the
+                        # native engine showed with the case, apart from any finding.
+                        rows, script = self._world_artifacts(case, shown.state, referenced)
+                        self.unreconciled_native.append(
+                            {
+                                "mutation_path": [m.description for m in world.path],
+                                "native_confirmation": confirmation,
+                                **self._native_results(native_shown),
+                                "candidate_state": rows,
+                                "reproducer_sql": script,
+                            }
+                        )
+                        raise _NotReproduced(
+                            "the native engine differed on the world found before minimizing, "
+                            "but the disagreement found did not reproduce on that world when it "
+                            "was rerun; the native observations are kept with the case"
+                        )
         fingerprint = shown.fingerprint()
         rows, reproducer = self._world_artifacts(case, shown.state, referenced)
         shown_validity = p.spec.validate(shown.state)
@@ -1514,6 +1535,11 @@ class SqlAudit(AbstractContextManager["SqlAudit"]):
                     "native_verification": self._native_label(findings or []),
                     "emulation_artifacts": self.emulation_artifacts[:20],
                     "emulation_artifact_count": len(self.emulation_artifacts),
+                    **(
+                        {"unreconciled_native_evidence": self.unreconciled_native}
+                        if self.unreconciled_native
+                        else {}
+                    ),
                     "ordering_policy": config.ordering_policy.value,
                     "seeded": p.seeded,
                     "schema_ddl": self._ddl_statements(),

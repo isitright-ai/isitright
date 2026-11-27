@@ -1494,3 +1494,61 @@ def test_the_replay_of_an_adopted_minimal_world_run_reproduces_its_recorded_verd
     # ... and the invariant verdicts
     other = [] if run["violations"] else [{"invariant": "none_such", "message": "x"}]
     assert not replay_run(scenario, dict(run, violations=other), out).reproduced
+
+
+# -- warehouse: the larger world the native engine differed on must still differ when rerun ------
+
+
+@pytest.mark.parametrize("rerun", ["agrees", "differs_otherwise"])
+def test_a_larger_native_world_that_no_longer_gives_the_difference_found_is_no_finding(
+    monkeypatch: pytest.MonkeyPatch, rerun: str
+) -> None:
+    """The minimized world agrees natively and the larger one differs there, so the larger one
+    would be shown. Rerun on the emulating engine it now agrees, or differs in another way (the
+    candidate fails): no finding may be published under the disagreement that was found, and the
+    native observations are kept with the case."""
+    pytest.importorskip("duckdb")
+    from isitright.packs.sql import ConnectionHost, check, hosts
+    from isitright.packs.sql.results import error_result
+
+    real = hosts.DuckdbHost.run_pair
+    found: dict[str, Any] = {}
+    sightings = {"found": 0}
+
+    def run_pair(
+        self: Any, state: Any, reference_sql: str, candidate_sql: str, **kwargs: Any
+    ) -> Any:
+        left, right = real(self, state, reference_sql, candidate_sql, **kwargs)
+        key = tuple((table.name, repr(table.rows)) for table in state.tables)
+        if "key" not in found and left.rows != right.rows:
+            found["key"] = key  # the first world that differs: the one the search found
+        if found.get("key") == key:
+            sightings["found"] += 1
+            if sightings["found"] > 1:  # the rerun after the native engine confirmed it
+                return (left, left) if rerun == "agrees" else (left, error_result("changed"))
+        return left, right
+
+    monkeypatch.setattr(hosts.DuckdbHost, "run_pair", run_pair)
+    calls = {"n": 0}
+
+    def native(sql: str) -> tuple[list[str], list[list[Any]]]:
+        if "LEFT JOIN" in sql:
+            calls["n"] += 1
+            return ["id", "tag"], ([[10, None]] if calls["n"] > 1 else [])
+        return ["id", "tag"], []
+
+    report = check(
+        reference_sql="SELECT t.id, tag FROM items AS t LEFT JOIN UNNEST(t.tags) AS u(tag) ON TRUE",
+        candidate_sql="SELECT t.id, tag FROM items AS t CROSS JOIN UNNEST(t.tags) AS u(tag)",
+        dialect="presto",
+        ddl="CREATE TABLE web.items (id bigint, tags array(bigint), name varchar)",
+        confirm=ConnectionHost(run=native),
+    )
+    assert sightings["found"] == 2 and calls["n"] == 2  # the path under test was reached
+    assert report.findings == []
+    assert report.divergence_status is DivergenceStatus.INCONCLUSIVE
+    assert [e["code"] for e in report.errors] == ["NOT_REPRODUCED"]
+    assert "native engine differed" in report.errors[0]["message"]
+    (kept,) = report.extensions["sql"]["unreconciled_native_evidence"]
+    assert [c["result"] for c in kept["native_confirmation"]] == ["agree", "differ"]
+    assert kept["native_results"] and kept["candidate_state"] and kept["reproducer_sql"]
