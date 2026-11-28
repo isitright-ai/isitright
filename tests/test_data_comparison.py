@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 pytest.importorskip("pandas")
@@ -176,3 +178,103 @@ def test_a_repeated_block_of_answers_is_a_list_of_groups_compared_without_order(
     assert "no group" in (cmp.compare(renamed, BLOCKS).difference or "")
     assert not cmp.compare(ordered, "@r[0.43]").matches  # groups against a single answer
     assert not cmp.compare({"r": 0.43}, BLOCKS).matches  # a single answer against groups
+
+
+# --- 0.9: exactly 2 ulps, and decimals per named answer ------------------------------------------
+
+PEARSON = (
+    "Calculate the Pearson correlation between x and y. Format: @r_value[r_value] "
+    '@p_value[p_value] where "r_value" is a number rounded to two decimal places, and '
+    '"p_value" is a number rounded to four decimal places.'
+)
+
+
+def test_the_ulp_margin_is_exactly_the_number_of_ulps_stated() -> None:
+    from isitright.core.compare import NumericComparator
+
+    two = NumericComparator(0.0, 0.0, "exact", ulps=2)
+    one_step = math.nextafter(1.0, 2.0)
+    two_steps = math.nextafter(one_step, 2.0)
+    three_steps = math.nextafter(two_steps, 2.0)
+    assert two.compare(1.0, two_steps).matches
+    assert not two.compare(1.0, three_steps).matches
+    assert not NumericComparator(0.0, 0.0, "exact").compare(1.0, one_step).matches
+
+
+def test_a_tie_one_unit_apart_matches_with_two_ulps_and_no_relative_term() -> None:
+    policy = AnswerPolicy.for_question("Round to two decimal places.")
+    assert (policy.abs_tol, policy.rel_tol, policy.ulps) == (0.01, 0.0, 2)
+    numbers = policy.describe()["numbers"]
+    assert numbers["ulps"] == 2 and numbers["rel_tol"] == 0.0
+    assert DataComparator(policy).compare(2243963.30, 2243963.31).matches
+    assert not DataComparator(policy).compare(2243963.30, 2243963.32).matches
+
+
+def test_each_named_answer_gets_the_decimals_its_own_clause_states() -> None:
+    policy = AnswerPolicy.for_question(PEARSON)
+    assert policy.abs_tol == 0.01 and policy.per_answer == {"pvalue": 4}
+    described = policy.describe()["numbers_per_answer"]["pvalue"]
+    assert described["abs_tol"] == 0.0001 and "4 decimal places for pvalue" in described["basis"]
+    comparator = DataComparator(policy)
+    expected = "@r_value[0.53] @p_value[0.0012]"
+    assert comparator.compare(expected, "@r_value[0.539] @p_value[0.0012]").matches  # r: 0.01
+    outcome = comparator.compare(expected, "@r_value[0.53] @p_value[0.0019]")
+    assert not outcome.matches and "pvalue" in (outcome.difference or "")
+    # 0.6 to 0.8 used the fewest decimals for every answer and accepted this
+    assert (
+        DataComparator(AnswerPolicy(abs_tol=0.01, rel_tol=0.0, ulps=2))
+        .compare(expected, "@r_value[0.53] @p_value[0.0019]")
+        .matches
+    )
+
+
+RESPECTIVELY = (
+    "Format: @r_value[r_value] @p_value[p_value] where r_value and p_value are rounded to "
+    "two decimal places and four decimal places respectively."
+)
+
+
+def test_respectively_gives_each_answer_its_precision_in_order() -> None:
+    policy = AnswerPolicy.for_question(RESPECTIVELY)
+    assert policy.per_answer == {"pvalue": 4} and policy.undetermined == {}
+    assert policy.abs_tol == 0.01
+    comparator = DataComparator(policy)
+    expected = "@r_value[0.53] @p_value[0.0012]"
+    assert comparator.compare(expected, "@r_value[0.539] @p_value[0.0012]").matches
+    outcome = comparator.compare(expected, "@r_value[0.53] @p_value[0.0019]")
+    assert not outcome.matches and "pvalue" in (outcome.difference or "")
+
+
+def test_respectively_follows_the_order_the_answers_are_listed_in() -> None:
+    text = (
+        "Format: @r_value[r_value] @p_value[p_value] where p_value and r_value are rounded to "
+        "two decimal places and four decimal places respectively."
+    )
+    policy = AnswerPolicy.for_question(text)
+    assert policy.per_answer == {"rvalue": 4} and policy.abs_tol == 0.01  # p_value: 2, r_value: 4
+
+
+def test_a_precision_the_text_does_not_settle_is_reported_and_taken_at_its_finest() -> None:
+    # three answers, two precisions, "respectively": the pairing is not given
+    unmatched = (
+        "Format: @a[a] @b[b] @c[c] where a, b and c are rounded to two decimal places and four "
+        "decimal places respectively."
+    )
+    policy = AnswerPolicy.for_question(unmatched)
+    assert policy.undetermined == {"a": [2, 4], "b": [2, 4], "c": [2, 4]}
+    assert policy.per_answer == {"a": 4, "b": 4, "c": 4}
+    split = (
+        "Format: @r_value[r_value] @p_value[p_value] where r_value is rounded to two decimal "
+        "places and p_value to four decimal places or to six decimal places."
+    )
+    policy = AnswerPolicy.for_question(split)
+    assert policy.undetermined == {"pvalue": [4, 6]} and policy.per_answer == {"pvalue": 6}
+    note = policy.describe()["precision_undetermined"]["pvalue"]
+    assert note["named"] == [4, 6] and note["used"] == 6 and "finest" in note["note"]
+    assert "without saying which applies" in policy.numeric("pvalue").describe()["basis"]
+    comparator = DataComparator(policy)
+    expected = "@r_value[0.53] @p_value[0.0012]"
+    assert not comparator.compare(expected, "@r_value[0.53] @p_value[0.00121]").matches
+    assert comparator.compare(expected, "@r_value[0.53] @p_value[0.0012000004]").matches
+    # a policy with nothing undetermined says nothing about it
+    assert "precision_undetermined" not in AnswerPolicy.for_question(PEARSON).describe()

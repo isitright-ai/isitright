@@ -23,8 +23,8 @@ from isitright.packs.sql.dialects import Dialect
 from isitright.packs.sql.errors import StateRejected
 from isitright.packs.sql.models import CanonicalValue, CanonicalValueKind, QueryResult, ResultColumn
 from isitright.packs.sql.postgres_ddl import Schema, _ordered_schema_tables
-from isitright.packs.sql.results import empty_array, nested_value
-from isitright.packs.sql.sqlite_sandbox import canonicalize_sqlite_value
+from isitright.packs.sql.results import empty_array, error_result, nested_value
+from isitright.packs.sql.sqlite_sandbox import QueryDataError, canonicalize_sqlite_value
 from isitright.packs.sql.state import DatabaseState
 from isitright.packs.sql.state_loader import load_state
 
@@ -138,12 +138,29 @@ def _execute_postgres(
             if _constraint_error(error, "postgres"):
                 raise StateRejected(str(error)) from error
             raise
-        with connection.transaction():
-            connection.execute("SET TRANSACTION READ ONLY")
-            connection.execute(
-                "SELECT set_config('statement_timeout', %s, true)",
-                (str(max(1, int(timeout_seconds * 1000))),),
-            )
-            left = _result(connection.execute(reference), max_rows)
-            right = _result(connection.execute(candidate), max_rows)
+        left: QueryResult | None = None
+        try:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION READ ONLY")
+                connection.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (str(max(1, int(timeout_seconds * 1000))),),
+                )
+                left = _result(connection.execute(reference), max_rows)
+                right = _result(connection.execute(candidate), max_rows)
+        except psycopg.Error as error:  # the transaction is rolled back by now
+            if not is_postgres_data_error(error):
+                raise
+            data_error = QueryDataError(f"{type(error).__name__}: {error}")
+            if left is None:  # the reference fails on this world: skip it
+                raise data_error from error
+            return left, error_result(str(data_error)), version
         return left, right, version
+
+
+def is_postgres_data_error(error: Exception) -> bool:
+    """A cardinality violation (SQLSTATE class 21, a scalar subquery with several rows) or a data
+    exception (class 22: a failed cast, division by zero, an overflow): errors the data causes, not
+    the query text, the connection or a timeout."""
+    sqlstate = getattr(error, "sqlstate", None)
+    return isinstance(sqlstate, str) and sqlstate.startswith(("21", "22"))

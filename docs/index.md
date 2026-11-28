@@ -96,7 +96,8 @@ The full field-by-field explanation is in [Evidence](concepts/evidence.md).
 |---|---|---|
 | Text-to-SQL output: a gold query and a generated query per question | [Quick start: SQL](get-started/sql.md) | A DDL (PostgreSQL, BigQuery, Presto/Trino or SQLite), a SQLite file, the query pairs as JSONL, optionally domain rules |
 | A tool-using agent that talks MCP | [Quick start: agents](get-started/agents.md) | A [scenario](agents/write-a-scenario.md) (service, tools, task, oracle) and a command that runs your agent |
-| An agent that writes and runs Python over data files | [Data analysis agents](data.md) | A task directory (question, data files, a gold program) and recorded programs or your agent |
+| BigQuery or Presto/Trino queries, without an account | [Quick start: BigQuery and Presto/Trino](get-started/warehouses.md) | The table definitions (`INFORMATION_SCHEMA` DDL or `SHOW CREATE TABLE`) and the query pairs; no data |
+| An agent that writes and runs Python over data files | [Quick start: data analysis](get-started/data.md), then [Data analysis agents](data.md) | A task directory (question, data files, a gold program) and recorded programs or your agent |
 | A research agent that answers from a frozen corpus with citations | [Quick start: research](get-started/research.md) | A corpus (JSONL) and a task; no API key needed for the stand-in agents |
 | An eval set you want to onboard faster | [Onboarding with an LLM](onboarding/index.md) | Prompt templates that draft [hints](concepts/hints.md), constraints and scenarios for you to review |
 | Unfamiliar terms | [Concepts](concepts/index.md) | Nothing. A guided vocabulary with one running example |

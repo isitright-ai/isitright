@@ -25,6 +25,7 @@ Compare one query pair on perturbed worlds of a database or schema.
 | `--column-vectors` | off | Compare columns as independent sorted vectors when unordered |
 | `--null-as-zero` | off | Count NULL as 0 when comparing |
 | `--wall-time SECONDS` | none | Stop the search after this long; the report says it was stopped by the time cap |
+| `--nested-scope path\|column` | `path` | Nested columns (BigQuery, Presto, Trino): generate and mutate only the paths the queries read, or every field of a column they read (the 0.7 behavior). New in 0.9 |
 | `--confirm bigquery\|trino\|connection` | none | Re-run findings on a native host with the state inlined |
 | `--connection MODULE:FUNCTION`, `--trust-code` | none | The function for `--confirm connection`: `run(sql) -> (columns, rows)` |
 | `--bq-project`, `--max-bytes-billed`, `--env-file` | none, 100 MB | BigQuery project, cap on bytes billed per query, a file from which only `GOOGLE_APPLICATION_CREDENTIALS` is read |
@@ -45,6 +46,7 @@ Compare one query pair on perturbed worlds of a database or schema.
 | `--format json\|markdown\|both` | `both` | |
 | `--fail-on none\|domain-counterexample\|any-counterexample` | `none` | Exit code 3. The live research modes also accept `rate-increase` and `observed-failure` ([CI](../guides/ci.md#live-agent-gates)) |
 | `--verify-native` / `--no-verify-native` | on | Re-execute DuckDB findings on PostgreSQL when installed |
+| `--gold-trusted` / `--gold-untrusted` | unknown | State that the reference query is right or is not known to be; the report says so beside a finding (0.7) |
 
 Writes `case_report.json`, `case_report.md`, and for a counterexample `counterexample.sql` and
 `replay.json`. For `postgres` and `duckdb` the output directory must not already exist.
@@ -99,7 +101,8 @@ Run an agent on the [baseline](../concepts/live-agents.md#baseline-first) and on
 | `--attempts N` | `20000` | Candidate worlds the generation may visit |
 | `--ranking diverse\|screening\|coverage\|random` | `diverse` | |
 | `--stratum-patience N` | `10` | `0` = never |
-| `--run-patience N` | `30` | `0` = never |
+| `--run-patience N` | `30` | `0` = never; the floor of the run rule |
+| `--run-patience-share S` | `0.10` | The run rule stops after the larger of `--run-patience` and this share of the worlds ranked; `0` = the fixed number. **More worlds run than with 0.8's fixed 30, so more paid agent runs are possible: set `--max-money`, `--max-runs` and `--max-worlds`** |
 | `--max-trials N` | `20` | Most pairs per world for the [sequential test](../concepts/live-agents.md#sequential-testing-per-world); each pair is two runs (the world and a fresh baseline run) |
 | `--sequential` / `--no-sequential` | on | |
 | `--minimize` / `--no-minimize` | off | Costs runs |
@@ -124,6 +127,13 @@ Append the report's findings as eval cases (world, task, recorded trace, verdict
 
 `--report FILE [--trust-code] [--random-seeds N]` (default 100). Re-rank the executed worlds with each
 ordering offline; prints how many worlds each needs before the first finding. Costs nothing.
+
+## `isitright agents stopping`
+
+`--report FILE --trust-code [--shares 0,0.02,0.05,0.1,0.2,0.5] [--run-patience N] [--stratum-patience N] [--ranking diverse|screening|coverage|random]`.
+Replay the stopping rules over the worlds a finished run executed and print, per `--run-patience-share`,
+the worlds and findings each would have run and reached. Make that run with `--run-patience 0 --stratum-patience 0`.
+Costs nothing. See [Tuning the run rule](../concepts/live-agents.md#tuning-the-run-rule).
 
 ## `isitright agents hints propose`
 
@@ -150,8 +160,12 @@ result. See [Data analysis agents](../data.md#long-audits-resume-and-the-run-cac
 
 `--agent module:callable --output DIR --trust-code [--programs FILE] [--pass-env NAME ...]
 [--baseline-runs N] [--max-trials N] [--max-worlds N] [--ranking diverse|screening|coverage|random]
-[--stratum-patience N] [--run-patience N] [--max-runs N] [--max-money X] [--max-seconds S]
-[--allow-failing-baseline] [--fail-on none|rate-increase|observed-failure]`. Live
+[--stratum-patience N] [--run-patience N] [--run-patience-share S] [--max-runs N] [--max-money X]
+[--max-seconds S] [--attempts N] [--seed N] [--agent-kwargs JSON] [--agent-timeout S] [--env-file FILE]
+[--allow-failing-baseline] [--fail-on none|rate-increase|observed-failure]`. `--attempts`
+(default 300) sets both the frozen check that finds the minimized world and the live world search;
+`--agent-kwargs` are the factory's keyword arguments as JSON; `--env-file` reads only the variables
+named by `--pass-env` from a dotenv-style file (a variable already in the environment wins). Live
 audit: the agent is run on ranked worlds, each run paired with a fresh baseline run (`--max-trials`
 pairs per world, default 20), in a separate process that sees only the variables named by
 `--pass-env`. A world is first run `--baseline-runs` times and goes on to the pairs only if one of those runs failed. The audit stops with a message (exit code 2) unless every baseline run met the expectation; `--allow-failing-baseline` audits anyway. `--fail-on` is `none` by default; `rate-increase` exits 3 on a decided rate increase, `observed-failure` also on an observation. Each live finding gets a replay artifact (`findings/<id>/replay.json`) and the dataset beside it.
@@ -172,7 +186,8 @@ Audit a research agent on mutated corpora (see [Research agents](../research/ind
 ```bash
 isitright research check CORPUS --task task.json --output DIR \
   (--stand-in NAME | --agent module:attr | --agent-command "..." | --recorded-run run.json) \
-  [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] [--runs K] [--max-runs N] \
+  [--trust-code] [--hints hints.json] [--attempts 500] [--depth 2] \
+  [--retriever bm25|hashed-dense|hybrid] [--support-judge quote-contains-answer|module:attr] [--seed N] [--runs K] [--max-runs N] \
   [--seconds S] [--max-money USD] [--timeout S] [--screen] [--no-minimize] \
   [--allow-failing-baseline] [--record-runs DIR] [--export-observed] \
   [--fail-on none|domain-counterexample|any-counterexample|rate-increase|observed-failure]
@@ -183,6 +198,8 @@ isitright research check CORPUS --task task.json --output DIR \
 `{run_dir}` and writes `report.json` into `{run_dir}`. `--max-money` is refused for an agent that
 reports no cost. The output directory holds `report.json`, `findings-cases.md`, and per finding
 `N.replay.json` and `N.eval-case.json`.
+
+`--support-judge` (new in 0.9) judges whether each cited quote supports its claim (L2) on the baseline run: `quote-contains-answer` is a shipped rule; `module:attr` or `file.py:attr` is a judge of your own and needs `--trust-code`. The result is under `extensions.research.support` of the case and changes no level or outcome. `--retriever` (new in 0.9) chooses the retriever behind the tools: `bm25` (the default, as in 0.8), `hashed-dense` (a deterministic hashed bag-of-words embedding, a stand-in for a dense retriever) or `hybrid` (reciprocal rank fusion of the two). The report and the replay artifact record the choice. The HTTP server for hosted agents is a module, `python -m isitright.packs.research.http_server`; see [Research agents](../research/index.md#http-for-hosted-agents).
 
 ## `isitright research replay ARTIFACT`
 

@@ -24,7 +24,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from isitright.packs.data.host import RunResult, UntrustedCodeError, _Limits, scrubbed_environment
+from isitright.packs.data.host import (
+    MB,
+    RunResult,
+    UntrustedCodeError,
+    _Limits,
+    _Watchdog,
+    memory_enforcement,
+    scrubbed_environment,
+)
 from isitright.packs.data.programs import ProgramSource, RecordedProgram
 
 AGENT_RUNNER = Path(__file__).with_name("_agent_runner.py")
@@ -265,7 +273,9 @@ class SubprocessAgent:
             (root / "request.json").write_text(json.dumps(request), encoding="utf-8")
             env = scrubbed_environment(root)
             env.update({n: os.environ[n] for n in self.pass_env if n in os.environ})
-            limits = _Limits(self.memory_mb * 1024 * 1024 if self.memory_mb else None)
+            memory = self.memory_mb * MB if self.memory_mb else None
+            enforcement = memory_enforcement() if memory else "none"
+            limits = _Limits(memory, enforcement)
             process = subprocess.Popen(
                 [sys.executable, "-s", "-B", str(AGENT_RUNNER), str(root / "request.json")],
                 cwd=work,
@@ -274,8 +284,12 @@ class SubprocessAgent:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 preexec_fn=limits.preexec() if sys.platform != "win32" else None,
+                start_new_session=sys.platform != "win32",  # the watchdog kills the group
             )
             limits.attach(process)
+            watchdog = (
+                _Watchdog(process.pid, memory) if memory and enforcement == "rss_watchdog" else None
+            )
             try:
                 _, err = process.communicate(timeout=self.timeout_seconds)
             except subprocess.TimeoutExpired:
@@ -284,7 +298,16 @@ class SubprocessAgent:
                 process.communicate()
                 return AgentRun("", None, error=f"agent timed out after {self.timeout_seconds:g} s")
             finally:
+                if watchdog is not None:
+                    watchdog.stop()
                 limits.release()
+            if watchdog is not None and watchdog.exceeded is not None and memory:
+                return AgentRun(
+                    "",
+                    None,
+                    error=f"agent stopped at the memory limit: {watchdog.exceeded // MB} MB "
+                    f"resident, over the {memory // MB} MB limit",
+                )
             path = root / "result.json"
             if not path.is_file():
                 return AgentRun(

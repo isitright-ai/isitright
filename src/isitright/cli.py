@@ -107,6 +107,11 @@ class Confirm(StrEnum):
     CONNECTION = "connection"
 
 
+class NestedScope(StrEnum):
+    PATH = "path"
+    COLUMN = "column"
+
+
 class AgentsFailOn(StrEnum):
     NONE = "none"
     INVARIANT = "invariant-violation"
@@ -205,6 +210,7 @@ def _config(
     column_vectors: bool = False,
     reference_columns: str | None = None,
     wall_time: float | None = None,
+    nested_scope: str = "path",
 ) -> CheckConfig:
     return CheckConfig(
         seed=seed,
@@ -221,6 +227,7 @@ def _config(
         column_vectors=column_vectors,
         reference_columns=_columns(reference_columns),
         wall_time_seconds=wall_time,
+        nested_scope="column" if nested_scope == "column" else "path",
     )
 
 
@@ -311,6 +318,13 @@ def check_command(
     wall_time: Annotated[
         float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
     ] = None,
+    nested_scope: Annotated[
+        NestedScope,
+        typer.Option(
+            help="Nested columns (BigQuery, Presto, Trino): generate and mutate only the paths "
+            "the queries read (path), or every field of a column they read (column, as in 0.7)."
+        ),
+    ] = NestedScope.PATH,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -430,6 +444,7 @@ def check_command(
                 column_vectors,
                 reference_columns,
                 wall_time,
+                nested_scope.value,
             ),
             _progress=lambda event: progress.update("Candidate states", event),
             **source,
@@ -515,6 +530,13 @@ def suite_command(
     wall_time: Annotated[
         float | None, typer.Option(min=0.001, help="Stop the search after this many seconds.")
     ] = None,
+    nested_scope: Annotated[
+        NestedScope,
+        typer.Option(
+            help="Nested columns (BigQuery, Presto, Trino): generate and mutate only the paths "
+            "the queries read (path), or every field of a column they read (column, as in 0.7)."
+        ),
+    ] = NestedScope.PATH,
     database: Annotated[
         Path | None, typer.Option(exists=True, dir_okay=False, readable=True, help="SQLite file.")
     ] = None,
@@ -632,6 +654,7 @@ def suite_command(
                 column_vectors,
                 reference_columns,
                 wall_time,
+                nested_scope.value,
             ),
             _progress=progress.update if not quiet else None,
             **source,
@@ -927,6 +950,17 @@ def agents_run_command(
             "finding (0 = never).",
         ),
     ] = 30,
+    run_patience_share: Annotated[
+        float,
+        typer.Option(
+            min=0.0,
+            max=1.0,
+            help="Scale --run-patience with the universe: stop after the larger of --run-patience "
+            "and this share of the worlds ranked (default 0.10; 0 = the fixed number). MORE WORLDS "
+            "RUN than with a fixed 30, so more paid agent runs are possible: set --max-money, "
+            "--max-runs and --max-worlds.",
+        ),
+    ] = 0.10,
     max_trials: Annotated[
         int, typer.Option(min=1, help="Most paired runs the sequential test may use per world.")
     ] = 20,
@@ -1001,7 +1035,9 @@ def agents_run_command(
             only=only,
             budget=Budget(money=max_money, runs=max_runs, seconds=max_seconds),
             ranking=ranking,  # type: ignore[arg-type]
-            rules=StoppingRules(stratum_patience or None, run_patience or None),
+            rules=StoppingRules(
+                stratum_patience or None, run_patience or None, run_patience_share or None
+            ),
             sequential=sequential,
             max_trials=max_trials,
             minimize=minimize,
@@ -1162,6 +1198,66 @@ def agents_order_command(
         )
         typer.echo(f"{r.ranking:<11} {r.worlds:>6}  {r.findings:>8}  {first:<28}  {r.seeds:>5}")
     typer.echo("Only worlds the run executed are placed; an early-stopped run is biased.")
+
+
+@agents_app.command("stopping")
+def agents_stopping_command(
+    report: Annotated[Path, typer.Option(exists=True, dir_okay=False, readable=True)],
+    trust_code: Annotated[
+        bool, typer.Option("--trust-code", help="Required: confirm the scenario is trusted code.")
+    ] = False,
+    shares: Annotated[
+        str,
+        typer.Option(help="Comma-separated --run-patience-share values to replay."),
+    ] = "0,0.02,0.05,0.1,0.2,0.5",
+    run_patience: Annotated[int, typer.Option(min=1, help="The floor of the run rule.")] = 30,
+    stratum_patience: Annotated[int, typer.Option(min=0)] = 10,
+    ranking: Annotated[
+        str, typer.Option(help="diverse, screening, coverage or random.")
+    ] = "diverse",
+) -> None:
+    """What each --run-patience-share would have run and found (offline, free).
+
+    Replays the stopping rules over the worlds a finished run executed. Make that run with
+    `--run-patience 0 --stratum-patience 0` and a --max-worlds that covers the eligible worlds;
+    it is the one run you pay for. Then choose the share from this table.
+    """
+    from isitright.packs.mcp.model import ScenarioError, load_scenario
+    from isitright.packs.mcp.ordering import OrderingError, compare_stopping
+
+    if not trust_code:
+        typer.echo("This executes the scenario's code; pass --trust-code.", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT)
+    try:
+        values = tuple(float(s) for s in shares.split(",") if s.strip())
+        data = AuditReport.model_validate_json(report.read_text(encoding="utf-8"))
+        scenario = load_scenario(data.cases[0].extensions["mcp"]["scenario_ref"])
+        rows = compare_stopping(
+            data,
+            report.parent,
+            scenario,
+            shares=values,
+            run_patience=run_patience,
+            stratum_patience=stratum_patience or None,
+            ranking=ranking,
+        )
+    except (OrderingError, ScenarioError, OSError, KeyError, ValueError) as error:
+        typer.echo(f"Stopping error: {error}", err=True)
+        raise typer.Exit(EXIT_INVALID_INPUT) from error
+    typer.echo(
+        "share  patience  worlds run  worlds with findings  strata with findings  last finding at"
+    )
+    for r in rows:
+        last = "-" if r.last_finding_position is None else str(r.last_finding_position)
+        typer.echo(
+            f"{r.share:<6g} {r.run_patience:>8}  {r.worlds_run:>5}/{r.worlds_total:<5} "
+            f"{r.bad_found:>9}/{r.bad_total:<10} "
+            f"{r.strata_found:>10}/{r.strata_total:<9} {last:>10}"
+        )
+    typer.echo(
+        "Only worlds the run executed are replayed; a run that was stopped early understates what "
+        "a smaller share would have run. Every world run here is one agent run per trial."
+    )
 
 
 @agents_app.command("replay")

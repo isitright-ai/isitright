@@ -500,6 +500,38 @@ class Unique(_Base):
         return out
 
 
+class RowCount(_Base):
+    """A collection holds at least ``min`` and at most ``max`` entities.
+
+    For statistics a task computes over a table (a correlation is defined from three rows, and a
+    two-row world makes it always 1): without it, minimization shrinks a counterexample to a world
+    where the statistic is degenerate. Every world and every minimization step is checked, so a
+    counterexample never has fewer rows than declared. Check-only for generation.
+    """
+
+    kind: Literal["row_count"] = "row_count"
+    collection: str
+    min: int | None = Field(default=None, ge=0)
+    max: int | None = Field(default=None, ge=0)
+
+    def describe(self) -> str:
+        if self.min is not None and self.max is not None:
+            return f"{self.collection} has {self.min} to {self.max} rows"
+        if self.min is not None:
+            return f"{self.collection} has at least {self.min} rows"
+        return f"{self.collection} has at most {self.max} rows"
+
+    def check(self, schema: EntitySchema, state: State) -> list[Violation]:
+        count = len(list(state.entities(schema.collection(self.collection).name)))
+        if self.min is not None and count < self.min:
+            message = f"{self.collection} has {count} rows, fewer than {self.min}"
+            return [Violation(self.label(), message)]
+        if self.max is not None and count > self.max:
+            message = f"{self.collection} has {count} rows, more than {self.max}"
+            return [Violation(self.label(), message)]
+        return []
+
+
 class FunctionalDependency(_Base):
     kind: Literal["functional_dependency"] = "functional_dependency"
     collection: str
@@ -610,6 +642,7 @@ Constraint = Annotated[
     | Pattern
     | JsonSum
     | Unique
+    | RowCount
     | FunctionalDependency
     | Aggregate
     | RowExpr,

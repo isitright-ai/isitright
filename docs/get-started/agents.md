@@ -116,7 +116,8 @@ SHOP_AGENT_MODE=careless isitright agents run --trust-code --scenario examples/a
     World generation visits up to 20000 candidates before any agent runs and prints progress. Then
     each run starts a server process. The run above took about 10 minutes and 91 agent runs: the
     sequential test repeats a world until it decides. Add `--attempts 3000` to shorten generation, and
-    `--max-runs 30` to cap the runs.
+    `--max-runs 30` to cap the runs. Since 0.9 the default run stopping rule waits for 10% of the ranked
+    worlds, so a real audit can run more worlds than before; see [Run an audit](../agents/run-an-audit.md).
 
 What the report says:
 

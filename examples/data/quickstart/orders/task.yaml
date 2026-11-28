@@ -1,0 +1,5 @@
+# Proposed fixture: pending owner review (written by Claude).
+id: orders
+question: What is the mean amount of the north region? Round to 2 decimal places.
+files:
+  - file: orders.csv

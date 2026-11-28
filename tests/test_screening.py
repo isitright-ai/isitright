@@ -228,7 +228,8 @@ def test_the_run_stops_after_consecutive_worlds_that_add_nothing(
     worlds: list[GeneratedWorld],
 ) -> None:
     pool = eligible(worlds)
-    state = StopState(StoppingRules(stratum_patience=None, run_patience=3), pool)
+    rules = StoppingRules(stratum_patience=None, run_patience=3, run_patience_share=None)
+    state = StopState(rules, pool)
     same = pool[0]
     state.record(same, found=False)  # new features
     for _ in range(3):
@@ -269,3 +270,51 @@ def test_the_diverse_ranking_takes_one_world_per_stratum_before_a_second(
     priorities = [PRIORITY[screens[w.id].cls] for w in first_round]
     assert priorities == sorted(priorities)
     assert [w.id for w in order] == [w.id for w in rank(worlds, screens, mode="diverse", seed=9)]
+
+
+@pytest.mark.parametrize(
+    ("floor", "share", "universe", "expected"),
+    [
+        (30, 0.10, 600, 60),
+        (30, 0.10, 6000, 600),
+        (30, 0.10, 100, 30),  # the floor holds in a small universe
+        (30, 0.10, 301, 31),  # rounded up
+        (30, None, 6000, 30),  # no share: the fixed number
+        (30, 0.0, 6000, 30),
+        (None, 0.10, 6000, None),  # the rule is off
+    ],
+)
+def test_the_run_patience_scales_with_the_universe(
+    floor: int | None, share: float | None, universe: int, expected: int | None
+) -> None:
+    rules = StoppingRules(None, floor, share)
+    assert rules.effective_run_patience(universe) == expected
+
+
+def test_the_default_run_rule_scales_and_the_record_states_the_value_used(
+    worlds: list[GeneratedWorld],
+) -> None:
+    pool = eligible(worlds) * 20  # a universe in the thousands, as the measurement used
+    scaled = StoppingRules(stratum_patience=None)  # the defaults: floor 30, share 10%
+    fixed = StoppingRules(stratum_patience=None, run_patience_share=None)
+    want = max(30, -(-len(pool) // 10))
+    assert want > 30, "the fixture universe is too small to tell the two rules apart"
+    stops: dict[str, int] = {}
+    for name, rules in (("scaled", scaled), ("fixed", fixed)):
+        state = StopState(rules, pool)
+        quiet = 0
+        state.record(pool[0], found=False)  # its features are new
+        while state.run_stopped is None:
+            state.record(pool[0], found=False)
+            quiet += 1
+        stops[name] = quiet
+        reason = state.run_stopped
+        assert f"run rule: {rules.effective_run_patience(len(pool))}" in reason
+        record = state.to_record(None)
+        assert record.run_patience == rules.effective_run_patience(len(pool))
+    assert stops == {"scaled": want, "fixed": 30}
+    state = StopState(scaled, pool)
+    state.record(pool[0], found=False)
+    while state.run_stopped is None:
+        state.record(pool[0], found=False)
+    assert f"10% of {len(pool)} worlds" in state.run_stopped

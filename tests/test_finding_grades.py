@@ -4,14 +4,14 @@
 # observation-only case must produce) were written by the same author as the implementation.
 """N2: finding grades. A failed run on a valid world is an observation; a rate increase is a claim.
 
-Each test names the defect it reproduces (ledger ids T5 to T8) or the 0.9 behavior it pins:
+Each test names the defect it reproduces or the 0.9 behavior it pins:
 
-* T5: an agent that fails 5% of its runs at random must not give a rate-increase finding, and an
+* an agent that fails 5% of its runs at random must not give a rate-increase finding, and an
   observed failure must be shown as one, not as a counterexample;
-* T6: rates carry Wilson intervals; the report says how many worlds were tested and that the
+* rates carry Wilson intervals; the report says how many worlds were tested and that the
   per-world decisions are uncorrected;
-* T7: a data audit stops on a baseline that does not meet the expectation in every run;
-* T8: a run in which nothing could be judged is inconclusive, not "not found".
+* a data audit stops on a baseline that does not meet the expectation in every run;
+* a run in which nothing could be judged is inconclusive, not "not found".
 
 The agents (MCP) tests copy real recorded runs of the shop example's scripted agent, as
 ``tests/test_run_loop_packs.py`` does; they make up no verdicts. ``pytest -m statistical`` runs the
@@ -175,7 +175,7 @@ def _agents_audit(tmp_path: Path, artifacts: dict[str, Any], n: int, **extra: An
     )
 
 
-# -- T5: a 5% agent is not a rate increase -------------------------------------------------------
+# -- a 5% agent is not a rate increase -------------------------------------------------------
 
 
 @pytest.mark.parametrize("size", SIZES)
@@ -199,7 +199,7 @@ def test_an_agent_that_fails_five_percent_at_random_rarely_gives_a_rate_claim(
     assert claims / audits <= 0.05, f"{claims} of {audits} audits claimed a counterexample"
 
 
-# -- T8: nothing judged is not "not found" -------------------------------------------------------
+# -- nothing judged is not "not found" -------------------------------------------------------
 
 
 def test_an_agent_that_errors_on_every_mutated_world_gives_inconclusive(
@@ -217,7 +217,7 @@ def test_an_agent_that_errors_on_every_mutated_world_gives_inconclusive(
     assert "no mutated world" in case.headline.lower()
 
 
-# -- data live: T7 and T8 ------------------------------------------------------------------------
+# -- data live ------------------------------------------------------------------------
 
 from .test_run_loop_packs import _FlakyDataAgent, data_audit  # noqa: E402,F401
 
@@ -253,7 +253,7 @@ def _live(audit: Any, agent: Any, **config: Any) -> Any:
 def test_data_a_baseline_that_does_not_meet_the_expectation_stops_the_audit(
     data_audit: Any,
 ) -> None:
-    """T7. 0.8.1 went on to run every world against a baseline that already failed."""
+    """0.8.1 went on to run every world against a baseline that already failed."""
     from isitright.packs.data.live import LiveInputError
 
     agent = _FlakyDataAgent(random.Random(1), 1.0, 0.0)
@@ -265,7 +265,7 @@ def test_data_a_baseline_that_does_not_meet_the_expectation_stops_the_audit(
 def test_data_an_agent_that_errors_on_every_mutated_world_gives_inconclusive(
     data_audit: Any,
 ) -> None:
-    """T8. The baseline runs are not a judged run of a mutated world."""
+    """The baseline runs are not a judged run of a mutated world."""
     case = _live(data_audit, _ErrorsOnWorlds())
     assert case.divergence_status.value == "INCONCLUSIVE"
     assert case.findings == []

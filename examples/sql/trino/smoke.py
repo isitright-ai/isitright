@@ -89,9 +89,9 @@ Path(sys.argv[1]).write_text(json.dumps(out, indent=1, default=str), encoding="u
 if len(sys.argv) > 2:
     target = Path(sys.argv[2])
     book = json.loads(target.read_text(encoding="utf-8"))
-    kept = {r["id"]: r for r in book["records"]}
+    kept = {(r["id"], r["engine"]): r for r in book["records"]}  # other engines stay
     for r in rows:
-        kept[r["id"]] = {
+        kept[(r["id"], "trino")] = {
             "id": r["id"],
             "engine": "trino",
             "engine_version": version,

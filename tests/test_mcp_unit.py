@@ -345,6 +345,25 @@ def test_declarative_timers_and_response_edits_act_during_a_run() -> None:
     assert runtime.after_call("read", {}) == []
 
 
+def test_a_timer_whose_target_is_gone_does_not_crash_the_run() -> None:
+    """Regression (found 2026-11-13 measuring the stopping rules on the shop): a composed world
+    can remove the entity a timing mutation changes; the call then raised EditError and the whole
+    run was lost. The timer now reports that it found nothing to change, and the run goes on."""
+    from isitright.packs.mcp.runtime import ServiceRuntime
+
+    scenario = _shifty(use_timer=True)
+    timer = Timer(
+        name="late",
+        trigger=Trigger(tool="read"),
+        edits=[SetField(collection="things", key="gone", path=["id"], value="x")],
+    )
+    runtime = ServiceRuntime.for_world(scenario, World(scenario.base, (), (timer,)))
+    changes = runtime.after_call("read", {})
+    assert len(changes) == 1 and changes[0]["timer"] == "late"
+    assert "gone" in changes[0]["not_applied"]
+    assert runtime.after_call("read", {}) == []  # it fired once; it does not retry
+
+
 def _record_with_change(scenario: McpScenario, run_dir: Path) -> list[dict[str, Any]]:
     """Write the files the serving process writes for read, bump (the change follows read)."""
     from isitright.packs.mcp.runtime import ServiceRuntime

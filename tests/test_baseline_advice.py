@@ -55,7 +55,7 @@ def test_no_text_in_the_repository_advises_seven_baseline_runs() -> None:
 
 
 def _power_by_pairs(max_pairs: int, min_pairs: int, seed: int) -> float:
-    """Pairs made of fresh runs (0.9.0): a rise from 10% to 70%, up to ``max_pairs`` pairs."""
+    """Pairs made of fresh runs (0.9): a rise from 10% to 70%, up to ``max_pairs`` pairs."""
     rng = random.Random(seed)
     detected = 0
     for _ in range(TRIALS):
@@ -78,7 +78,7 @@ def test_the_pair_limit_figures_in_the_docs_come_from_this_simulation() -> None:
 def test_the_live_agents_page_and_the_changelog_give_the_pair_limit_and_the_reason() -> None:
     page = (ROOT / "docs" / "concepts" / "live-agents.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    section = changelog.split("## 0.9.0")[1].split("## 0.8.1")[0]
+    section = changelog.split("## 0.9")[1].split("## 0.8.1")[0]
     assert re.search(r"20\s+pairs", page) and "about 94%" in page and "about 91%" in page
     assert "fresh" in page and "baseline run" in page
     assert re.search(r"20\s+in\s+all\s+three\s+packs", section), "the changelog names 20 pairs"

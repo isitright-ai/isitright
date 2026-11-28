@@ -9,6 +9,9 @@ never installed in this process.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -166,3 +169,73 @@ def test_no_memory_limit_is_applied_unless_one_is_asked_for(
     _runner._limit_memory()  # nothing to do, and nothing raised
     monkeypatch.setenv("ISITRIGHT_MEMORY_BYTES", "")
     _runner._limit_memory()
+
+
+def test_the_host_and_the_runner_agree_on_the_memory_mark() -> None:
+    """The runner is a standalone file and cannot import the host; the text is written twice."""
+    from isitright.packs.data.host import MEMORY_MARK
+
+    assert MEMORY_MARK == _runner.MEMORY_MARK
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
+def test_the_runner_ends_itself_when_its_peak_memory_grows_past_the_limit() -> None:
+    """The limit is 20 MB above the starting peak; the program then allocates that peak + 100 MB.
+
+    On Linux the starting peak is the parent's high-water mark (361 MB under pytest in CI on
+    2026-11-14), so an allocation smaller than it never raises ``ru_maxrss``.
+    """
+    code = (
+        "import resource, sys, time\n"
+        "from isitright.packs.data import _runner\n"
+        "scale = 1 if sys.platform == 'darwin' else 1024\n"
+        "now = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
+        "_runner._watch_own_memory(now + 20 * 2**20)\n"
+        "x = bytearray(now + 100 * 2**20)\n"  # past the inherited peak, or it cannot grow
+        "for i in range(0, len(x), 4096):\n"  # touch every page: untouched pages are not resident
+        "    x[i] = 1\n"
+        "after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale\n"
+        "print('peak before', now // 2**20, 'after', after // 2**20, 'MB', flush=True)\n"
+        "time.sleep(10)\n"
+        "print('survived')\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+    )
+    assert completed.returncode == _runner.MEMORY_EXIT, (completed.stdout, completed.stderr)
+    assert _runner.MEMORY_MARK in completed.stderr and "MB limit" in completed.stderr
+    assert "survived" not in completed.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
+def test_a_peak_inherited_from_a_large_parent_does_not_end_the_runner() -> None:
+    """Regression (CI, 2026-11-13): the child of a large process starts with the parent's
+    high-water mark above the limit; a runner that has not grown must go on."""
+    code = (
+        "import time\n"
+        "from isitright.packs.data import _runner\n"
+        "_runner._watch_own_memory(1024 * 1024)\n"  # far below the interpreter's own size
+        "time.sleep(1)\n"
+        "print('survived')\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+    )
+    assert completed.returncode == 0 and "survived" in completed.stdout, completed.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX self-check; Windows uses a Job Object")
+def test_the_runner_starts_its_check_only_when_the_host_asks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def running() -> int:
+        return sum(t.name == "isitright-memory" for t in threading.enumerate())
+
+    before = running()
+    monkeypatch.delenv("ISITRIGHT_MEMORY_BYTES", raising=False)
+    _runner._limit_memory()
+    assert running() == before
+    monkeypatch.setenv("ISITRIGHT_MEMORY_BYTES", str(10**15))  # far above anything: it never fires
+    _runner._limit_memory()
+    assert running() == before + 1
+    assert "ISITRIGHT_MEMORY_BYTES" not in os.environ  # a program cannot read the limit

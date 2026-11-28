@@ -6,6 +6,7 @@
 Usage (from a checkout; each prints the bytes it used and writes a JSON file):
 
     python examples/sql/spider2/bigquery_steps.py smoke    --project P --out smoke.json
+    python examples/sql/spider2/bigquery_steps.py smoke-detected --project P --out detected.json
     python examples/sql/spider2/bigquery_steps.py schema   --project P --out schema.json
     python examples/sql/spider2/bigquery_steps.py baseline --project P --spider2 DIR --out base.json
     python examples/sql/spider2/bigquery_steps.py rewrite  --project P --dataset D --out rw.json
@@ -14,8 +15,10 @@ Usage (from a checkout; each prints the bytes it used and writes a JSON file):
 Credentials: application-default credentials (``gcloud auth application-default login``) or
 ``GOOGLE_APPLICATION_CREDENTIALS``, read by Google's client library; never printed or written.
 
-Every command takes ``--max-bytes-per-query`` and ``--max-bytes-total``. ``smoke``, ``schema``
-(metadata only), ``rewrite`` and ``confirm`` read no table data: they send inline text or ask for
+Every command takes ``--max-bytes-per-query`` and ``--max-bytes-total``. ``smoke``,
+``smoke-detected`` (0.9: the fixtures the pack refuses, so a native outcome can be recorded),
+``schema`` (metadata only), ``rewrite`` and ``confirm`` read no table data: they send inline text or
+ask for
 metadata. ``baseline`` reads public tables (dry runs first, caps enforced). ``rewrite`` is the one
 step that writes to your project: it creates three tiny tables in the scratch dataset you name and
 drops them.
@@ -166,6 +169,60 @@ def smoke(host: Any, fixtures: list[Any] | None = None) -> dict[str, Any]:
     return {"fixtures": rows, "counts": counts, "host_records": getattr(host, "records", [])}
 
 
+def smoke_detected(host: Any, fixtures: list[Any] | None = None) -> dict[str, Any]:
+    """Send the ``detected`` BigQuery fixtures, which the pack refuses, with the state inlined.
+
+    The pack refuses them because DuckDB cannot emulate them; this asks whether BigQuery runs them
+    and what it returns, so the fixture can record a native outcome. The text is inlined without the
+    pack's query parser (which is what refuses the construct) and goes through the same host, so
+    the refusal of a real table, the dry run and the byte cap still apply. A fixture that cannot be
+    inlined (a wildcard table names real shard tables) is reported as not sent, with the reason.
+    """
+    sys.path.insert(0, str(ROOT))
+    import sqlglot
+
+    from isitright.packs.sql.dialects import get_dialect
+    from isitright.packs.sql.errors import SqlInputError
+    from isitright.packs.sql.inline import inline_sql
+    from isitright.packs.sql.mapping import build_model
+    from isitright.packs.sql.native import NativeHostError
+    from isitright.packs.sql.replaying import _state
+    from isitright.packs.sql.sqlite_sandbox import QueryExecutionError
+    from isitright.packs.sql.warehouse_ddl import parse_warehouse_schema
+    from isitright.packs.sql.warehouse_sql import resolve_tables
+    from tests.warehouse_fixtures import BQ_DDL, BQ_ROWS, ERROR, FIXTURES
+
+    dialect = get_dialect("bigquery")
+    db = parse_warehouse_schema(BQ_DDL, dialect)
+    state = _state(build_model(db, "bigquery"), BQ_ROWS)
+    rows: list[dict[str, Any]] = []
+    for fixture in fixtures if fixtures is not None else FIXTURES:
+        if fixture.dialect != "bigquery" or fixture.status != "detected":
+            continue
+        row: dict[str, Any] = {"id": fixture.id, "query": fixture.query}
+        try:
+            tree = resolve_tables(sqlglot.parse_one(fixture.query, read=dialect.read), db)
+            text = inline_sql(tree, dialect, db, state)
+        except SqlInputError as error:
+            row.update(outcome="not sent", reason=f"cannot be inlined: {error}")
+            rows.append(row)
+            continue
+        try:
+            result = host.run_inline(text, dialect, timeout_seconds=60, max_rows=100)
+        except NativeHostError as error:  # the host could not run it: no outcome either way
+            row.update(outcome="not run", reason=str(error)[:200])
+        except QueryExecutionError as error:
+            row.update(outcome="observed", observed_native=ERROR, detail=str(error)[:200])
+        else:
+            observed = [[cell.value for cell in r] for r in result.rows]
+            row.update(outcome="observed", observed_native=observed, detail="")
+        rows.append(row)
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row["outcome"]] = counts.get(row["outcome"], 0) + 1
+    return {"fixtures": rows, "counts": counts, "host_records": getattr(host, "records", [])}
+
+
 # --- step 3: schema check -------------------------------------------------------------------------
 
 
@@ -302,12 +359,11 @@ def baseline(
             rows=[[canonical(v) for v in row] for row in rows],
         )
 
-    def gold_vs_files(task: dict[str, Any], gold: Any, csv_files: list[Path]) -> dict[str, Any]:
-        """Is the gold SQL trustworthy as a reference? Only if its result on today's data equals one
-        of Spider's published result files under that file's own ``condition_cols`` (the way Spider
-        scores a prediction). The files are what the benchmark scores; the SQL is not."""
-        if not csv_files:
-            return {"gold_trusted": None, "gold_trust_basis": "no Spider result file for the task"}
+    def result_vs_files(
+        task: dict[str, Any], result: Any, csv_files: list[Path]
+    ) -> tuple[list[str], list[str]]:
+        """The Spider result files ``result`` matches, each under its own ``condition_cols`` (the
+        way Spider scores a prediction), and the files the comparison could not read."""
         cols = task["condition_cols"]
         variants = cols if cols and all(isinstance(c, list) for c in cols) else [cols]
         matched: list[str] = []
@@ -341,10 +397,19 @@ def baseline(
                 reference_columns=[int(c) for c in variant] or None,
             )
             try:
-                if compare_results(reference, as_result(*gold), policy=policy).matches:
+                if compare_results(reference, as_result(*result), policy=policy).matches:
                     matched.append(path.name)
             except Exception as error:  # a file this comparison cannot read is not a match
                 problems.append(f"{path.name}: {type(error).__name__}")
+        return matched, problems
+
+    def gold_vs_files(task: dict[str, Any], gold: Any, csv_files: list[Path]) -> dict[str, Any]:
+        """Is the gold SQL trustworthy as a reference? Only if its result on today's data equals one
+        of Spider's published result files. The files are what the benchmark scores; the SQL is
+        not."""
+        if not csv_files:
+            return {"gold_trusted": None, "gold_trust_basis": "no Spider result file for the task"}
+        matched, problems = result_vs_files(task, gold, csv_files)
         basis = (
             f"the gold SQL's result on the real data equals Spider's result file {matched[0]}"
             if matched
@@ -433,6 +498,20 @@ def baseline(
         entry["difference"] = match.difference
         entry["gold_rows"], entry["candidate_rows"] = len(gold[1]), len(cand[1])
         csv_files = sorted(spider_gold.glob(f"{task['id']}*.csv"))
+        # 0.9: where the gold SQL does not reproduce any of Spider's files, the files are the
+        # reference on the real data (Spider accepts a candidate that matches any of them).
+        cand_files, cand_problems = result_vs_files(task, cand, csv_files)
+        entry["candidate_matches_spider_files"] = cand_files
+        if cand_problems:
+            entry["candidate_vs_files_problems"] = cand_problems
+        if entry.get("gold_trusted") is False:
+            entry["baseline_reference"] = "Spider's result files (the gold SQL matches none)"
+            entry["baseline_agrees"] = bool(cand_files)
+        else:
+            entry["baseline_reference"] = "the gold SQL" + (
+                "" if entry.get("gold_trusted") else " (no Spider result file to check it)"
+            )
+            entry["baseline_agrees"] = match.matches
         entry["spider_gold_result_files"] = [p.name for p in csv_files]
         csv_rows = [_read_csv(p) for p in csv_files]
         # Spider keeps one gold result per accepted variant; the gold SQL should match one of them
@@ -446,8 +525,15 @@ def baseline(
             entry["candidate_sample"] = _sample(cand)
             entry["spider_gold_csv_samples"] = [r[:4] for r in csv_rows]
         out.append(entry)
-    kept = [e["id"] for e in out if e.get("pair_matches_under_task_settings")]
-    return {"tasks": out, "kept_pairs": kept, "kept": len(kept), **runner.summary()}
+    kept = [e["id"] for e in out if e.get("baseline_agrees")]
+    gold_sql_kept = [e["id"] for e in out if e.get("pair_matches_under_task_settings")]
+    return {
+        "tasks": out,
+        "kept_pairs": kept,
+        "kept": len(kept),
+        "kept_with_gold_sql_as_reference": len(gold_sql_kept),
+        **runner.summary(),
+    }
 
 
 # --- step 5: wildcard rewrite equivalence ---------------------------------------------------------
@@ -502,9 +588,13 @@ def rewrite_equivalence(runner: Runner, project: str, dataset: str) -> dict[str,
                 runner.run(f"DROP TABLE IF EXISTS `{project}.{dataset}.{name}`")
             except Exception as error:  # report it; the owner can drop the table by hand
                 results.append({"drop_failed": name, "error": str(error)[:120]})
+    left_behind = [r["drop_failed"] for r in results if "drop_failed" in r]
     return {
         "checks": results,
-        "all_equal": all(r.get("equal", True) for r in results),
+        "all_equal": all(r["equal"] for r in results if "equal" in r)
+        and any("equal" in r for r in results),
+        "cleanup_ok": not left_behind,
+        "tables_left_behind": left_behind,  # drop these by hand
         **runner.summary(),
     }
 
@@ -518,6 +608,9 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
     from isitright.packs.sql import CheckConfig, check
     from isitright.packs.sql.constraints_file import load_constraint_schema
     from isitright.packs.sql.models import ColumnComparisonPolicy, OrderingPolicy
+
+    sys.path.insert(0, str(HERE))
+    import run_demo
 
     task_ids = [
         json.loads(line)["id"]
@@ -539,15 +632,17 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
             if summary.get(label, {}).get("status") != "COUNTEREXAMPLE_FOUND":
                 continue
             ordering = OrderingPolicy.UNORDERED if task["ignore_order"] else OrderingPolicy.ORDERED
-            cols = task["condition_cols"]
-            first = cols[0] if cols and isinstance(cols[0], list) else cols
+            variants = run_demo.reference_column_variants(task["condition_cols"])
+            recorded = summary[label].get("finding") or {}
+            # the benchmark verdict came from one variant's audit: confirm that variant's finding
+            found_by = summary[label].get("found_by_index", 0) if label == "benchmark" else None
             config = (
                 CheckConfig(
                     column_policy=ColumnComparisonPolicy.CONTAINED,
                     null_as_zero=True,
                     float_absolute_tolerance=0.01,
                     ordering_policy=ordering,
-                    reference_columns=[int(c) for c in first] or None if first else None,
+                    reference_columns=variants[found_by or 0],
                     wall_time_seconds=summary["settings"]["wall_time_cap_seconds"],
                 )
                 if label == "benchmark"
@@ -568,10 +663,29 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
                 confirm=host,
             )
             finding = report.findings[0] if report.findings else None
+            same_world = None
+            native_outcomes = None
+            if finding is not None and recorded.get("state_sha"):
+                same_world = (
+                    run_demo.state_sha(finding.divergence["candidate_state"])
+                    == recorded["state_sha"]
+                )
+            native = finding.divergence.get("native_results") if finding else None
+            if label == "benchmark" and native:
+                # the complete acceptance rule, on the native engine's own results
+                native_outcomes = run_demo.variant_outcomes(
+                    native["reference_result"],
+                    native["candidate_result"],
+                    variants,
+                    task["ignore_order"],
+                )
             out.append(
                 {
                     "id": task["id"],
                     "comparison": label,
+                    "found_by": summary[label].get("found_by") if label == "benchmark" else None,
+                    "same_world_as_recorded": same_world,
+                    "native_variant_outcomes": native_outcomes,
                     "status": report.divergence_status.value,
                     "verified_on": finding.fidelity.verified_on if finding else None,
                     "verification": finding.fidelity.verification.model_dump()
@@ -583,7 +697,17 @@ def confirm(host: Any, results_dir: Path, demo: Path = HERE) -> dict[str, Any]:
                     else None,
                 }
             )
-    verified = sum(1 for e in out if e["verified_on"] == "NATIVE_INLINE")
+    for e in out:  # a confirmation counts only for the recorded world and, for the benchmark, if
+        # no accepted list takes the native result
+        e["confirms_recorded_finding"] = (
+            e["verified_on"] == "NATIVE_INLINE"
+            and e["same_world_as_recorded"] is not False
+            and (
+                e["native_variant_outcomes"] is None
+                or set(e["native_variant_outcomes"]) == {"rejects"}
+            )
+        )
+    verified = sum(1 for e in out if e["confirms_recorded_finding"])
     return {
         "confirmations": out,
         "verified": verified,
@@ -603,7 +727,9 @@ def _client(project: str) -> tuple[Any, Callable[..., Any]]:
 
 def main(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("step", choices=["smoke", "schema", "baseline", "rewrite", "confirm"])
+    parser.add_argument(
+        "step", choices=["smoke", "smoke-detected", "schema", "baseline", "rewrite", "confirm"]
+    )
     parser.add_argument("--project", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--dataset", help="scratch dataset for the rewrite step")
@@ -618,13 +744,18 @@ def main(argv: list[str]) -> None:
     args = parser.parse_args(argv)
     client, config = _client(args.project)
     sys.path.insert(0, str(ROOT / "src"))
-    if args.step in ("smoke", "confirm"):
+    if args.step in ("smoke", "smoke-detected", "confirm"):
         from isitright.packs.sql.native import BigQueryHost
 
         host = BigQueryHost(
             project=args.project, max_bytes_billed=min(args.max_bytes_per_query, 100 * MB)
         )
-        result = smoke(host) if args.step == "smoke" else confirm(host, args.results)
+        if args.step == "smoke":
+            result = smoke(host)
+        elif args.step == "smoke-detected":
+            result = smoke_detected(host)
+        else:
+            result = confirm(host, args.results)
     else:
         runner = Runner(
             client,
@@ -660,6 +791,14 @@ def main(argv: list[str]) -> None:
             default=str,
         )
     )
+    if result.get("tables_left_behind"):
+        names = ", ".join(result["tables_left_behind"])
+        print(
+            f"CLEANUP FAILED: drop these scratch tables by hand in {args.project}.{args.dataset}: "
+            f"{names}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

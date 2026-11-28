@@ -74,9 +74,10 @@ from isitright.packs.research.oracle import Expect, judge
 from isitright.packs.research.oracle import Verdict as Judged
 from isitright.packs.research.replaying import export_case
 from isitright.packs.research.retrieval import (
-    FrozenIndex,
+    RETRIEVER_STATEMENTS,
     FrozenStats,
     ToolHost,
+    build_index,
     terms_of,
     tokenize,
 )
@@ -132,6 +133,8 @@ class AuditConfig:
     mutators: Sequence[Mutator] | None = None
     declared_hints: Sequence[Hint] = ()
     k_search: int = 5
+    retriever: str = "bm25"
+    """``bm25`` (the 0.8 retriever), ``hashed-dense`` or ``hybrid`` (see `retrieval.py`)."""
 
 
 Executor = Callable[[World, int], RecordedRun]
@@ -220,7 +223,7 @@ def in_process_executor(agent: Agent, task: ResearchTask, stats: FrozenStats) ->
 
     def execute(world: World, seed: int) -> RecordedRun:
         host = ToolHost(
-            FrozenIndex(stats, list(world.state.entities(COLLECTION))), world.response_edits
+            build_index(stats, list(world.state.entities(COLLECTION))), world.response_edits
         )
         status = "COMPLETED"
         try:
@@ -278,7 +281,9 @@ class ResearchAudit:
         # ``stats`` lets a caller whose state is a restricted world of a larger corpus (a
         # benchmark task) give the statistics of the whole corpus: ranks do not depend on the
         # restriction.
-        self.stats = stats or FrozenStats.from_documents(state.entities(COLLECTION))
+        self.stats = stats or FrozenStats.from_documents(
+            state.entities(COLLECTION), self.config.retriever
+        )
         self.artifacts: dict[str, ReplayArtifact] = {}
         self.exports: dict[str, Any] = {}
         self.baseline_runs: list[RecordedRun] = []
@@ -291,14 +296,14 @@ class ResearchAudit:
 
     def host(self, world: World) -> ToolHost:
         return ToolHost(
-            FrozenIndex(self.stats, list(world.state.entities(COLLECTION))), world.response_edits
+            build_index(self.stats, list(world.state.entities(COLLECTION))), world.response_edits
         )
 
     def stand_in(self, agent: Agent) -> Subject:
         return stand_in_subject(agent, self.task, self.stats)
 
     def replay_queries(self, world: World, queries: list[dict[str, Any]]) -> list[list[str]]:
-        index = FrozenIndex(self.stats, list(world.state.entities(COLLECTION)))
+        index = build_index(self.stats, list(world.state.entities(COLLECTION)))
         host = ToolHost(index, world.response_edits)
         out = []
         for q in queries:
@@ -555,7 +560,7 @@ class ResearchAudit:
         """Whether an added copy scored exactly like the document it was copied from for the
         baseline's first query (the rank between them is then decided by the id tie-break)."""
         docs = documents_of(wr.world.state)
-        index = FrozenIndex(self.stats, list(wr.world.state.entities(COLLECTION)))
+        index = build_index(self.stats, list(wr.world.state.entities(COLLECTION)))
         scores = {h.id: h.score for h in index.rank(self.task.question, 50)}
         for doc_id, doc in docs.items():
             origin = (doc.get("provenance") or {}).get("derived_from")
@@ -1016,6 +1021,27 @@ class ResearchAudit:
             mode="frozen",
         )
 
+    def own_retriever_fidelity(self, runs: Sequence[RecordedRun]) -> dict[str, Any]:
+        """The agent's own retriever against the simulated one, on the queries the agent ran on it
+        in its baseline runs (``own_retrieval``). Counts and shares, no threshold. A run that gives
+        none is counted, not guessed at. The agent wrote its own results; they are not checked."""
+        rows = [row for run in runs for row in run.own_retrieval]
+        given = sum(1 for run in runs if run.own_retrieval)
+        if not rows:
+            return {
+                "runs_with_own_retrieval": 0,
+                "runs": len(runs),
+                "note": "the agent gave no results of its own retriever: nothing to compare",
+            }
+        lists = [{"query": r["query"], "k": max(1, len(r["ids"])), "ids": r["ids"]} for r in rows]
+        out = self._fidelity_of(lists, self.replay_queries(self.base, lists))
+        out.update(runs_with_own_retrieval=given, runs=len(runs))
+        out["note"] = (
+            "the agent's own retriever against the simulated one on the same queries; the agent's "
+            "results are as it reported them"
+        )
+        return out
+
     def frozen_fidelity(self, recorded: RecordedRun) -> dict[str, Any]:
         """How closely the simulated retrieval reproduces the recorded results: for each recorded
         query, whether the first result and the whole result set match what the agent was shown.
@@ -1023,6 +1049,10 @@ class ResearchAudit:
         the agent) do. Reported as counts and a share, with no threshold."""
         recorded_lists = recorded.queries()
         ours = self.replay_queries(self.base, recorded_lists)
+        return self._fidelity_of(recorded_lists, ours)
+
+    @staticmethod
+    def _fidelity_of(recorded_lists: list[dict[str, Any]], ours: list[list[str]]) -> dict[str, Any]:
         total = len(recorded_lists)
         same_top = sum(
             1 for q, mine in zip(recorded_lists, ours, strict=True) if mine[:1] == q["ids"][:1]
@@ -1354,9 +1384,8 @@ class ResearchAudit:
                     "subject": subject.label.model_dump(mode="json"),
                     "subject_statement": _subject_statement(subject.label, mode),
                     "retrieval": {
-                        "scorer": (
-                            "BM25 (k1=1.2, b=0.75), statistics frozen from the original corpus"
-                        ),
+                        "scorer": RETRIEVER_STATEMENTS[self.stats.retriever],
+                        "retriever": self.stats.retriever,
                         "documents": self.stats.n,
                         "tools": ["search", "open"],
                         "fidelity": "SIMULATED",
@@ -1373,6 +1402,11 @@ class ResearchAudit:
                     },
                     "flip_table": flips,
                     **({"frozen_fidelity": self._frozen_fidelity} if mode == "frozen" else {}),
+                    **(
+                        {"own_retriever_fidelity": self.own_retriever_fidelity(baseline_runs)}
+                        if mode != "frozen"
+                        else {}
+                    ),
                     "cannot_judge": self._cannot_judge_summary(),
                     "unobservable_changes": unobservable,
                     "proposed_classification": [

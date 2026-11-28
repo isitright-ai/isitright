@@ -122,6 +122,10 @@ class RecordedRun(Closed):
     status: Literal["COMPLETED", "SUBJECT_ERROR", "TIMEOUT"] = "COMPLETED"
     seed: int | None = None
     """The seed the run was made with, when the subject takes one (stand-in agents do)."""
+    own_retrieval: list[dict[str, Any]] = Field(default_factory=list)
+    """For an agent with a retriever of its own (0.9): ``{"query", "ids"}`` for each search it ran
+    on it, in the order it saw them, so that the simulated retriever can be compared with it on the
+    same queries. Empty when the agent does not say; the agent is trusted to write what it saw."""
 
     def queries(self) -> list[dict[str, Any]]:
         """Each search with the ids it returned, in the rank the agent saw them."""
