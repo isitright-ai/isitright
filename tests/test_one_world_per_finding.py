@@ -1,9 +1,9 @@
 # Proposed fixture: pending owner review
-# The world a finding shows is the world its evidence is about (ledger E1 to E4). The queries, rows
+# The world a finding shows is the world its evidence is about The queries, rows
 # and scripted agents here are invented for these tests by the assistant that also wrote the code
 # under test; they are not owner-approved.
 """One world per finding: the world shown is the world confirmed, graded, diffed, replayed and
-exported (ledger E1, E2, E3 and the part of E4 that N1 left open).
+exported.
 
 The first group reproduces each defect through fields that existed before this package; each test
 failed on the code the package started from. The later groups state the contract: a finding names
@@ -56,11 +56,11 @@ EXAMPLES = Path(__file__).parents[1] / "examples" / "agents"
 SHOP_REF = f"{EXAMPLES / 'shop' / 'scenario.py'}:SCENARIO"
 
 
-# -- E1: the native result belongs to the world the reproducer shows --------------------------
+# -- the native result belongs to the world the reproducer shows --------------------------
 
 
 def test_the_world_that_differed_natively_is_the_world_the_finding_shows() -> None:
-    """E1. The minimized world agreed natively and the larger one differed; the finding was marked
+    """The minimized world agreed natively and the larger one differed; the finding was marked
     verified and showed (and gave the reproducer of) the minimized one."""
     pytest.importorskip("duckdb")
     from isitright.packs.sql import ConnectionHost, check
@@ -96,7 +96,7 @@ def test_the_world_that_differed_natively_is_the_world_the_finding_shows() -> No
     assert sum(len(r) for r in attached["candidate_state"].values()) == 1
 
 
-# -- E2: a minimized world keeps the kind of difference that was found ------------------------
+# -- a minimized world keeps the kind of difference that was found ------------------------
 
 
 def _kind(difference: str) -> str:
@@ -108,7 +108,7 @@ def _kind(difference: str) -> str:
 
 
 def test_minimization_keeps_the_kind_of_difference_it_started_from(tmp_path: Path) -> None:
-    """E2. The first world differs in the number of rows; deleting the row that makes the candidate
+    """The first world differs in the number of rows; deleting the row that makes the candidate
     drop one gives a smaller world that differs in a value instead, and was kept."""
     from isitright.packs.sql import check
 
@@ -139,7 +139,7 @@ def test_minimization_keeps_the_kind_of_difference_it_started_from(tmp_path: Pat
     assert minimization["shown"] == "minimized" and minimization["rows_after"] == 1
 
 
-# -- E3: a minimized path and the evidence of the world it came from --------------------------
+# -- a minimized path and the evidence of the world it came from --------------------------
 
 
 @pytest.fixture(scope="module")
@@ -181,7 +181,7 @@ def minimized_shop(tmp_path_factory: pytest.TempPathFactory) -> tuple[Any, Path,
 def test_the_exported_world_is_the_world_of_the_reported_path(
     minimized_shop: tuple[Any, Path, str],
 ) -> None:
-    """E3. With `--minimize` the finding names the minimal path while its diff, validity, counts,
+    """With `--minimize` the finding names the minimal path while its diff, validity, counts,
     run directory and export are those of the original, longer path."""
     from isitright.packs.mcp.audit import export_eval_cases
 
@@ -216,7 +216,7 @@ def test_a_frozen_data_finding_is_identified_by_the_world_it_shows(tmp_path: Pat
     assert set(finding.built_from.values()) == {finding.world_fingerprint}
 
 
-# -- E4: a research finding is shown on a world it reproduces on ------------------------------
+# -- a research finding is shown on a world it reproduces on ------------------------------
 
 
 def _ghost_citation(run: Any) -> Any:
@@ -229,7 +229,7 @@ def _ghost_citation(run: Any) -> Any:
 
 
 def test_a_research_finding_never_shows_a_world_that_did_not_reproduce() -> None:
-    """E4. A confirmation on the shown world found no failure, and the finding was built anyway,
+    """A confirmation on the shown world found no failure, and the finding was built anyway,
     labeled `reproduces_on_shown_world: False`, with the grade of the world the search ran."""
     from isitright.core.stochastic import SubjectRunner
     from isitright.packs.research.agents import STAND_INS

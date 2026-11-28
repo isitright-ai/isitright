@@ -24,8 +24,7 @@ running `uv run python tools/export_schemas.py` and committing the updated files
 
 ## Pull requests
 
-- Branch from `develop`, the integration branch, and keep changes focused. `main` holds releases
-  only; both branches accept changes through pull requests with green CI.
+- Keep changes focused.
 - Preserve the separation between observed disagreement, state validity, and defect
   attribution.
 - Do not describe bounded agreement as equivalence.
@@ -35,7 +34,7 @@ running `uv run python tools/export_schemas.py` and committing the updated files
 Fixture semantics require owner review because they define expected behavior rather
 than merely exercising implementation details. That covers entity schemas, constraints, hint
 declarations, oracle rules and expected results: mark a draft with a `Proposed fixture: pending
-owner review` header comment and list it in the pull request.
+owner review` header comment.
 
 CI (`.github/workflows/ci.yml`) runs the checks above on Ubuntu and Windows with Python 3.11, 3.12
 and 3.13, and on macOS (Apple Silicon) with the versions listed in its matrix. A macOS job that is
