@@ -304,9 +304,11 @@ def main() -> int:
             reply = run_one(json.loads(line), guard)
         except BaseException as error:
             reply = {"status": "error", "error": f"runner failure: {type(error).__name__}: {error}"}
+        # Leave the work directory before replying: the caller may delete it as soon as it reads
+        # the reply, and Windows refuses to delete a live process's working directory.
+        os.chdir(home)
         replies.write(json.dumps(reply) + "\n")
         replies.flush()
-        os.chdir(home)
     return 0
 
 
