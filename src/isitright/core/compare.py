@@ -47,17 +47,19 @@ class JsonComparator:
 
 
 class NumericComparator:
-    """Numbers within a declared tolerance: ``|a - b| <= abs_tol + rel_tol * |b|``.
+    """Numbers within a declared tolerance: ``|a - b| <= abs_tol + rel_tol * |a| + margin``.
 
     ``basis`` says where the tolerance comes from (for example "the question asks for two decimal
-    places"), because a tolerance with no stated basis is a guess. Non-finite values match only
-    when both are the same non-finite value.
+    places"), because a tolerance with no stated basis is a guess. ``ulps`` adds a margin of that
+    many units in the last place of the larger operand, for the rounding of ``a - b`` itself (a
+    tolerance of exactly 0.01 between 2243963.30 and 2243963.31 needs it). Non-finite values match
+    only when both are the same non-finite value.
     """
 
-    def __init__(self, abs_tol: float, rel_tol: float, basis: str) -> None:
-        if abs_tol < 0 or rel_tol < 0 or not basis:
+    def __init__(self, abs_tol: float, rel_tol: float, basis: str, ulps: int = 0) -> None:
+        if abs_tol < 0 or rel_tol < 0 or ulps < 0 or not basis:
             raise ValueError("tolerances must be non-negative and a basis must be stated")
-        self.abs_tol, self.rel_tol, self.basis = abs_tol, rel_tol, basis
+        self.abs_tol, self.rel_tol, self.basis, self.ulps = abs_tol, rel_tol, basis, ulps
 
     def compare(self, expected: Any, actual: Any) -> Comparison:
         try:
@@ -67,7 +69,8 @@ class NumericComparator:
         if not (math.isfinite(left) and math.isfinite(right)):
             same = left == right or (math.isnan(left) and math.isnan(right))
             return Comparison(same, None if same else f"expected {left!r}, got {right!r}")
-        if abs(left - right) <= self.abs_tol + self.rel_tol * abs(left):
+        margin = self.ulps * math.ulp(max(abs(left), abs(right)))
+        if abs(left - right) <= self.abs_tol + self.rel_tol * abs(left) + margin:
             return Comparison(True)
         return Comparison(False, f"expected {left!r}, got {right!r} (tolerance: {self.basis})")
 
@@ -76,6 +79,7 @@ class NumericComparator:
             "kind": "numeric",
             "abs_tol": self.abs_tol,
             "rel_tol": self.rel_tol,
+            **({"ulps": self.ulps} if self.ulps else {}),
             "basis": self.basis,
         }
 

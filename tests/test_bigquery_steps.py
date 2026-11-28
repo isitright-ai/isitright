@@ -444,3 +444,86 @@ def test_gold_trust_is_unknown_without_a_result_file_and_the_script_skips_it(
     target = tmp_path / "gold_trust.json"
     assert module.main([str(baseline), str(target)]) == 0
     assert json.loads(target.read_text(encoding="utf-8")) == {"a": {"trusted": True, "basis": "x"}}
+
+
+def test_a_failed_cleanup_is_reported_and_names_the_tables() -> None:
+    def respond(sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
+        if sql.startswith("DROP"):
+            raise RuntimeError("permission denied")
+        return (["id", "s", "suffix"], [(1, "a", "x")]) if sql.startswith("SELECT") else ([], [])
+
+    result = steps.rewrite_equivalence(runner(Client(respond=respond)), "proj", "scratch")
+    assert result["cleanup_ok"] is False
+    assert len(result["tables_left_behind"]) == 4  # three shards and the family table
+    assert all(isinstance(name, str) and name for name in result["tables_left_behind"])
+    assert result["all_equal"] is True  # the comparison itself was fine; the leftovers are separate
+    ok = steps.rewrite_equivalence(
+        runner(
+            Client(
+                respond=lambda sql: (
+                    (["id", "s", "suffix"], [(1, "a", "x")])
+                    if sql.startswith("SELECT")
+                    else ([], [])
+                )
+            )
+        ),
+        "proj",
+        "scratch",
+    )
+    assert ok["cleanup_ok"] is True and ok["tables_left_behind"] == []
+
+
+def test_confirm_checks_the_variant_that_produced_the_finding_and_its_world(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import isitright.packs.sql as sql_pack
+
+    demo = _mini_demo(tmp_path)
+    task = json.loads((demo / "tasks.jsonl").read_text(encoding="utf-8"))
+    task["condition_cols"] = [[1], [0]]
+    (demo / "tasks.jsonl").write_text(json.dumps(task) + chr(10), encoding="utf-8")
+    real = sql_pack.check
+    seen: list[Any] = []
+
+    def spy(**kwargs: Any) -> Any:
+        report = real(**kwargs)
+        seen.append((kwargs["config"], report))
+        return report
+
+    monkeypatch.setattr(sql_pack, "check", spy)
+
+    def run(sql: str) -> tuple[list[str], list[list[Any]]]:
+        return ["id", "tag"], ([[10, None]] if "LEFT JOIN" in sql else [])
+
+    def summary(sha: str | None) -> dict[str, Any]:
+        finding: dict[str, Any] = {"state_sha": sha} if sha else {}
+        return {
+            "id": "t1",
+            "settings": {"wall_time_cap_seconds": 60},
+            "benchmark": {
+                "status": "COUNTEREXAMPLE_FOUND",
+                "found_by": "benchmark[1]",
+                "found_by_index": 1,
+                "finding": finding,
+            },
+            "strict": {"status": "NOT_FOUND_WITHIN_BUDGET"},
+        }
+
+    results = tmp_path / "results"
+    results.mkdir()
+    (results / "t1.json").write_text(json.dumps(summary("not-the-world")), encoding="utf-8")
+    wrong = steps.confirm(ConnectionHost(run=run), results, demo=demo)
+    config, report = seen[-1]
+    assert config.reference_columns == [0]  # variant 1's list, not the first list [1]
+    (row,) = wrong["confirmations"]
+    assert row["found_by"] == "benchmark[1]" and row["same_world_as_recorded"] is False
+    assert row["confirms_recorded_finding"] is False and wrong["verified"] == 0
+
+    import run_demo
+
+    sha = run_demo.state_sha(report.findings[0].divergence["candidate_state"])
+    (results / "t1.json").write_text(json.dumps(summary(sha)), encoding="utf-8")
+    right = steps.confirm(ConnectionHost(run=run), results, demo=demo)
+    (row,) = right["confirmations"]
+    assert row["same_world_as_recorded"] is True
+    assert len(row["native_variant_outcomes"]) == 2  # every accepted list judged the native result

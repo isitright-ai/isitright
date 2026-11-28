@@ -5,6 +5,7 @@
 
 Usage:
     python -I run_demo.py <output directory> [--only bq001,ga002] [--cap 600]   # all tasks
+    python -I run_demo.py <output directory> --nested-scope column            # 0.7 scoping
     python -I run_demo.py <output directory> --task bq001                       # one task (worker)
 
 Every task is audited twice: under the benchmark's comparison (columns contained, NULL as zero,
@@ -17,12 +18,14 @@ attempts, as in 0.5). Spider's gold result files are not read.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_CAP = 600.0
@@ -44,20 +47,84 @@ def load_gold_trust() -> dict[str, dict]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-def reference_columns(condition_cols: object) -> list[int] | None:
-    """Spider's ``condition_cols``: [] means all columns; a list of lists means several accepted
-    gold results, of which the first is the one the gold SQL produces."""
+def reference_column_variants(condition_cols: object) -> list[list[int] | None]:
+    """Spider's ``condition_cols`` as a list of accepted column lists (``None``: all columns).
+
+    [] means all columns; a list of ints is one list; a list of lists gives several, one per
+    accepted gold result file, and Spider accepts a prediction that matches any of them (0.9: every
+    variant is applied; 0.7 took the first only)."""
     if not condition_cols:
-        return None
+        return [None]
     if isinstance(condition_cols, int):
-        return [condition_cols]
+        return [[condition_cols]]
     assert isinstance(condition_cols, list)
-    if condition_cols and isinstance(condition_cols[0], list):
-        return [int(c) for c in condition_cols[0]] or None
-    return [int(c) for c in condition_cols]
+    if isinstance(condition_cols[0], list):
+        return [[int(c) for c in variant] or None for variant in condition_cols]
+    return [[int(c) for c in condition_cols]]
 
 
-def audit_one(task_id: str, out: Path, cap: float) -> dict:
+def reference_columns(condition_cols: object) -> list[int] | None:
+    """The first accepted column list (the 0.7 behaviour; kept for the owner-step scripts)."""
+    return reference_column_variants(condition_cols)[0]
+
+
+def benchmark_policy(variant: list[int] | None, ignore_order: bool) -> Any:
+    """The benchmark's comparison for one accepted column list."""
+    from isitright.packs.sql.models import ColumnComparisonPolicy, ComparisonPolicy, OrderingPolicy
+
+    ordering = OrderingPolicy.UNORDERED if ignore_order else OrderingPolicy.ORDERED
+    return ComparisonPolicy(
+        columns=ColumnComparisonPolicy.CONTAINED,
+        null_as_zero=True,
+        float_absolute_tolerance=0.01,
+        ordering=ordering,
+        reference_columns=variant,
+    ).model_copy(update={"effective_ordering": ordering})
+
+
+ACCEPTS, REJECTS, NOT_EVALUABLE = "accepts", "rejects", "not_evaluable"
+
+
+def variant_outcomes(
+    reference: dict, candidate: dict, variants: list[list[int] | None], ignore_order: bool
+) -> list[str]:
+    """What each accepted column list says about the candidate's result: ``accepts``, ``rejects``,
+    or ``not_evaluable`` (the list names a column the gold SQL's result does not have; it may belong
+    to a different published result file, so it is not evidence of disagreement)."""
+    from isitright.packs.sql.comparison import ComparisonError, compare_results
+    from isitright.packs.sql.models import QueryResult
+
+    left, right = QueryResult.model_validate(reference), QueryResult.model_validate(candidate)
+    out = []
+    for variant in variants:
+        try:
+            outcome = compare_results(
+                left,
+                right,
+                policy=benchmark_policy(variant, ignore_order),
+                reference_has_order_by=False,
+            )
+        except ComparisonError:
+            out.append(NOT_EVALUABLE)
+            continue
+        out.append(ACCEPTS if outcome.matches else REJECTS)
+    return out
+
+
+def accepted_by(
+    reference: dict, candidate: dict, variants: list[list[int] | None], ignore_order: bool
+) -> list[int]:
+    """Indexes of the variants that accept the candidate's result."""
+    outcomes = variant_outcomes(reference, candidate, variants, ignore_order)
+    return [i for i, o in enumerate(outcomes) if o == ACCEPTS]
+
+
+def state_sha(state: dict) -> str:
+    """A fingerprint of a counterexample world, to tell later that the same world was checked."""
+    return hashlib.sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def audit_one(task_id: str, out: Path, cap: float, nested_scope: str = "path") -> dict:
     from isitright.packs.sql import (
         CheckConfig,
         SqlInputError,
@@ -76,17 +143,23 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
     constraints_path = HERE / "constraints" / f"{task_id}.yaml"
     constraints = load_constraint_schema(constraints_path) if constraints_path.exists() else None
     ordering = OrderingPolicy.UNORDERED if record["ignore_order"] else OrderingPolicy.ORDERED
+    variants = reference_column_variants(record["condition_cols"])
+    labels = (
+        ["benchmark"] if len(variants) == 1 else [f"benchmark[{i}]" for i in range(len(variants))]
+    )
     settings = {
-        "benchmark": CheckConfig(
+        label: CheckConfig(
             column_policy=ColumnComparisonPolicy.CONTAINED,
             null_as_zero=True,
             float_absolute_tolerance=0.01,
             ordering_policy=ordering,
-            reference_columns=reference_columns(record["condition_cols"]),
+            reference_columns=variant,
             wall_time_seconds=cap,
-        ),
-        "strict": CheckConfig(wall_time_seconds=cap),
+            nested_scope=nested_scope,
+        )
+        for label, variant in zip(labels, variants, strict=True)
     }
+    settings["strict"] = CheckConfig(wall_time_seconds=cap, nested_scope=nested_scope)
     result: dict = {
         "id": task_id,
         "db": record["db"],
@@ -97,6 +170,7 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
             "condition_cols": record["condition_cols"],
             "ignore_order": record["ignore_order"],
             "wall_time_cap_seconds": cap,
+            "nested_scope": nested_scope,
         },
     }
     for label, config in settings.items():
@@ -152,6 +226,18 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
                     "found_on": finding.fidelity.found_on,
                     "verified_on": finding.fidelity.verified_on,
                 }
+                entry["finding"]["state_sha"] = state_sha(state)
+                if label != "strict":
+                    outcomes = variant_outcomes(
+                        finding.divergence["reference_result"],
+                        finding.divergence["candidate_result"],
+                        variants,
+                        record["ignore_order"],
+                    )
+                    entry["finding"]["variant_outcomes"] = outcomes
+                    entry["finding"]["accepted_by_variants"] = [
+                        i for i, o in enumerate(outcomes) if o == ACCEPTS
+                    ]
                 try:
                     entry["finding"]["replay_reproduced"] = replay_report(report)["reproduced"]
                     entry["finding"]["eval_cases_exported"] = len(export_eval_cases(report))
@@ -168,7 +254,69 @@ def audit_one(task_id: str, out: Path, cap: float) -> dict:
             entry["error"] = f"{type(error).__name__}: {str(error)[:300]}"
         entry["wall_seconds"] = round(time.monotonic() - started, 1)
         result[label] = entry
+    if len(variants) > 1:
+        result["benchmark"] = combine_variants([result[label] for label in labels], labels)
     return result
+
+
+def _rejected_by_all(entry: dict) -> bool:
+    """A finding is a benchmark finding when every accepted list was evaluated and none accepts."""
+    if entry.get("status") != "COUNTEREXAMPLE_FOUND":
+        return False
+    outcomes = entry["finding"].get("variant_outcomes")
+    if outcomes is None:  # an entry without outcomes: fall back on the accepting indexes
+        return not entry["finding"]["accepted_by_variants"]
+    return all(o == REJECTS for o in outcomes)
+
+
+def combine_variants(entries: list[dict], labels: list[str] | None = None) -> dict:
+    """The benchmark verdict of a task with several accepted column lists. A finding counts only if
+    every list was evaluated on the finding's world and none accepts the candidate's result
+    (Spider accepts a prediction that matches any of its gold files). A list that cannot be
+    evaluated on the gold SQL's columns is not a rejection: a finding that no list accepts but some
+    list could not judge is reported as unresolved, and the task is INCONCLUSIVE. The variant that
+    produced the verdict's finding is recorded (``found_by``), so a later step checks that one."""
+    labels = labels or [f"benchmark[{i}]" for i in range(len(entries))]
+    found = [i for i, e in enumerate(entries) if e.get("status") == "COUNTEREXAMPLE_FOUND"]
+    kept = [i for i in found if _rejected_by_all(entries[i])]
+    unresolved = [
+        i
+        for i in found
+        if i not in kept
+        and not entries[i]["finding"]["accepted_by_variants"]
+        and NOT_EVALUABLE in entries[i]["finding"].get("variant_outcomes", [])
+    ]
+    statuses = [e.get("status") for e in entries]
+    if kept:
+        status = "COUNTEREXAMPLE_FOUND"
+    elif unresolved:
+        status = "INCONCLUSIVE"  # no list accepts, and some list could not be evaluated
+    elif found:
+        status = "NOT_FOUND_WITHIN_BUDGET"  # every finding is accepted under another list
+    elif all(s == statuses[0] for s in statuses):
+        status = statuses[0]
+    else:
+        status = "INCONCLUSIVE"
+    out: dict = {
+        "status": status,
+        "variants": len(entries),
+        "variant_statuses": statuses,
+        "findings_accepted_under_another_list": sum(
+            1 for i in found if entries[i]["finding"]["accepted_by_variants"]
+        ),
+        "findings_unresolved": [
+            {
+                "found_by": labels[i],
+                "variant_outcomes": entries[i]["finding"].get("variant_outcomes"),
+            }
+            for i in unresolved
+        ],
+    }
+    if kept:
+        out["finding"] = entries[kept[0]]["finding"]
+        out["found_by"] = labels[kept[0]]
+        out["found_by_index"] = kept[0]
+    return out
 
 
 def _worker_command(out: Path, task_id: str, cap: float) -> list[str]:
@@ -225,10 +373,17 @@ def run_all(out: Path, only: list[str] | None, cap: float) -> None:
 def main(argv: list[str]) -> None:
     out = Path(argv[0])
     cap = float(argv[argv.index("--cap") + 1]) if "--cap" in argv else DEFAULT_CAP
+    # the workers inherit the scope through the environment
+    scope = (
+        argv[argv.index("--nested-scope") + 1]
+        if "--nested-scope" in argv
+        else os.environ.get("ISITRIGHT_DEMO_NESTED_SCOPE", "path")
+    )
+    os.environ["ISITRIGHT_DEMO_NESTED_SCOPE"] = scope
     if "--task" in argv:
         task_id = argv[argv.index("--task") + 1]
         out.mkdir(parents=True, exist_ok=True)
-        result = audit_one(task_id, out, cap)
+        result = audit_one(task_id, out, cap, scope)
         (out / f"{task_id}.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
         return
     only = argv[argv.index("--only") + 1].split(",") if "--only" in argv else None

@@ -16,7 +16,7 @@ isitright makes two kinds of statement and never turns the first into the second
 A reproducible violation is useful evidence about one run. It does not show that the world made
 failure likelier. The agent may fail the original world too.
 
-Since 0.9.0 a finding carries one of the two as its `evidence_grade`, and the report keeps them apart
+Since 0.9 a finding carries one of the two as its `evidence_grade`, and the report keeps them apart
 in status, export and CI:
 
 | `evidence_grade` | Case status | Exported by default | Trips CI under |
@@ -67,9 +67,65 @@ strict class order, `coverage` orders by feature coverage, `random` is a seeded 
 ordering would have needed before the first finding.
 
 **Stopping rules.** A stratum stops after `--stratum-patience` worlds (default 10) without a finding.
-The run stops after `--run-patience` consecutive worlds (default 30) that added no uncovered feature
-and no finding. `0` turns a rule off. A stopped stratum is reported as "no finding in n of m worlds"
+The run stops after a stretch of consecutive worlds that added no uncovered feature and no finding.
+The stretch is the larger of `--run-patience` (default 30) and `--run-patience-share` (default 0.10)
+of the worlds ranked, so it grows with the universe: a fixed 30 is a long stretch among 300 worlds
+and a short one among 6,000. The report states the number used. In a measurement on the shop
+scenario with a scripted agent whose findings are rare, the fixed 30 stopped after 288 of 6,000
+worlds and kept 5 of 21 distinct findings; 10% of the universe kept all 21 (and all 7 of a universe of
+600), at 4,789 worlds run. It is one scenario and two scripted agents; the cost is more runs. `0` turns
+a rule off (`--run-patience-share 0` restores the fixed number).
+
+!!! warning "Default changed in 0.9: a run can now use more paid agent runs"
+    The run stopping rule used to stop after 30 consecutive worlds that added nothing new. It now
+    stops after the **larger of 30 and 10% of the worlds ranked** (`--run-patience-share 0.10`).
+    **The consequence is more runs:** among 1,000 ranked worlds the quiet stretch is 100 worlds, not
+    30, so the rule fires much later or never, and a search goes on until it reaches `--max-worlds`
+    (default 50 for `agents run`, 40 for `data audit`), `--max-runs`, `--max-money` or `--max-seconds`. Every extra world is at least one more
+    agent run, and each is a paid model call if your agent calls a hosted model. The default keeps
+    more of the distinct findings when findings are rare (measured on one scenario: 21 of 21
+    instead of 5 of 21 at 6,000 worlds) and costs more to get them.
+    Whether 10% is right for your scenario is something to measure, not assume: see
+    [Tuning the run rule](#tuning-the-run-rule).
+    **Set a spend limit on every real run** (`--max-money`, `--max-runs`) and `--max-worlds` to the
+    number of worlds you are willing to pay for. `--run-patience-share 0` restores the old fixed
+    rule.
+ A stopped stratum is reported as "no finding in n of m worlds"
 with the reason. That is not evidence of correctness.
+
+## Tuning the run rule
+
+Whether 10% is right depends on your scenario, your agent and how rare its findings are. Measure it
+on your own scenario instead of trusting the default:
+
+1. **Make one run with both rules off** and a cap you are willing to pay for. It is the only run
+   that costs anything: baseline runs plus (worlds run x `--trials`) agent runs.
+
+   ```console
+   isitright agents run --trust-code --scenario my_scenario.py:SCENARIO      --agent-command "..." --worlds generated --attempts 2000 --max-worlds 100 --trials 1      --no-sequential --stratum-patience 0 --run-patience 0 --max-money 20 --max-runs 150      --output-dir artifacts/tuning-run
+   ```
+
+2. **Replay the rules offline and free** over the worlds that run executed:
+
+   ```console
+   isitright agents stopping --report artifacts/tuning-run/report.json --trust-code
+   ```
+
+   It prints, for each `--run-patience-share` (`--shares 0,0.02,0.05,0.1,0.2,0.5`), the patience
+   that share gives, the worlds the rule would have run, the worlds with a finding it would have
+   reached, the strata with a finding it would have reached (a stratum is a family chain, a target
+   and a role: the measure of distinct findings), and the position of the last finding it reached.
+
+3. **Pick the smallest share that still reaches the strata you care about.** Each world a share
+   adds is `--trials` more paid runs of your agent, so the "worlds run" column is the price.
+
+What it cannot tell you: the replay covers only worlds the tuning run executed (a run that was
+capped or stopped early understates what a small share would have run); a stochastic agent gives a
+different table each run; and it is the agent you ran that is measured. For a free first look, run
+the same two steps with a scripted agent (the shop's `careless` and `reference` agents are the
+examples). That shows where the scenario's findings sit in the order, not where your agent's do.
+`isitright data audit` has no replay command; its `--max-worlds` default is 40, so the rule rarely
+matters there.
 
 ## Sequential testing per world
 
@@ -92,7 +148,7 @@ one included.
 - **Cost:** a pair is two runs, so a world that failed and goes the full 20 pairs costs 40 runs on top
   of its first runs (agents `--trials`, default 4; data `--baseline-runs`, default 3; research
   `--runs`, default 4), plus the baseline runs made before the search. A world with no failure costs
-  only its first runs: 4 in the agents and research defaults, 3 in the data default. Before 0.9.0
+  only its first runs: 4 in the agents and research defaults, 3 in the data default. Before 0.9
   the research and data packs paired a world only with the baseline runs they had (about 4 and 3);
   the agents pack reused its baseline runs for the first pairs.
 - **Left out of a pair:** a run that errored or could not be judged forms no pair. The report counts
@@ -113,7 +169,7 @@ one included.
   only.
 - Reports from 0.8.0 of the research and data packs: treat a rate claim as unsupported (they paired
   runs against an assumed pass or reused baseline outcomes). 0.8.1 stopped the claims at the number
-  of baseline runs; 0.9.0 replaces that with a fresh baseline run per pair.
+  of baseline runs; 0.9 replaces that with a fresh baseline run per pair.
 
 - Alpha 0.05 and beta 0.2, against an alternative where 80 percent of discordant pairs go against the
   world. The false-claim rate is at most 0.05 at *any* look, so stopping early is safe.

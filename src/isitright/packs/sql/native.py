@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -39,6 +40,69 @@ DEFAULT_DRY_RUN_BOUND = 10 * 1024 * 1024
 
 class NativeHostError(RuntimeError):
     """The native host could not run a query (not a result: the finding stays unconfirmed)."""
+
+
+UNREACHABLE_STATUS = frozenset({401, 403, 407, 408, 429})
+"""HTTP statuses that say the engine was not reached or refused the caller, not the query."""
+
+
+_HOST_ERROR_NAMES = frozenset(
+    {
+        # google.auth: failures to obtain or refresh credentials, no HTTP status
+        "DefaultCredentialsError",
+        "RefreshError",
+        "TransportError",
+        "Unauthenticated",
+        # the trino client: not OSErrors and no status attribute (checked against trino 0.3x)
+        "TrinoConnectionError",
+        "TrinoAuthError",
+        "HttpError",
+    }
+)
+"""Exception classes that say the engine was not reached or refused the caller."""
+
+
+def _http_status(error: BaseException) -> int | None:
+    """The HTTP status an exception carries, by the shapes the client libraries use: ``code``
+    (google.api_core), ``status_code``, ``http_status``, ``response.status_code`` (requests), or a
+    class named ``Http<NNN>Error`` (the trino client). Only 100 to 599 counts: a ``code`` of a
+    database's own error number (Oracle's 1476, SQL Server's 8134) is not an HTTP status."""
+    for name in ("code", "status_code", "http_status"):
+        value = getattr(error, name, None)
+        if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
+            return value
+    response = getattr(error, "response", None)
+    value = getattr(response, "status_code", None)
+    if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599:
+        return value
+    match = re.fullmatch(r"Http(\d{3})Error", type(error).__name__)
+    return int(match.group(1)) if match else None
+
+
+def engine_error(error: BaseException) -> Exception:
+    """What an exception raised while a native engine ran a query means.
+
+    A failure to reach the engine (an ``OSError``: a network error, a refused connection, a timeout
+    of the transport; or a credentials failure) or an HTTP status that refuses the caller
+    (authentication, quota) or reports a server error (5xx) is a ``NativeHostError``: the finding
+    stays unconfirmed. Anything else is the query's own error (``QueryExecutionError``), which
+    confirmation may read as "the candidate errors natively too". Before 0.9 every exception was a
+    query error, so a dropped connection on the candidate's run confirmed a candidate-errors
+    finding.
+    """
+    status = _http_status(error)
+    if (
+        isinstance(error, OSError)
+        or type(error).__name__ in _HOST_ERROR_NAMES
+        or (status is not None and (status >= 500 or status in UNREACHABLE_STATUS))
+    ):
+        return NativeHostError(f"{type(error).__name__}: {error}")
+    return QueryExecutionError(f"{type(error).__name__}: {error}")
+
+
+def connect_error(error: BaseException) -> NativeHostError:
+    """A failure to build the client or connection: never a query's error."""
+    return NativeHostError(f"cannot reach the engine: {type(error).__name__}: {error}")
 
 
 @dataclass
@@ -146,7 +210,12 @@ class BigQueryHost(InlineHost):
             raise NativeHostError(
                 f"the query is {len(sql)} characters; BigQuery's limit is about 1 MB of text"
             )
-        client = self._client_now()
+        try:
+            client = self._client_now()
+        except SqlInputError:
+            raise  # the client library is not installed: the caller must be told so
+        except Exception as error:
+            raise connect_error(error) from error
         options: dict[str, Any] = {"use_query_cache": False, "labels": dict(self.labels)}
         try:
             dry = client.query(
@@ -176,7 +245,7 @@ class BigQueryHost(InlineHost):
             rows = list(job.result(timeout=timeout, max_results=max_rows + 1))
             schema = list(getattr(job, "schema", None) or getattr(job.result(), "schema", []))
         except Exception as error:
-            raise QueryExecutionError(f"{type(error).__name__}: {error}") from error
+            raise engine_error(error) from error
         self.records.append(
             {
                 "phase": "run",
@@ -225,14 +294,19 @@ class TrinoHost(InlineHost):
         )
 
     def _execute(self, sql: str, dialect: Dialect, timeout: float, max_rows: int) -> QueryResult:
-        connection = self._connection()
+        try:
+            connection = self._connection()
+        except SqlInputError:
+            raise
+        except Exception as error:
+            raise connect_error(error) from error
         try:
             cursor = connection.cursor()
             cursor.execute(sql)
             rows = cursor.fetchmany(max_rows + 1)
             description = cursor.description or []
         except Exception as error:
-            raise QueryExecutionError(f"{type(error).__name__}: {error}") from error
+            raise engine_error(error) from error
         finally:
             close = getattr(connection, "close", None)
             if close is not None:
@@ -274,7 +348,7 @@ class ConnectionHost(InlineHost):
         if not outcome:
             raise NativeHostError(f"the connection function did not return within {timeout} s")
         if isinstance(outcome[0], BaseException):
-            raise QueryExecutionError(f"{type(outcome[0]).__name__}: {outcome[0]}")
+            raise engine_error(outcome[0])
         columns, rows = outcome[0]
         self.records.append({"phase": "run", "rows": len(rows)})
         return _result(

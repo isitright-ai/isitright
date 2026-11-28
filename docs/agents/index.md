@@ -42,7 +42,9 @@ flowchart LR
 
 - A run starts a fresh MCP server process per agent run. Even a scripted agent takes four to
   six seconds per run; a real model agent takes whatever your agent takes.
-- A real audit is tens to hundreds of runs. `--max-money` and `--max-runs` are the controls.
+- A real audit is tens to hundreds of runs. `--max-money` and `--max-runs` are the controls. **Since 0.9 the default run
+  stopping rule waits for 10% of the ranked worlds before it stops a quiet search, so more worlds run than in 0.8 and
+  more paid runs are possible; see [Run an audit](run-an-audit.md).**
 - A finding is evidence about *your simulated service*, unless you use a
   [third-party server](external-servers.md). [Fidelity](../concepts/validity-and-fidelity.md#execution-fidelity) is `SIMULATED` by default.
 

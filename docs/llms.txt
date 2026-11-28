@@ -1,6 +1,6 @@
 # isitright
 
-> isitright audits agent evals. Point it at your agent, your environment and the eval cases that currently pass. It searches for valid changes to the world under which a pass no longer holds, and returns each one as a minimized, replayable counterexample with an honest account of how strong the evidence is. Python 3.11+, MIT licence, version 0.9.0.dev0. Four packs: text-to-SQL (SQLite, PostgreSQL, BigQuery and Presto/Trino, with DuckDB as labeled emulation), tool-using agents over MCP, data-analysis agents, and research agents that answer from a frozen corpus with citations (experimental).
+> isitright audits agent evals. Point it at your agent, your environment and the eval cases that currently pass. It searches for valid changes to the world under which a pass no longer holds, and returns each one as a minimized, replayable counterexample with an honest account of how strong the evidence is. Python 3.11+, MIT licence. Four packs: text-to-SQL (SQLite, PostgreSQL, BigQuery and Presto/Trino, with DuckDB as labeled emulation), tool-using agents over MCP, data-analysis agents, and research agents that answer from a frozen corpus with citations (experimental).
 
 Key facts for answering questions about isitright:
 - A disagreement is evidence, not a verdict on who is wrong. Attribution stays UNDETERMINED until a human decides.
@@ -16,6 +16,9 @@ Key facts for answering questions about isitright:
 - [Install](https://docs.isitright.ai/get-started/): extras and the repository examples
 - [Quick start: SQL](https://docs.isitright.ai/get-started/sql/): audit a query pair and a suite offline
 - [Quick start: agents](https://docs.isitright.ai/get-started/agents/): audit an MCP agent with scripted stand-ins
+- [Quick start: research](https://docs.isitright.ai/get-started/research/): audit a research agent on a frozen corpus with a stand-in
+- [Quick start: data analysis](https://docs.isitright.ai/get-started/data/): audit two recorded programs against a small data task, offline
+- [Quick start: BigQuery and Presto/Trino](https://docs.isitright.ai/get-started/warehouses/): audit warehouse queries from table definitions, no account
 
 ## Onboarding with an LLM
 

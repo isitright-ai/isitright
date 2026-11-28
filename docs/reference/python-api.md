@@ -68,6 +68,7 @@ report = check_suite(cases=suite, database="shop.sqlite", config=CheckConfig(max
 | `null_as_zero` | `False`. Count NULL as 0 before comparing |
 | `reference_columns` | `None`. Compare only these reference columns (0-based) |
 | `wall_time_seconds` | `None`. Stop the search after this long; the report says the time cap stopped it |
+| `nested_scope` | `"path"` (new in 0.9). `"column"` generates and mutates every field of a nested column a query reads, as in 0.7: see [BigQuery and Presto/Trino](../sql/warehouses.md#nested-types) |
 
 `column_policy` also accepts the `contained` policy. The last four fields and `contained` exist for benchmark-style comparison: see [BigQuery and Presto/Trino](../sql/warehouses.md#comparing-the-way-a-benchmark-does).
 
@@ -130,13 +131,23 @@ from isitright.packs.data.live import run_live, LiveConfig
 | `DataAudit(task, config)` | A context manager. Prepares the task once and checks recorded programs against it. `AuditConfig` has `seed`, `attempts`, `depth`, `timeout_seconds`, `memory_mb`, `trust_code` (must be `True` to run any program), `cache_dir` (resume an interrupted audit) and `parallel` |
 | `DataAudit.check_frozen(program)` | Replays one `RecordedProgram` on generated worlds and returns a `CaseReport` |
 | `load_programs(path)` | Reads recorded programs from a JSONL file |
+| `AnswerPolicy.for_question(text)`, `DataComparator` | The comparison policy of a task: tolerance and its basis, `ulps` (a margin of exactly that many units in the last place, new in 0.9), `per_answer` decimals (new in 0.9). `NumericComparator(abs_tol, rel_tol, basis, ulps=0)` is the core class |
+| `memory_enforcement()`, `DataHost.describe()["memory_enforcement"]` | How the memory limit is enforced here: `job_object`, `rss_watchdog`, `address_space` or `none` (new in 0.9) |
 | `run_live(audit, agent, program=..., config=..., budget=...)` | Runs a `DataAgent` (`name`, `model`, `solve(question, directory)`) on the ranked worlds, under the budgets and sequential test of `agents run`. `LiveConfig` has the trial and world limits |
 
 Programs run in a separate, limited process that is not a sandbox: see [Data analysis agents](../data.md).
 
 ## Research pack
 
-The research pack is driven from the CLI (`isitright research`). Its modules are `isitright.packs.research`; the surface is experimental and not listed here. See [Research agents](../research/index.md).
+The research pack is driven from the CLI (`isitright research`). Its modules are `isitright.packs.research`; the surface is experimental. See [Research agents](../research/index.md). What 0.9 adds for use from Python:
+
+| Name (module) | Notes |
+|---|---|
+| `Retriever`, `FrozenIndex`, `EmbeddingIndex(embed, documents)`, `HybridIndex(first, second)`, `hashed_embedding(text)`, `build_index(stats, documents)`, `sentence_transformers_embedder(model)` (`retrieval`) | The retrievers behind the tools. `FrozenStats.from_documents(documents, retriever)` names which one a world uses (`bm25`, `hashed-dense`, `hybrid`) |
+| `SupportJudge`, `JudgeLabel`, `Validation`, `QuoteContainsAnswer`, `check_support(report, documents, judge, kind)` (`support`) | L2 behind a judge interface; no model judge is shipped |
+| `build_app(host, run_dir, token)`, `main` (`http_server`) | The streamable-HTTP MCP server with a bearer token |
+| `RecordedRun.own_retrieval` (`runs`) | The searches an agent ran on its own retriever, for `own_retriever_fidelity` |
+
 
 ## Evidence and eval cases
 

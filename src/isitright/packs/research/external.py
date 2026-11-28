@@ -55,6 +55,46 @@ def load_agent(reference: str, task: ResearchTask) -> Agent:
     return agent  # type: ignore[no-any-return]
 
 
+def load_support_judge(reference: str) -> Any:
+    """A support judge for ``--support-judge``: ``quote-contains-answer`` (the shipped rule, no code
+    runs) or ``module:attr`` / ``path/to/file.py:attr``, an object with ``judge(...)`` and ``label``
+    or a callable of no arguments returning one. The second form is trusted code: the caller has
+    the consent (``--trust-code``)."""
+    if ":" not in reference:
+        from isitright.packs.research.support import QuoteContainsAnswer
+
+        if reference == "quote-contains-answer":
+            return QuoteContainsAnswer()
+        raise ExternalError(
+            f"unknown support judge {reference!r}: use quote-contains-answer, or module:attr "
+            "or file.py:attr for a judge of your own"
+        )
+    where, _, attr = reference.rpartition(":")
+    try:
+        if where.endswith(".py"):
+            path = Path(where).resolve()
+            sys.path.insert(0, str(path.parent))
+            module = importlib.import_module(path.stem)
+        else:
+            module = importlib.import_module(where)
+        target: Any = getattr(module, attr)
+    except (ImportError, AttributeError) as error:
+        raise ExternalError(f"cannot load support judge {reference!r}: {error}") from error
+    if isinstance(target, type) or (callable(target) and not hasattr(target, "judge")):
+        try:
+            judge = target()  # a class or a factory taking no arguments
+        except Exception as error:
+            raise ExternalError(f"cannot build support judge {reference!r}: {error}") from error
+    else:
+        judge = target
+    if not hasattr(judge, "judge") or not hasattr(judge, "label"):
+        raise ExternalError(
+            f"{reference!r} is not a support judge: it needs judge(claim, quote, document_text, "
+            "answer, kind) and label"
+        )
+    return judge
+
+
 def command_subject(
     argv: list[str],
     task: ResearchTask,
@@ -146,6 +186,7 @@ def command_subject(
             cost=cost,
             status=status,
             seed=None,
+            own_retrieval=_read_own_retrieval(run_dir / "own_retrieval.jsonl"),
         )
 
     executor: Executor = execute
@@ -157,6 +198,27 @@ def _world_terms(world: World, task: ResearchTask) -> set[str]:
     from isitright.packs.research.retrieval import terms_of, tokenize
 
     return terms_of(world.state.entities(COLLECTION)) | set(tokenize(task.question))
+
+
+def _read_own_retrieval(path: Path) -> list[dict[str, Any]]:
+    """The searches the agent ran on its own retriever (``own_retrieval.jsonl``: one JSON object
+    per line, ``{"query": str, "ids": [str, ...]}``). A line that is not that is dropped."""
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if (
+            isinstance(row, dict)
+            and isinstance(row.get("query"), str)
+            and isinstance(row.get("ids"), list)
+            and all(isinstance(i, str) for i in row["ids"])
+        ):
+            rows.append({"query": row["query"], "ids": row["ids"]})
+    return rows
 
 
 def _read_trace(path: Path) -> list[dict[str, Any]]:

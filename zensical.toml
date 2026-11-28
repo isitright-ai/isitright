@@ -5,7 +5,7 @@ site_url = "https://docs.isitright.ai/"
 repo_url = "https://github.com/isitright-ai/isitright"
 repo_name = "isitright-ai/isitright"
 edit_uri = "edit/main/docs/"
-copyright = "MIT licensed. Documentation for isitright 0.9.0.dev0."
+copyright = "MIT licensed. Documentation for the latest isitright release."
 nav = [
   { "Home" = "index.md" },
   { "Get started" = [
@@ -13,6 +13,8 @@ nav = [
     { "Quick start: SQL" = "get-started/sql.md" },
     { "Quick start: agents" = "get-started/agents.md" },
     { "Quick start: research" = "get-started/research.md" },
+    { "Quick start: data analysis" = "get-started/data.md" },
+    { "Quick start: BigQuery and Presto/Trino" = "get-started/warehouses.md" },
   ] },
   { "Onboarding with an LLM" = [
     { "What to automate" = "onboarding/index.md" },

@@ -1,0 +1,77 @@
+name: Prepare release
+
+# Opens the release pull request: a branch release/X.Y.Z cut from develop, with the version set by
+# tools/release.py, into main. Merging that pull request and running "Publish distributions" stay
+# manual (see CONTRIBUTING.md, "Releasing").
+#
+# A real run needs the repository secret RELEASE_PR_TOKEN: pull requests opened with the default
+# GITHUB_TOKEN do not start CI, and main requires green CI before a merge. Without the secret a real
+# run stops before it changes anything. A dry run needs no secret and changes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, X.Y.Z (the top changelog heading must be X.Y.Z.devN)"
+        required: true
+        type: string
+      dry_run:
+        description: "Dry run: only print the lines the release would change"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      HAS_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
+    steps:
+      - name: Stop without the token
+        if: ${{ !inputs.dry_run && env.HAS_TOKEN != 'true' }}
+        run: |
+          echo "::error::The repository secret RELEASE_PR_TOKEN is not set, so nothing was changed. See CONTRIBUTING.md, 'Releasing'."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0 # the tags, for the script's check that the version is new
+          token: ${{ inputs.dry_run && github.token || secrets.RELEASE_PR_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Show the lines the release changes (refuses a bad version, a tagged one or an old one)
+        run: python tools/release.py "$VERSION" --dry-run
+
+      - name: Stop if the release branch exists
+        if: ${{ !inputs.dry_run }}
+        run: |
+          if git ls-remote --exit-code --heads origin "release/$VERSION" > /dev/null; then
+            echo "::error::The branch release/$VERSION already exists; nothing was changed."
+            exit 1
+          fi
+
+      - name: Commit the version, push the branch, open the pull request into main
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+        run: |
+          git switch -c "release/$VERSION"
+          python tools/release.py "$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release $VERSION: set the version"
+          git push origin "release/$VERSION"
+          gh pr create --base main --head "release/$VERSION" --title "Release $VERSION" \
+            --body "Sets the version to $VERSION (tools/release.py). After CI passes: merge this pull request, then run the workflow 'Publish distributions' on main and approve the pypi environment. The 'Sync main into develop' workflow opens the merge back into develop."

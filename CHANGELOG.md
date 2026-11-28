@@ -3,7 +3,7 @@
 All notable changes are documented here. The project follows semantic versioning.
 Versions before 1.0 may break the API, the CLI and the report schema.
 
-## 0.9.0 - Unreleased
+## 0.9.0.dev0 - Evidence integrity and hardening
 
 Evidence integrity. 0.9.0 moves the report schema to 0.9. Changes are listed by package.
 
@@ -314,6 +314,94 @@ offline.
   are compared by position and not detected; the pairing rule per pack; exit code 1 also means a
   replay that did not reproduce, and a SQLite `INCONCLUSIVE` exits 0. The CI guide warns that
   `agent.log` can hold secrets.
+
+### Hardening
+
+Closes loose ends of 0.4 to 0.8 and adds no pack. Built and tested offline: no model, account or
+paid service was used.
+
+#### Added
+
+- **Quick starts for the data-analysis pack and for BigQuery and Presto/Trino** (`docs/get-started/data.md`,
+  `warehouses.md`), each run offline on committed examples (`examples/data/quickstart/`,
+  `examples/sql/bigquery/`), with tests that run every command and check each line the page prints
+  (`tests/test_quickstarts.py`) and that every link, anchor and navigation entry resolves
+  (`tests/test_docs.py`).
+- **Nested scoping per path** (BigQuery, Presto, Trino): generation and the `nested_edit` family stay
+  on the paths a query reads inside a nested column (dot access, subscripts, `UNNEST` aliases,
+  CTEs). `--nested-scope column` restores the 0.7 behavior; the report records the scope and paths.
+- **Candidate errors on every engine.** A data error of the candidate where the reference returns a
+  result is a finding on SQLite, PostgreSQL and emulated PostgreSQL too (as for warehouses since 0.7);
+  a data error of the reference skips the world.
+- **PrestoDB through your own connection** (`examples/sql/prestodb/`): the Presto fixtures run on an
+  engine you reach with a function you supply; observations are kept per fixture and engine.
+- **Spider 2.0-lite demo:** every accepted `condition_cols` list is applied (a benchmark finding
+  counts only if no list accepts the candidate), Spider's result files are the baseline reference
+  where the gold SQL matches none, hand-written clean worlds for `bq402`, `bq025` and `bq398`,
+  `smoke-detected` for the fixtures the pack refuses.
+- **Data pack:** a resident-memory watchdog on Linux and macOS (`psutil`, now in the `data` extra);
+  numeric policy of exactly 2 ulps; decimals per named answer; a `row_count` rule in the constraint
+  language; string and list-of-string edits in the JSON family (the Memory scenario uses them).
+- **Research pack:** a retriever interface with a hashed dense stand-in, rank fusion and an adapter
+  for an embedding function you supply (`--retriever`); a streamable-HTTP MCP server for the two
+  tools (`search`, `fetch`) with a bearer token; L2 (support of a claim) behind a judge interface
+  with one deterministic baseline and no model judge, run by `research check --support-judge` (the
+  shipped rule, or a judge of your own with `--trust-code`) on the baseline run's citations; the agent's own retriever against the
+  simulated one on the same queries (`own_retrieval.jsonl`).
+- **`--run-patience-share`** (default 0.10): the run stopping rule stops after the larger of
+  `--run-patience` and this share of the worlds ranked, so it scales with the universe.
+- **`isitright agents stopping`**: replays the stopping rules offline over a finished run (made with both
+  rules off) and prints, per `--run-patience-share`, the worlds each would have run and the findings it
+  would have reached, to tune the share on your own scenario.
+- **`tools/measure_memory.py`** and a CI step that print the memory-limit overshoot on Linux and macOS.
+
+#### Fixed
+
+- A failure to reach a native engine (a dropped connection, a transport timeout, an HTTP 401, 403,
+  407, 408, 429 or 5xx) was read as "the candidate errors natively too" and verified a
+  candidate-errors finding; it now leaves the finding unverified.
+- A timer whose target a composed world had removed raised `EditError` and ended the run; it now
+  reports that it found nothing to change.
+- The data host's runner ended itself when started from a large process on Linux (the child
+  inherits its parent's high-water mark); the check now fires only on growth.
+
+- A native host's failure to build its client or connection (Trino, BigQuery) was not classified;
+  it is now always a host error. `engine_error` reads the HTTP status from `code`, `status_code`,
+  `http_status`, `response.status_code` or an `Http<NNN>Error` class name; a `code` outside 100 to
+  599 (a database's own error number) is not a status.
+- A question that says "r_value and p_value are rounded to two and four decimal places
+  respectively" gave both answers the coarser precision. "Respectively" now pairs them in order; a
+  precision the text does not settle is reported (`precision_undetermined`) and taken at its finest.
+- Spider demo: the native confirmation checked the first accepted column list instead of the variant
+  that produced the finding, a column list that does not fit the gold SQL's columns counted as a
+  rejection, and a failed cleanup of scratch tables did not show in `rewrite_equivalence`'s result.
+
+#### Changed
+
+- On macOS the data host warns that the memory limit is a lower bound and says so in the report.
+- **Breaking, small:** the default run stopping rule scales with the universe (10% of the worlds
+  ranked, with 30 as the floor) where 0.8 stopped after a fixed 30 quiet worlds. **A search now runs
+  more worlds, so it can use more paid agent runs** (it goes on until `--max-worlds`, `--max-runs`,
+  `--max-money` or `--max-seconds`); set those on every real run. `--run-patience-share 0` restores
+  the fixed number.
+- **Breaking, small:** `isitright data` numeric answers use `abs_tol = 10^-d`, `rel_tol = 0` and 2
+  ulps where 0.6 to 0.8 used a tolerance of `10^-d * (1 + 1e-9)` and `rel_tol = 1e-15`; a question
+  that states different decimals for different answers now compares each at its own precision.
+  `CheckConfig` gains `nested_scope` (default `path`: a nested column's unread fields are no longer
+  generated). On macOS the data host's memory limit is enforced when `psutil` is installed (it is in
+  the `data` extra); on Linux the watchdog replaces `RLIMIT_AS`.
+- **The version is written in one place**, `src/isitright/__about__.py`. `isitright --version`,
+  the package metadata and the tests read it; the docs no longer state it. `tools/release.py X.Y.Z`
+  (with `--dry-run`) sets it and renames the top changelog heading from `X.Y.Z.devN` to `X.Y.Z`;
+  `tools/release.py X.Y.Z.dev0 --title ...` starts the next version. It refuses a version that is
+  not greater than the current one, one that already has a tag, and a working tree with uncommitted
+  changes.
+- **Release workflows.** `Prepare release` opens the release pull request from `develop` into
+  `main`; `Sync main into develop` opens the merge back after a release and turns on auto-merge.
+  Both need a repository secret, `RELEASE_PR_TOKEN`, and stop without it; both have a dry run.
+  Publishing stays a manual dispatch behind the `pypi` environment's approval. The procedure is in
+  `CONTRIBUTING.md`, "Releasing".
+
 
 ## 0.8.0 - Research agents
 

@@ -1,0 +1,9 @@
+# Proposed fixture: pending owner review (a rule written by Claude for this example).
+# The warehouse table has no key. This says each customer has at most one order, which is true of
+# the example's imagined shop and of no real one: declare a rule only if it holds in your data.
+$schema: https://json-schema.org/draft/2020-12/schema
+type: object
+properties:
+  orders:
+    type: array
+    x-unique: [[customer]]

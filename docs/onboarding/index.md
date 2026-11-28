@@ -60,7 +60,7 @@ Prompts work better when the model knows what isitright is. Either point it at
 [`llms.txt`](https://docs.isitright.ai/llms.txt) or paste this primer at the top of the session:
 
 ```text
-You are helping me set up isitright (version 0.8), a tool that audits agent evals. It takes a passing eval
+You are helping me set up isitright, a tool that audits agent evals. It takes a passing eval
 case and searches for valid changes to the world (a database, a service's state) under which the
 pass no longer holds. It needs:
 - a world spec: an entity schema (collections with typed fields, keys, references), constraints
@@ -68,7 +68,7 @@ pass no longer holds. It needs:
 - hints: facts from the task text that tell the search which entities and fields matter. Kinds:
   lookup {collection, fields, value}, ordering {collection, field, direction asc|desc},
   gate {collection, field, allows, action}, scope {collection, where}, threshold {path, value} or
-  {collection, count}, json_path {path, same_as}, and for data tasks column {collection, field},
+  {collection, count}, json_path {path, same_as, values: [text, ..]}, and for data tasks column {collection, field},
   literal {path, value}, tolerance {basis, abs and/or rel};
 - an oracle: invariants and a reference procedure that recompute what is right in a changed world.
 A disagreement between agent and oracle is evidence, not a verdict on who is wrong. Drafts you write
